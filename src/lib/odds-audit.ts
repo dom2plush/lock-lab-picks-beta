@@ -60,12 +60,20 @@ type SourceLike = {
   capturedAt?: string | null;
 };
 
+/**
+ * Derivative markets (alternate lines, player props) are pulled per event a
+ * moment after the main board, so their capture stamps are seconds or minutes
+ * apart from the game snapshot by design. Same refresh window counts as the
+ * same snapshot; anything older is a stale price and is rejected.
+ */
+const SNAPSHOT_WINDOW_MS = 15 * 60 * 1000;
+
 function sameTime(a: string | null | undefined, b: string | null | undefined) {
   if (!a || !b) return false;
   const ta = Date.parse(a);
   const tb = Date.parse(b);
   if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
-  return ta === tb;
+  return Math.abs(ta - tb) <= SNAPSHOT_WINDOW_MS;
 }
 
 function sameBook(a: string | null | undefined, b: string | null | undefined) {
@@ -101,7 +109,7 @@ function checkEntry(
     );
   }
   if (snapshot.capturedAt && source.capturedAt && !sameTime(source.capturedAt, snapshot.capturedAt)) {
-    problems.push("This pick was priced from a different snapshot than the one displayed.");
+    problems.push("This pick was priced from an older snapshot than the one displayed.");
   }
 
   return {
