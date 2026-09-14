@@ -39,19 +39,30 @@ export function GameCard({
       <p className="mt-0.5 text-xs text-muted-foreground">
         {game.away_team} at {game.home_team}
       </p>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {favLine != null && (
-          <span>
-            <span className="font-semibold text-foreground">{favTag}</span> {favLine}
-          </span>
-        )}
-        {total && (
-          <span>
-            Total <span className="font-semibold text-foreground">{total.points}</span>
-          </span>
-        )}
-        {game.odds.bookmaker && <span>{game.odds.bookmaker}</span>}
-      </div>
+      {live ? (
+        <>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {favLine != null && (
+              <span>
+                <span className="font-semibold text-foreground">{favTag}</span> {favLine}
+              </span>
+            )}
+            {total && (
+              <span>
+                Total <span className="font-semibold text-foreground">{total.points}</span>
+              </span>
+            )}
+            <span>{game.odds.bookmaker}</span>
+          </div>
+          <p className="mt-1 text-[0.7rem] text-muted-foreground">
+            Odds as of {formatCapturedAt(game.odds.capturedAt ?? game.odds_updated_at)}
+          </p>
+        </>
+      ) : (
+        <p className="mt-3 text-xs font-semibold tracking-wide text-stop uppercase">
+          Live odds unavailable
+        </p>
+      )}
     </button>
   );
 }
