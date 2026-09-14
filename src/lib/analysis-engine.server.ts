@@ -249,16 +249,24 @@ function buildCandidates(
     });
   });
 
-  // Player props: over/yes side only, one per player+market.
+  // Player props: both sides, so a bad prop always has a real opposite to grade.
   const seen = new Set<string>();
+  let propCount = 0;
   extra.props.forEach((offer, index) => {
     const side = offer.selection.toLowerCase();
-    if (side !== "over" && side !== "yes") return;
+    if (!["over", "under", "yes", "no"].includes(side)) return;
     if (!offer.player) return;
-    const id = `${offer.market}:${offer.player}`;
-    if (seen.has(id)) return;
+    const id = `${offer.market}:${offer.player}:${side}`;
+    if (seen.has(id) || propCount >= 60) return;
     seen.add(id);
+    propCount += 1;
     const marketLabel = PROP_MARKET_LABEL[offer.market] ?? offer.market;
+    const sideText =
+      offer.point != null
+        ? ` ${offer.selection} ${offer.point}`
+        : side === "no"
+          ? " (No)"
+          : "";
     out.push({
       key: `prop-${index}`,
       group: "prop",
@@ -266,7 +274,7 @@ function buildCandidates(
       marketLabel,
       selection: offer.selection,
       player: offer.player,
-      label: `${offer.player} ${marketLabel}${offer.point != null ? ` Over ${offer.point}` : ""} (${fmtOdds(offer.price)})`,
+      label: `${offer.player} ${marketLabel}${sideText} (${fmtOdds(offer.price)})`,
       line: offer.point != null ? String(offer.point) : null,
       point: offer.point,
       price: offer.price,
