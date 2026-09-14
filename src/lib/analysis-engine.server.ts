@@ -269,9 +269,13 @@ export function runLockLabFormula(
       });
     }
     const target = Math.round(((total.points + (spread ? -spread.home : 0)) / 2) * 2) / 2;
-    const teamTotal =
-      closestOffer(extra.alternates, "team_totals", "Over", target) ??
-      extra.alternates.find((o) => o.market === "team_totals" && o.selection === "Over");
+    const homeTeamTotals = extra.alternates.filter(
+      (o) =>
+        o.market === "team_totals" &&
+        o.selection.toLowerCase() === "over" &&
+        (!o.player || o.player === game.home_team),
+    );
+    const teamTotal = closestOffer(homeTeamTotals, "team_totals", "Over", target);
     if (teamTotal) {
       funBets.push({
         key: "fun-team-total",
