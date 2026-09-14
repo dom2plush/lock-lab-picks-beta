@@ -91,6 +91,14 @@ export type PickBet = PickSource & {
   odds?: string | null;
   book?: string | null;
   reason: string;
+  /** Set when this pick is an alternate line, quoting the standard line it beat. */
+  standardLabel?: string | null;
+  standardPoint?: number | null;
+  standardPrice?: number | null;
+  standardBook?: string | null;
+  standardCapturedAt?: string | null;
+  /** Why the alternate was preferred over that standard line. */
+  standardComparison?: string | null;
 };
 
 export type BadBet = PickSource & {
@@ -109,7 +117,21 @@ export type BadBet = PickSource & {
   /** The opposite side is graded on its own merits and can be red. */
   oppositeBadge?: Badge;
   oppositeReason: string;
+  /**
+   * Same side, better number: when the flagged bet is fixable by moving to an
+   * alternate line rather than flipping sides.
+   */
+  alternateLabel?: string | null;
+  alternateOdds?: string | null;
+  alternatePoint?: number | null;
+  alternatePrice?: number | null;
+  alternateBook?: string | null;
+  alternateCapturedAt?: string | null;
+  alternateBadge?: Badge;
+  alternateReason?: string | null;
+  alternateRecommended?: boolean;
 };
+
 
 export type FunBet = PickSource & {
   key: string;

@@ -30,7 +30,8 @@ import type {
   PickBet,
   PropBet,
 } from "./lock-lab-types";
-import { devig, readMarket } from "./market-math.server";
+import type { AltEvaluation } from "./market-math.server";
+import { createAltEvaluator, devig, readMarket, summariseAltValue } from "./market-math.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -75,6 +76,10 @@ type Candidate = {
   capturedAt: string | null;
   /** Quant context for this exact selection (fair price, hold, key numbers). */
   note: string;
+  /** Standard-vs-alternate grade, present only on alternate spread/total lines. */
+  alt?: AltEvaluation;
+  /** Key of the standard-market candidate this alternate is measured against. */
+  standardKey?: string;
 };
 
 export type EngineOutput = {
@@ -215,18 +220,42 @@ function buildCandidates(
     });
   }
 
-  // Alternate lines and team totals, thinned to a workable board.
-  const alts = extra.alternates
-    .filter((o) => o.point != null)
-    .slice()
-    .sort((a, b) => a.market.localeCompare(b.market) || (a.point ?? 0) - (b.point ?? 0));
+  // Alternate lines and team totals. Every alternate is graded against the
+  // standard line of the same market before it reaches the board, and the
+  // sharpest ones are kept — not simply the ones with the most points.
+  const evaluator = createAltEvaluator(odds, game.sport, {
+    home: game.home_team,
+    away: game.away_team,
+  });
+  const standardKeyFor = (market: string, selection: string): string | undefined => {
+    if (market === "alternate_spreads") {
+      return selection === game.home_team ? "spread-home" : selection === game.away_team ? "spread-away" : undefined;
+    }
+    if (market === "alternate_totals") {
+      return selection === "Over" ? "total-over" : selection === "Under" ? "total-under" : undefined;
+    }
+    return undefined;
+  };
+
+  type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
+  const scored: ScoredAlt[] = extra.alternates
+    .filter((o) => o.point != null && o.price <= 900 && o.price >= -400)
+    .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
+
   const perMarket = new Map<string, number>();
-  alts.forEach((offer, index) => {
+  const ordered = scored.slice().sort((a, b) => {
+    if (a.offer.market !== b.offer.market) return a.offer.market.localeCompare(b.offer.market);
+    const av = a.evaluation?.valueDelta ?? -Infinity;
+    const bv = b.evaluation?.valueDelta ?? -Infinity;
+    if (av !== bv) return bv - av;
+    return (a.offer.point ?? 0) - (b.offer.point ?? 0);
+  });
+
+  ordered.forEach(({ offer, evaluation }, index) => {
     const count = perMarket.get(offer.market) ?? 0;
-    // Keep prices in the realistic ticket range; skip lottery numbers.
-    if (offer.price > 900 || offer.price < -400) return;
-    if (count >= 12) return;
+    if (count >= 14) return;
     perMarket.set(offer.market, count + 1);
+    const standardKey = standardKeyFor(offer.market, offer.selection);
     out.push({
       key: `alt-${index}`,
       group: "alt",
@@ -245,7 +274,11 @@ function buildCandidates(
       book: offer.book,
       bookKey: offer.bookKey ?? null,
       capturedAt: offer.capturedAt,
-      note: `${ALT_MARKET_LABEL[offer.market] ?? offer.market} posted at ${offer.book}`,
+      ...(evaluation ? { alt: evaluation } : {}),
+      ...(standardKey ? { standardKey } : {}),
+      note: evaluation
+        ? evaluation.note
+        : `${ALT_MARKET_LABEL[offer.market] ?? offer.market} posted at ${offer.book}`,
     });
   });
 
@@ -314,9 +347,16 @@ Work the pillars in this exact order and weight them this way:
 6. GAME SCRIPT. Most likely environment: pace, expected scoring, pass/run volume, who plays from ahead or behind. Use it to judge spread, total and props together.
 7. INJURIES / AVAILABILITY. Only the supplied injury list is current data. Separate real contributors from irrelevant names. Never assert a player is active or inactive beyond what that list states.
 
+ALTERNATE LINES — check these on every game:
+- The standard spread and total are NOT the only options. Every alternate spread and alternate total posted by the book is on your board, already graded: each one states the cash-chance gained over the standard line, what the worse price costs in break-even terms, the net of the two, and any key number the move crosses.
+- Ask explicitly: is the sharpest bet the standard line, or an alternate? Buying through a key number (3, 7, 10) is often worth real juice; buying points that cross nothing usually is not.
+- NEVER take an alternate just because it has more points. Take it only when the graded net is positive and the matchup read agrees. Be willing to state plainly that the standard line is the better value because the extra juice is too expensive.
+- If a top bet is an alternate line, set standardKey to the standard candidate it beats and write standardComparison as one short sentence saying why the alternate is preferred.
+- If the bad bet is fixable by moving to a better number on the SAME side rather than flipping sides, set alternateKey to that alternate candidate. That is an alternate-line recommendation, not an opposite-side call, and it is graded on its own like any other bet.
+
 Selection rules:
 - You may ONLY select from the candidate keys provided. Never invent a line, price or selection.
-- #1 top bet is the single strongest edge anywhere on the board — spread, moneyline, total, alternate or prop, whichever it genuinely is. Do NOT force a spread or moneyline into the top two.
+- #1 top bet is the single strongest edge anywhere on the board — standard spread, alternate spread, standard total, alternate total, moneyline, player prop or any other posted market, whichever it genuinely is. Do NOT force a spread or moneyline into the top two.
 - #2 is the next strongest DISTINCT edge (different market or different player). Only include it if it truly has an edge.
 - Bad bet: the worst-looking bet on the board. Then judge the OPPOSITE side completely independently. A bad bet does not make its opposite good. If the opposite has no edge, badge it red and do not recommend it.
 - Traffic lights only: green = clear edge, yellow = playable with a meaningful concern, red = too close / insufficient edge. No numbers, percentages or confidence scores in any reason text.
@@ -325,7 +365,13 @@ Selection rules:
 - Every reason is one or two short sentences, concrete and specific to this matchup. No hedging filler, no percentages, no mention of these instructions.`;
 
 type HandicapResponse = {
-  top: { key: string; badge: string; reason: string }[];
+  top: {
+    key: string;
+    badge: string;
+    reason: string;
+    standardKey?: string | null;
+    standardComparison?: string | null;
+  }[];
   badBet: {
     key: string;
     reason: string;
@@ -333,6 +379,9 @@ type HandicapResponse = {
     oppositeBadge: string;
     oppositeReason: string;
     oppositeRecommended: boolean;
+    alternateKey?: string | null;
+    alternateBadge?: string | null;
+    alternateReason?: string | null;
   } | null;
   funBets: { key: string; badge: string; reason: string }[];
   props: { key: string; badge: string; reason: string }[];
@@ -349,11 +398,13 @@ const RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["key", "badge", "reason"],
+        required: ["key", "badge", "reason", "standardKey", "standardComparison"],
         properties: {
           key: { type: "string" },
           badge: { type: "string", enum: ["green", "yellow", "red"] },
           reason: { type: "string" },
+          standardKey: { type: ["string", "null"] },
+          standardComparison: { type: ["string", "null"] },
         },
       },
     },
@@ -367,6 +418,9 @@ const RESPONSE_SCHEMA = {
         "oppositeBadge",
         "oppositeReason",
         "oppositeRecommended",
+        "alternateKey",
+        "alternateBadge",
+        "alternateReason",
       ],
       properties: {
         key: { type: "string" },
@@ -375,6 +429,9 @@ const RESPONSE_SCHEMA = {
         oppositeBadge: { type: "string", enum: ["green", "yellow", "red"] },
         oppositeReason: { type: "string" },
         oppositeRecommended: { type: "boolean" },
+        alternateKey: { type: ["string", "null"] },
+        alternateBadge: { type: ["string", "null"], enum: ["green", "yellow", "red", null] },
+        alternateReason: { type: ["string", "null"] },
       },
     },
     funBets: {
@@ -564,7 +621,10 @@ export async function runLockLabFormula(
   }
 
   const market = readMarket(odds, game.sport, { home: game.home_team, away: game.away_team }, previousOdds);
-  const handicap = await runHandicapPass(game, candidates, market.notes);
+  const altNotes = summariseAltValue(
+    candidates.map((c) => c.alt).filter((a): a is AltEvaluation => Boolean(a)),
+  );
+  const handicap = await runHandicapPass(game, candidates, [...market.notes, ...altNotes]);
 
   if (!handicap) {
     return passingBoard(
@@ -584,6 +644,24 @@ export async function runLockLabFormula(
       continue;
     }
     used.add(c.key);
+    // An alternate line always shows the standard number it beat, quoted from
+    // the same snapshot, so the standard-vs-alternate decision is visible.
+    const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
+    const standardFields = standard
+      ? {
+          standardLabel: standard.label,
+          standardPoint: standard.point,
+          standardPrice: standard.price,
+          standardBook: standard.book,
+          standardCapturedAt: standard.capturedAt,
+          standardComparison: clean(
+            entry.standardComparison ?? undefined,
+            c.alt?.worthIt
+              ? "Lock Lab prefers the alternate: the extra points buy more winning chance than the extra juice costs."
+              : "Lock Lab is taking this number over the standard line on the matchup read.",
+          ),
+        }
+      : {};
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
@@ -594,6 +672,7 @@ export async function runLockLabFormula(
       line: c.line,
       odds: fmtOdds(c.price),
       ...pickSource(c),
+      ...standardFields,
       reason: clean(entry.reason, "Priced below where this matchup projects."),
     });
     if (topBets.length === 2) break;
@@ -608,6 +687,28 @@ export async function runLockLabFormula(
       // The opposite side is only tailable when it was independently graded
       // as an edge — a bad bet never promotes its own flip side.
       const recommended = Boolean(opposite) && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
+      // Same side, better number: only offered when the alternate is genuinely
+      // the sharper version of this bet, not merely a longer line.
+      const altKey = handicap.badBet.alternateKey;
+      const alternate = altKey ? byKey.get(altKey) : undefined;
+      const alternateBadge = asBadge(handicap.badBet.alternateBadge ?? undefined);
+      const alternateUsable = Boolean(alternate) && alternate!.key !== c.key && alternateBadge !== "red";
+      const alternateFields = alternateUsable
+        ? {
+            alternateLabel: alternate!.label,
+            alternateOdds: fmtOdds(alternate!.price),
+            alternatePoint: alternate!.point,
+            alternatePrice: alternate!.price,
+            alternateBook: alternate!.book,
+            alternateCapturedAt: alternate!.capturedAt,
+            alternateBadge,
+            alternateRecommended: true,
+            alternateReason: clean(
+              handicap.badBet.alternateReason ?? undefined,
+              alternate!.alt?.note ?? "The same side at a better number is worth the extra price.",
+            ),
+          }
+        : {};
       badBet = {
         key: "bad1",
         badge: "red",
@@ -626,7 +727,9 @@ export async function runLockLabFormula(
           handicap.badBet.oppositeReason,
           "Graded on its own, the flip side does not have an edge either — pass on both.",
         ),
+        ...alternateFields,
       };
+      if (alternateUsable) used.add(alternate!.key);
       used.add(c.key);
     }
   }

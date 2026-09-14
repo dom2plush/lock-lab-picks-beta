@@ -119,6 +119,16 @@ export function AnalysisOutput({
               </div>
               <p className="mt-2 font-display text-xl font-semibold">{pick.label}</p>
               <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
+              {pick.standardLabel && (
+                <div className="mt-3 rounded-md border border-hairline bg-surface p-3">
+                  <span className="eyebrow">Standard line</span>
+                  <p className="mt-1 text-sm font-semibold">{pick.standardLabel}</p>
+                  {pick.standardComparison && (
+                    <p className="mt-1 text-xs text-muted-foreground">{pick.standardComparison}</p>
+                  )}
+                </div>
+              )}
+
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
                   Logged {pick.line ? `${pick.line} ` : ""}
@@ -188,6 +198,41 @@ export function AnalysisOutput({
                 </p>
               )}
             </div>
+
+            {analysis.bad_bet.alternateLabel && (
+              <div className="mt-3 rounded-md border border-hairline bg-surface p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow">Better alternative — same side</span>
+                  <BadgePill badge={analysis.bad_bet.alternateBadge ?? "yellow"} />
+                </div>
+                <p className="mt-1 font-display text-lg font-semibold">
+                  {analysis.bad_bet.alternateLabel}
+                </p>
+                {analysis.bad_bet.alternateReason && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {analysis.bad_bet.alternateReason}
+                  </p>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() =>
+                    onTail(
+                      tailTarget(
+                        `${analysis.bad_bet!.key}-alternate`,
+                        analysis.bad_bet!.alternateLabel!,
+                        analysis.bad_bet!.alternateOdds ?? null,
+                        "bad_bet",
+                      ),
+                    )
+                  }
+                >
+                  Tail the better number
+                </Button>
+              </div>
+            )}
+
           </div>
         </Section>
       )}

@@ -196,3 +196,214 @@ export function readMarket(
 export function priceVsFair(posted: number, fairProbability: number): number {
   return fairProbability - impliedProbability(posted);
 }
+
+// ---------------------------------------------------------------------------
+// Alternate-line value
+// ---------------------------------------------------------------------------
+
+/** Spread of final combined scores around the posted total. */
+const TOTAL_SIGMA: Record<Sport, number> = { NFL: 10.4, CFB: 12.8 };
+
+export type AltEvaluation = {
+  market: "spread" | "total";
+  /** Team name for a spread, "Over"/"Under" for a total. */
+  side: string;
+  point: number;
+  price: number;
+  /** The standard market line and price this alternate is measured against. */
+  standardPoint: number;
+  standardPrice: number;
+  /** Modelled chance each version cashes. */
+  winProb: number;
+  standardWinProb: number;
+  /** Chance gained (or lost) by taking the alternate instead of the standard. */
+  probGain: number;
+  /** Break-even cost of the alternate's price minus the standard's. */
+  priceCost: number;
+  /** Positive when the extra protection is worth more than the extra juice. */
+  valueDelta: number;
+  worthIt: boolean;
+  /** Key numbers the move crosses, e.g. [3] for +2.5 -> +3.5. */
+  keysCrossed: number[];
+  note: string;
+};
+
+function clampProb(p: number) {
+  return Math.min(0.99, Math.max(0.01, p));
+}
+
+/**
+ * Key numbers whose push mass the move picks up. A spread side covers when the
+ * margin beats -point, so moving from `from` to `to` sweeps the thresholds
+ * between them; integers in that span are pure push/no-push swings the smooth
+ * normal model under-prices.
+ */
+function keysBetween(from: number, to: number, sport: Sport): number[] {
+  const lo = Math.min(-from, -to);
+  const hi = Math.max(-from, -to);
+  const keys = KEY_NUMBERS[sport];
+  const hits: number[] = [];
+  for (let n = Math.ceil(lo); n <= Math.floor(hi); n += 1) {
+    const density = keys[Math.abs(n)];
+    if (density) hits.push(Math.abs(n));
+  }
+  return hits;
+}
+
+function pts(value: number): string {
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pts`;
+}
+
+function signedLine(value: number) {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+/**
+ * Grades every alternate spread/total against the standard line of the same
+ * market: does the extra half-point (or extra points) buy more winning
+ * probability than the extra juice costs? Prices and lines are the provider's;
+ * nothing here invents a number.
+ */
+export function createAltEvaluator(
+  odds: GameOdds,
+  sport: Sport,
+  teams: { home: string; away: string },
+) {
+  const sigma = MARGIN_SIGMA[sport];
+  const totalSigma = TOTAL_SIGMA[sport];
+  const spread = odds.spread;
+  const total = odds.total;
+  const marginHome = spread ? -spread.home : null;
+
+  function spreadProb(team: string, point: number): number | null {
+    if (marginHome == null) return null;
+    const teamMargin = team === teams.home ? marginHome : -marginHome;
+    return normalCdf((teamMargin + point) / sigma);
+  }
+
+  function totalProb(side: string, point: number): number | null {
+    if (!total) return null;
+    return side === "Over"
+      ? normalCdf((total.points - point) / totalSigma)
+      : normalCdf((point - total.points) / totalSigma);
+  }
+
+  function evaluateSpread(team: string, point: number, price: number): AltEvaluation | null {
+    if (!spread || marginHome == null) return null;
+    const standardPoint = team === teams.home ? spread.home : spread.away;
+    const standardPrice = team === teams.home ? spread.homePrice : spread.awayPrice;
+    if (point === standardPoint) return null;
+    const base = spreadProb(team, standardPoint);
+    const raw = spreadProb(team, point);
+    if (base == null || raw == null) return null;
+
+    const keys = keysBetween(standardPoint, point, sport);
+    const direction = point > standardPoint ? 1 : -1;
+    // Half the key-number mass on top of the smooth model: the normal curve
+    // already contains part of it, but not the push lump itself.
+    const bump = keys.reduce((sum, k) => sum + (KEY_NUMBERS[sport][k] ?? 0), 0) * 0.5;
+    const winProb = clampProb(raw + direction * bump);
+    const standardWinProb = clampProb(base);
+
+    return finish({
+      market: "spread",
+      side: team,
+      point,
+      price,
+      standardPoint,
+      standardPrice,
+      winProb,
+      standardWinProb,
+      keysCrossed: keys,
+      describe: `${team} ${signedLine(point)} (${price}) vs the standard ${signedLine(standardPoint)} (${standardPrice})`,
+    });
+  }
+
+  function evaluateTotal(side: string, point: number, price: number): AltEvaluation | null {
+    if (!total) return null;
+    if (side !== "Over" && side !== "Under") return null;
+    const standardPoint = total.points;
+    const standardPrice = side === "Over" ? total.overPrice : total.underPrice;
+    if (point === standardPoint) return null;
+    const winProb = totalProb(side, point);
+    const standardWinProb = totalProb(side, standardPoint);
+    if (winProb == null || standardWinProb == null) return null;
+
+    return finish({
+      market: "total",
+      side,
+      point,
+      price,
+      standardPoint,
+      standardPrice,
+      winProb: clampProb(winProb),
+      standardWinProb: clampProb(standardWinProb),
+      keysCrossed: [],
+      describe: `${side} ${point} (${price}) vs the standard ${side} ${standardPoint} (${standardPrice})`,
+    });
+  }
+
+  function finish(input: Omit<AltEvaluation, "probGain" | "priceCost" | "valueDelta" | "worthIt" | "note"> & {
+    describe: string;
+  }): AltEvaluation {
+    const probGain = input.winProb - input.standardWinProb;
+    const priceCost = impliedProbability(input.price) - impliedProbability(input.standardPrice);
+    const valueDelta = probGain - priceCost;
+    // A whole point of value, not a rounding artefact, before Lock Lab moves
+    // off the standard number — and the alternate must stand on its own price
+    // too, so a long line is never recommended purely by comparison.
+    const ownEdge = input.winProb - impliedProbability(input.price);
+    const worthIt = valueDelta >= 0.01 && ownEdge > 0;
+    const keyText = input.keysCrossed.length
+      ? ` Crosses the key number ${input.keysCrossed.join(" and ")}.`
+      : "";
+    const note =
+      `${input.describe}: cash chance ${pts(probGain)}, price costs ${pts(priceCost)} of break-even, ` +
+      `net ${pts(valueDelta)}.${keyText} ${
+        worthIt
+          ? "The extra protection is worth the extra juice."
+          : "The extra juice is more expensive than the points are worth — the standard line is the better side."
+      }`;
+    const { describe: _describe, ...rest } = input;
+    return { ...rest, probGain, priceCost, valueDelta, worthIt, note };
+  }
+
+  /** Dispatch for a provider offer; null when the market has no standard line to compare with. */
+  function evaluateOffer(offer: {
+    market: string;
+    selection: string;
+    point: number | null;
+    price: number;
+  }): AltEvaluation | null {
+    if (offer.point == null) return null;
+    if (offer.market === "alternate_spreads") return evaluateSpread(offer.selection, offer.point, offer.price);
+    if (offer.market === "alternate_totals") return evaluateTotal(offer.selection, offer.point, offer.price);
+    return null;
+  }
+
+  return { evaluateSpread, evaluateTotal, evaluateOffer };
+}
+
+/** Board-level summary of where alternate-line value does (or does not) exist. */
+export function summariseAltValue(evaluations: AltEvaluation[]): string[] {
+  if (!evaluations.length) {
+    return [
+      "No alternate spreads or totals are posted for this game, so the standard lines are the only spread/total options.",
+    ];
+  }
+  const notes: string[] = [];
+  const bestBySide = new Map<string, AltEvaluation>();
+  for (const evaluation of evaluations) {
+    const id = `${evaluation.market}:${evaluation.side}`;
+    const current = bestBySide.get(id);
+    if (!current || evaluation.valueDelta > current.valueDelta) bestBySide.set(id, evaluation);
+  }
+  for (const best of bestBySide.values()) {
+    notes.push(
+      best.worthIt
+        ? `Alternate-line value: ${best.note}`
+        : `Alternate lines checked on ${best.market === "spread" ? best.side : `the ${best.side}`}: the best of them still loses to the standard number. ${best.note}`,
+    );
+  }
+  return notes;
+}
