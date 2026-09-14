@@ -1,4 +1,10 @@
-import { formatKickoff, teamShort, type GameRow } from "@/lib/lock-lab-types";
+import {
+  formatCapturedAt,
+  formatKickoff,
+  hasLiveOdds,
+  teamShort,
+  type GameRow,
+} from "@/lib/lock-lab-types";
 import { cn } from "@/lib/utils";
 
 export function GameCard({
