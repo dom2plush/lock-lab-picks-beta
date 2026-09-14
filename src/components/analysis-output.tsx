@@ -1,0 +1,218 @@
+import { BadgePill } from "@/components/badge-pill";
+import type { TailTarget } from "@/components/tail-dialog";
+import { Button } from "@/components/ui/button";
+import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
+import { formatKickoff } from "@/lib/lock-lab-types";
+
+function Section({
+  step,
+  title,
+  subtitle,
+  children,
+}: {
+  step: number;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-baseline gap-3">
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary font-display text-xs font-bold text-primary-foreground">
+          {step}
+        </span>
+        <div>
+          <h3 className="font-display text-xl leading-none font-semibold tracking-wide uppercase">
+            {title}
+          </h3>
+          {subtitle && <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function AnalysisOutput({
+  game,
+  analysis,
+  onTail,
+}: {
+  game: GameRow;
+  analysis: AnalysisRow;
+  onTail: (target: TailTarget) => void;
+}) {
+  const tailTarget = (
+    pickKey: string,
+    pickLabel: string,
+    pickOdds: string | null,
+    pickSection: TailTarget["pickSection"],
+  ): TailTarget => ({
+    gameId: game.id,
+    analysisId: analysis.id,
+    pickKey,
+    pickLabel,
+    pickOdds,
+    pickSection,
+  });
+
+  return (
+    <div className="space-y-8">
+      <div className="rounded-lg border border-hairline bg-card p-5">
+        <span className="eyebrow">{game.sport} · Lock Lab breakdown</span>
+        <h2 className="mt-1 font-display text-2xl font-semibold">
+          {game.away_team} at {game.home_team}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Kickoff {formatKickoff(game.commence_time)}
+          {analysis.odds_snapshot.bookmaker ? ` · lines from ${analysis.odds_snapshot.bookmaker}` : ""}
+        </p>
+        {game.injuries.length > 0 && (
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {game.injuries.slice(0, 6).map((injury, index) => (
+              <li
+                key={`${injury.player}-${index}`}
+                className="rounded-full bg-surface px-2.5 py-1 text-xs text-muted-foreground"
+              >
+                {injury.player} — {injury.status}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Section step={1} title="Top 2 bets" subtitle="Best bet on the board, then the next best.">
+        <div className="grid gap-3 md:grid-cols-2">
+          {analysis.top_bets.map((pick) => (
+            <article key={pick.key} className="rounded-lg border border-hairline bg-card p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="eyebrow">#{pick.rank ?? 1} {pick.market}</span>
+                <BadgePill badge={pick.badge} />
+              </div>
+              <p className="mt-2 font-display text-xl font-semibold">{pick.label}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Logged at {pick.odds ?? "—"}
+                  {pick.book ? ` · ${pick.book}` : ""}
+                </span>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    onTail(tailTarget(pick.key, pick.label, pick.odds ?? null, "top_bets"))
+                  }
+                >
+                  Tail
+                </Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Section>
+
+      {analysis.bad_bet && (
+        <Section
+          step={2}
+          title="Bad bet → opposite side"
+          subtitle="The worst bet on the board, and whether flipping it actually has an edge."
+        >
+          <div className="rounded-lg border border-hairline bg-card p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="eyebrow">Avoid</span>
+              <BadgePill badge={analysis.bad_bet.badge} />
+            </div>
+            <p className="mt-2 font-display text-xl font-semibold">{analysis.bad_bet.label}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{analysis.bad_bet.reason}</p>
+
+            <div className="mt-4 rounded-md border border-hairline bg-surface p-3">
+              <span className="eyebrow">Opposite side</span>
+              <p className="mt-1 font-display text-lg font-semibold">
+                {analysis.bad_bet.oppositeLabel}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {analysis.bad_bet.oppositeReason}
+              </p>
+              {analysis.bad_bet.oppositeRecommended ? (
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  onClick={() =>
+                    onTail(
+                      tailTarget(
+                        `${analysis.bad_bet!.key}-opposite`,
+                        analysis.bad_bet!.oppositeLabel,
+                        analysis.bad_bet!.oppositeOdds ?? null,
+                        "bad_bet",
+                      ),
+                    )
+                  }
+                >
+                  Tail the opposite side
+                </Button>
+              ) : (
+                <p className="mt-3 text-xs font-semibold text-stop uppercase">
+                  Not recommended — pass on both sides
+                </p>
+              )}
+            </div>
+          </div>
+        </Section>
+      )}
+
+      <Section step={3} title="Fun bets" subtitle="Small-ticket swings: alternate lines and scoring.">
+        <div className="grid gap-3 md:grid-cols-3">
+          {analysis.fun_bets.map((bet) => (
+            <article key={bet.key} className="rounded-lg border border-hairline bg-card p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="eyebrow">{bet.market}</span>
+                <BadgePill badge={bet.badge} />
+              </div>
+              <p className="mt-2 font-display text-lg leading-tight font-semibold">{bet.label}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{bet.reason}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={() => onTail(tailTarget(bet.key, bet.label, bet.odds ?? null, "fun_bets"))}
+              >
+                Tail
+              </Button>
+            </article>
+          ))}
+        </div>
+      </Section>
+
+      <Section step={4} title="Player props" subtitle="Highest-edge props for this matchup.">
+        {analysis.player_props.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {analysis.player_props.map((prop) => (
+              <article key={prop.key} className="rounded-lg border border-hairline bg-card p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow">{prop.market}</span>
+                  <BadgePill badge={prop.badge} />
+                </div>
+                <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() =>
+                    onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))
+                  }
+                >
+                  Tail
+                </Button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
+            Player prop and touchdown-scorer lines aren't available for this game yet. Lock Lab only
+            posts props when real prices are in — nothing here is estimated.
+          </p>
+        )}
+      </Section>
+    </div>
+  );
+}
