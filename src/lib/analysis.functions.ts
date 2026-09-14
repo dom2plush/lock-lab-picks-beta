@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AnalysisRow, GameRow, MarketOffer } from "./lock-lab-types";
 import { hasLiveOdds } from "./lock-lab-types";
 import { runLockLabFormula } from "./analysis-engine.server";
+import { enforceAuditIntegrity } from "./odds-audit";
 
 const Input = z.object({ gameId: z.string().uuid() });
 
