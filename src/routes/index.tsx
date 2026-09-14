@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
-import { getOrCreateAnalysis } from "@/lib/analysis.functions";
+import { getOddsFeedStatus, getOrCreateAnalysis } from "@/lib/analysis.functions";
 import type { AnalysisRow, GameRow, Sport } from "@/lib/lock-lab-types";
 
 export const Route = createFileRoute("/")({
@@ -46,6 +46,12 @@ function AnalyzePage() {
   const [tailTarget, setTailTarget] = useState<TailTarget | null>(null);
 
   const analyze = useServerFn(getOrCreateAnalysis);
+  const feedStatus = useServerFn(getOddsFeedStatus);
+
+  const feedQuery = useQuery({
+    queryKey: ["odds-feed-status"],
+    queryFn: () => feedStatus({}),
+  });
 
   const gamesQuery = useQuery({
     queryKey: ["upcoming-games", sport],

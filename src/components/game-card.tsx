@@ -23,6 +23,7 @@ export function GameCard({
     ? teamShort(game.home_team, game.home_team_short)
     : teamShort(game.away_team, game.away_team_short);
   const favLine = spread ? Math.min(spread.home, spread.away) : null;
+  const live = hasLiveOdds(game.odds) && !game.is_demo;
 
   return (
     <button
