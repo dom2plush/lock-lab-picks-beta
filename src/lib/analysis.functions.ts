@@ -33,7 +33,13 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     const { hasProviderKey, refreshGameOdds } = await import("./ingest.server");
     const staleOdds =
       !game.odds_updated_at || Date.now() - new Date(game.odds_updated_at).getTime() > SNAPSHOT_TTL_MS;
-    if (hasProviderKey() && !game.is_demo && game.status !== "final" && staleOdds) {
+    const missingDerivatives = !game.props || game.props.length === 0;
+    if (
+      hasProviderKey() &&
+      !game.is_demo &&
+      game.status !== "final" &&
+      (staleOdds || missingDerivatives)
+    ) {
       const refreshed = await refreshGameOdds(game);
       if (refreshed) game = refreshed;
     }
