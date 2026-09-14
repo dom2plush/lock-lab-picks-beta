@@ -12,6 +12,7 @@ import type {
   FunBet,
   GameOdds,
   GameRow,
+  MarketOffer,
   PickBet,
   PropBet,
 } from "./lock-lab-types";
