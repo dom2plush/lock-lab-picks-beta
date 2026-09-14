@@ -61,9 +61,26 @@ export type GameRow = {
   odds: GameOdds;
   injuries: Injury[];
   is_demo: boolean;
+  odds_book?: string | null;
+  odds_book_key?: string | null;
+  odds_updated_at?: string | null;
+  props?: MarketOffer[];
+  props_updated_at?: string | null;
 };
 
-export type PickBet = {
+/** Exact price provenance stored with every pick Lock Lab makes. */
+export type PickSource = {
+  /** Numeric line taken (spread/total/prop point). Null for moneyline. */
+  point?: number | null;
+  /** American price actually used. */
+  price?: number | null;
+  book?: string | null;
+  bookKey?: string | null;
+  /** UTC timestamp of the odds snapshot this pick was priced from. */
+  capturedAt?: string | null;
+};
+
+export type PickBet = PickSource & {
   key: string;
   rank?: number;
   badge: Badge;
@@ -76,7 +93,7 @@ export type PickBet = {
   reason: string;
 };
 
-export type BadBet = {
+export type BadBet = PickSource & {
   key: string;
   badge: Badge;
   label: string;
@@ -87,7 +104,7 @@ export type BadBet = {
   oppositeReason: string;
 };
 
-export type FunBet = {
+export type FunBet = PickSource & {
   key: string;
   badge: Badge;
   label: string;
@@ -96,7 +113,7 @@ export type FunBet = {
   reason: string;
 };
 
-export type PropBet = {
+export type PropBet = PickSource & {
   key: string;
   badge: Badge;
   label: string;
@@ -112,6 +129,9 @@ export type AnalysisRow = {
   sport: Sport;
   generated_at: string;
   odds_snapshot: GameOdds;
+  odds_captured_at?: string | null;
+  odds_book?: string | null;
+  is_live_odds?: boolean;
   top_bets: PickBet[];
   bad_bet: BadBet | null;
   fun_bets: FunBet[];
