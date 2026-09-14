@@ -100,6 +100,11 @@ export type BadBet = PickSource & {
   reason: string;
   oppositeLabel: string;
   oppositeOdds?: string | null;
+  /** Price provenance for the opposite side, so it can be audited too. */
+  oppositePoint?: number | null;
+  oppositePrice?: number | null;
+  oppositeBook?: string | null;
+  oppositeCapturedAt?: string | null;
   oppositeRecommended: boolean;
   /** The opposite side is graded on its own merits and can be red. */
   oppositeBadge?: Badge;

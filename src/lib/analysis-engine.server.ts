@@ -616,6 +616,10 @@ export async function runLockLabFormula(
         reason: clean(handicap.badBet.reason, "The price does not match what this matchup projects."),
         oppositeLabel: opposite ? opposite.label : "No live price on the opposite side",
         oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
+        oppositePoint: opposite?.point ?? null,
+        oppositePrice: opposite?.price ?? null,
+        oppositeBook: opposite?.book ?? null,
+        oppositeCapturedAt: opposite?.capturedAt ?? null,
         oppositeRecommended: recommended,
         oppositeBadge,
         oppositeReason: clean(

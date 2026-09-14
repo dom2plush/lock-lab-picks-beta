@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AnalysisRow, GameRow, MarketOffer } from "./lock-lab-types";
 import { hasLiveOdds } from "./lock-lab-types";
 import { runLockLabFormula } from "./analysis-engine.server";
+import { enforceAuditIntegrity } from "./odds-audit";
 
 const Input = z.object({ gameId: z.string().uuid() });
 
@@ -68,6 +69,27 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     // The previously stored snapshot is what line movement is measured against.
     const finished = await runLockLabFormula(game, game.odds, extra, stored?.odds_snapshot ?? null);
 
+    // Hard audit gate: a pick is only published when its recorded book, line,
+    // price and capture time reconcile with the snapshot the UI will display.
+    const audited = enforceAuditIntegrity(
+      {
+        odds_snapshot: game.odds,
+        top_bets: finished.topBets,
+        bad_bet: finished.badBet,
+        fun_bets: finished.funBets,
+        player_props: finished.playerProps,
+      },
+      game.odds,
+    );
+    if (audited.dropped.length) {
+      console.warn("Lock Lab audit dropped unverifiable picks", game.id, audited.dropped);
+    }
+    const verdict =
+      finished.notes.verdict ??
+      (audited.output.top_bets.length
+        ? null
+        : "No pick on this board could be reconciled with the displayed odds snapshot, so Lock Lab is passing.");
+
     const insert = await supabaseAdmin
       .from("game_analyses")
       .upsert(
@@ -79,11 +101,11 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
           odds_book: game.odds.bookmaker ?? null,
           is_live_odds: hasLiveOdds(game.odds) && !game.is_demo,
           generated_at: new Date().toISOString(),
-          top_bets: finished.topBets,
-          bad_bet: finished.badBet,
-          fun_bets: finished.funBets,
-          player_props: finished.playerProps,
-          verdict: finished.notes.verdict,
+          top_bets: audited.output.top_bets,
+          bad_bet: audited.output.bad_bet,
+          fun_bets: audited.output.fun_bets,
+          player_props: audited.output.player_props,
+          verdict,
         },
         { onConflict: "game_id" },
       )
