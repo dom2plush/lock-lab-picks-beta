@@ -1,6 +1,7 @@
-import type { AnalysisRow, GameRow, Sport } from "./lock-lab-types";
+import type { AnalysisRow, GameRow, MarketOffer, Sport } from "./lock-lab-types";
 import { gradePick } from "./grading.server";
 import {
+  fetchEventMarkets,
   fetchInjuries,
   fetchScores,
   fetchUpcomingGames,
@@ -9,19 +10,68 @@ import {
 
 const SPORTS: Sport[] = ["NFL", "CFB"];
 
+export { hasProviderKey };
+
 export type SyncReport = {
   providerConnected: boolean;
   gamesUpserted: number;
   scoresUpdated: number;
+  demoGamesRetired: number;
   analysesGraded: number;
   tailsGraded: number;
   errors: string[];
 };
 
 /**
+ * Pull the live odds board for one game (plus its alternate/prop markets) and
+ * store it with the sportsbook and capture timestamp attached.
+ */
+export async function refreshGameOdds(game: GameRow): Promise<GameRow | null> {
+  if (!hasProviderKey() || game.is_demo) return null;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  try {
+    const board = await fetchUpcomingGames(game.sport);
+    const match = board.find((g) => g.provider_game_id === game.provider_game_id);
+    if (!match) return null;
+
+    let props: MarketOffer[] = [];
+    let propsUpdatedAt: string | null = null;
+    try {
+      const markets = await fetchEventMarkets(game.sport, game.provider_game_id);
+      props = [...markets.alternates, ...markets.props];
+      propsUpdatedAt = props.length ? markets.capturedAt : null;
+    } catch {
+      // Derivative markets are optional; the main board still stands.
+    }
+
+    const update = {
+      odds: match.odds,
+      odds_book: match.odds_book,
+      odds_book_key: match.odds_book_key,
+      odds_updated_at: match.odds_updated_at,
+      ...(props.length ? { props, props_updated_at: propsUpdatedAt } : {}),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from("games")
+      .update(update as never)
+      .eq("id", game.id)
+      .select("*")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as unknown as GameRow) ?? null;
+  } catch (error) {
+    console.error("[odds] single-game refresh failed", (error as Error).message);
+    return null;
+  }
+}
+
+/**
  * Full ingestion pass: schedules + odds, injuries, final scores, then grading.
- * With no provider key configured this becomes a grading-only pass so the seeded
- * demo schedule is left untouched.
+ * Once live games land for a sport, the seeded demo fixtures for that sport are
+ * retired so sample lines can never sit next to real ones.
  */
 export async function syncSportsData(): Promise<SyncReport> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -29,6 +79,7 @@ export async function syncSportsData(): Promise<SyncReport> {
     providerConnected: hasProviderKey(),
     gamesUpserted: 0,
     scoresUpdated: 0,
+    demoGamesRetired: 0,
     analysesGraded: 0,
     tailsGraded: 0,
     errors: [],
@@ -36,6 +87,7 @@ export async function syncSportsData(): Promise<SyncReport> {
 
   if (report.providerConnected) {
     for (const sport of SPORTS) {
+      let liveGames = 0;
       try {
         const [games, injuries] = await Promise.all([
           fetchUpcomingGames(sport),
@@ -52,12 +104,24 @@ export async function syncSportsData(): Promise<SyncReport> {
         if (rows.length) {
           const { error } = await supabaseAdmin
             .from("games")
-            .upsert(rows, { onConflict: "sport,provider_game_id" });
+            .upsert(rows as never, { onConflict: "sport,provider_game_id" });
           if (error) throw new Error(error.message);
           report.gamesUpserted += rows.length;
+          liveGames = rows.length;
         }
       } catch (error) {
         report.errors.push(`${sport} odds: ${(error as Error).message}`);
+      }
+
+      if (liveGames > 0) {
+        const { data: retired } = await supabaseAdmin
+          .from("games")
+          .delete()
+          .eq("sport", sport)
+          .eq("is_demo", true)
+          .neq("status", "final")
+          .select("id");
+        report.demoGamesRetired += retired?.length ?? 0;
       }
 
       try {
