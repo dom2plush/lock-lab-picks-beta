@@ -9,7 +9,10 @@
   - Final scores + grading pass; demo fixtures retired once live games land
 - Analysis: snapshot stored with the pick is the snapshot displayed; regenerates when odds move
 - UI: LIVE ODDS UNAVAILABLE banner (no feed) and per-game / per-section unavailable states
-- Lock Lab formula engine (unchanged) + AI-written reasoning
+- Analysis engine rebuilt: market-first quant read (vig removal, key numbers, spread vs moneyline
+  mispricing, hold, line movement) + handicap pass over QB, trenches, skill players, defence,
+  game script and injuries; picks only from the real posted board; passes with RED when no edge;
+  bad bet's opposite side graded independently. Formula changes stay manual — no self-learning.
 - Pages: Analyze, Historical Games, Record, Leaderboard, My Bets, Auth
 - Tail flow: straight or parlay, optional wager; only the Lock Lab leg is graded
 
