@@ -111,6 +111,19 @@ function AnalyzePage() {
         board, the worst bet and its flip, fun swings and props — with the exact line logged.
       </p>
 
+      {feedQuery.data && !feedQuery.data.providerConnected && (
+        <div className="mt-5 rounded-lg border border-stop/40 bg-stop/10 p-4">
+          <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+            Live odds unavailable
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            No sportsbook feed is connected yet, so the games below are sample fixtures. Add your
+            odds provider key and Lock Lab will switch to real spreads, moneylines, totals and props
+            automatically — nothing is ever estimated.
+          </p>
+        </div>
+      )}
+
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-lg border border-hairline bg-card p-1">
           {(["NFL", "CFB"] as const).map((option) => (
