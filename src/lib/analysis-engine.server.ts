@@ -35,10 +35,6 @@ function impliedProbability(american: number): number {
   return american < 0 ? -american / (-american + 100) : 100 / (american + 100);
 }
 
-function toAmerican(prob: number): number {
-  const p = Math.min(0.95, Math.max(0.05, prob));
-  return p >= 0.5 ? -Math.round((p / (1 - p)) * 100) : Math.round(((1 - p) / p) * 100);
-}
 
 function fmtOdds(price: number | undefined | null): string {
   if (price == null) return "";
