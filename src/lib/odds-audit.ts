@@ -17,7 +17,14 @@ export function formatAmerican(price: number | null | undefined): string | null 
   return price > 0 ? `+${price}` : String(price);
 }
 
-export type AuditSection = "Top bet" | "Bad bet" | "Opposite side" | "Fun bet" | "Player prop";
+export type AuditSection =
+  | "Top bet"
+  | "Standard line"
+  | "Bad bet"
+  | "Opposite side"
+  | "Better alternative"
+  | "Fun bet"
+  | "Player prop";
 
 export type AuditEntry = {
   section: AuditSection;
@@ -53,12 +60,20 @@ type SourceLike = {
   capturedAt?: string | null;
 };
 
+/**
+ * Derivative markets (alternate lines, player props) are pulled per event a
+ * moment after the main board, so their capture stamps are seconds or minutes
+ * apart from the game snapshot by design. Same refresh window counts as the
+ * same snapshot; anything older is a stale price and is rejected.
+ */
+const SNAPSHOT_WINDOW_MS = 15 * 60 * 1000;
+
 function sameTime(a: string | null | undefined, b: string | null | undefined) {
   if (!a || !b) return false;
   const ta = Date.parse(a);
   const tb = Date.parse(b);
   if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
-  return ta === tb;
+  return Math.abs(ta - tb) <= SNAPSHOT_WINDOW_MS;
 }
 
 function sameBook(a: string | null | undefined, b: string | null | undefined) {
@@ -94,7 +109,7 @@ function checkEntry(
     );
   }
   if (snapshot.capturedAt && source.capturedAt && !sameTime(source.capturedAt, snapshot.capturedAt)) {
-    problems.push("This pick was priced from a different snapshot than the one displayed.");
+    problems.push("This pick was priced from an older snapshot than the one displayed.");
   }
 
   return {
@@ -138,6 +153,27 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
         snapshot,
       ),
     );
+    // The standard line quoted alongside an alternate pick is a real price and
+    // is audited exactly like the pick itself.
+    if (bet.standardLabel && (bet.standardPrice != null || bet.standardBook)) {
+      entries.push(
+        checkEntry(
+          "Standard line",
+          `${bet.key}-standard`,
+          bet.standardLabel,
+          bet.market,
+          bet.standardPoint != null ? String(bet.standardPoint) : null,
+          formatAmerican(bet.standardPrice ?? null),
+          {
+            point: bet.standardPoint ?? null,
+            price: bet.standardPrice ?? null,
+            book: bet.standardBook ?? null,
+            capturedAt: bet.standardCapturedAt ?? null,
+          },
+          snapshot,
+        ),
+      );
+    }
   }
 
   const bad = analysis.bad_bet;
@@ -159,6 +195,25 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
             price: bad.oppositePrice ?? null,
             book: bad.oppositeBook ?? null,
             capturedAt: bad.oppositeCapturedAt ?? null,
+          },
+          snapshot,
+        ),
+      );
+    }
+    if (bad.alternateLabel && (bad.alternatePrice != null || bad.alternateBook)) {
+      entries.push(
+        checkEntry(
+          "Better alternative",
+          `${bad.key}-alternate`,
+          bad.alternateLabel,
+          "Alternate line",
+          bad.alternatePoint != null ? String(bad.alternatePoint) : null,
+          bad.alternateOdds ?? null,
+          {
+            point: bad.alternatePoint ?? null,
+            price: bad.alternatePrice ?? null,
+            book: bad.alternateBook ?? null,
+            capturedAt: bad.alternateCapturedAt ?? null,
           },
           snapshot,
         ),
@@ -200,34 +255,78 @@ export function enforceAuditIntegrity<T extends AuditInput>(
 ): { output: T; report: AuditReport; dropped: string[] } {
   const withSnapshot = { ...output, odds_snapshot: snapshot };
   const report = buildAuditReport(withSnapshot);
+  const secondary: AuditSection[] = ["Opposite side", "Better alternative", "Standard line"];
   const failed = new Set(
-    report.entries.filter((e) => e.problems.length > 0 && e.section !== "Opposite side").map((e) => e.pickKey),
+    report.entries
+      .filter((e) => e.problems.length > 0 && !secondary.includes(e.section))
+      .map((e) => e.pickKey),
+  );
+  const failedStandard = new Set(
+    report.entries
+      .filter((e) => e.section === "Standard line" && e.problems.length > 0)
+      .map((e) => e.pickKey.replace(/-standard$/, "")),
   );
   const oppositeFailed = report.entries.some(
     (e) => e.section === "Opposite side" && e.problems.length > 0,
   );
+  const alternateFailed = report.entries.some(
+    (e) => e.section === "Better alternative" && e.problems.length > 0,
+  );
 
-  if (!failed.size && !oppositeFailed) return { output, report, dropped: [] };
+  if (!failed.size && !oppositeFailed && !alternateFailed && !failedStandard.size) {
+    return { output, report, dropped: [] };
+  }
 
   const dropped = report.entries.filter((e) => e.problems.length > 0).map((e) => e.label);
 
+  const stripStandard = (bet: PickBet): PickBet => {
+    if (!failedStandard.has(bet.key)) return bet;
+    const {
+      standardLabel: _l,
+      standardPoint: _p,
+      standardPrice: _pr,
+      standardBook: _b,
+      standardCapturedAt: _c,
+      standardComparison: _cmp,
+      ...rest
+    } = bet;
+    return rest;
+  };
+
+  const stripAlternate = (bet: BadBet | null): BadBet | null => {
+    if (!bet || !alternateFailed) return bet;
+    const {
+      alternateLabel: _l,
+      alternateOdds: _o,
+      alternatePoint: _p,
+      alternatePrice: _pr,
+      alternateBook: _b,
+      alternateCapturedAt: _c,
+      alternateBadge: _bd,
+      alternateReason: _r,
+      alternateRecommended: _rec,
+      ...rest
+    } = bet;
+    return rest;
+  };
+
   const cleaned: T = {
     ...output,
-    top_bets: output.top_bets.filter((b) => !failed.has(b.key)),
+    top_bets: output.top_bets.filter((b) => !failed.has(b.key)).map(stripStandard),
     fun_bets: output.fun_bets.filter((b) => !failed.has(b.key)),
     player_props: output.player_props.filter((b) => !failed.has(b.key)),
     bad_bet:
       output.bad_bet && failed.has(output.bad_bet.key)
         ? null
         : output.bad_bet && oppositeFailed
-          ? {
+          ? stripAlternate({
               ...output.bad_bet,
               oppositeRecommended: false,
               oppositeBadge: "red" as const,
               oppositeReason:
                 "The opposite side could not be reconciled with the displayed odds snapshot, so Lock Lab is not posting it.",
-            }
-          : output.bad_bet,
+            })
+          : stripAlternate(output.bad_bet),
   };
 
   return {
