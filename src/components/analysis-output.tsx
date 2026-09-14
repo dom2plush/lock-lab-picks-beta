@@ -2,7 +2,7 @@ import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
-import { formatKickoff } from "@/lib/lock-lab-types";
+import { formatCapturedAt, formatKickoff, hasLiveOdds } from "@/lib/lock-lab-types";
 
 function Section({
   step,
@@ -42,6 +42,8 @@ export function AnalysisOutput({
   analysis: AnalysisRow;
   onTail: (target: TailTarget) => void;
 }) {
+  const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
+
   const tailTarget = (
     pickKey: string,
     pickLabel: string,
