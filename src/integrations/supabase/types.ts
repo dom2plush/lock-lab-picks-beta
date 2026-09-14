@@ -78,6 +78,7 @@ export type Database = {
           sport: string
           top_bets: Json
           top_pick_result: string
+          verdict: string | null
         }
         Insert: {
           bad_bet?: Json | null
@@ -95,6 +96,7 @@ export type Database = {
           sport: string
           top_bets?: Json
           top_pick_result?: string
+          verdict?: string | null
         }
         Update: {
           bad_bet?: Json | null
@@ -112,6 +114,7 @@ export type Database = {
           sport?: string
           top_bets?: Json
           top_pick_result?: string
+          verdict?: string | null
         }
         Relationships: [
           {

@@ -101,6 +101,8 @@ export type BadBet = PickSource & {
   oppositeLabel: string;
   oppositeOdds?: string | null;
   oppositeRecommended: boolean;
+  /** The opposite side is graded on its own merits and can be red. */
+  oppositeBadge?: Badge;
   oppositeReason: string;
 };
 
@@ -132,6 +134,8 @@ export type AnalysisRow = {
   odds_captured_at?: string | null;
   odds_book?: string | null;
   is_live_odds?: boolean;
+  /** Set when Lock Lab passed on the board instead of posting a top bet. */
+  verdict?: string | null;
   top_bets: PickBet[];
   bad_bet: BadBet | null;
   fun_bets: FunBet[];
