@@ -1,12 +1,15 @@
 /**
  * Live sports data + odds ingestion.
  *
- * Provider: The Odds API (https://the-odds-api.com) or any provider that mirrors
- * its response shape. Plug a key in as the ODDS_API_KEY secret and the pipeline
- * takes over automatically; until then the seeded demo schedule stays in place
- * and nothing is overwritten.
+ * Provider: The Odds API (https://the-odds-api.com). The key lives only in the
+ * ODDS_API_KEY server secret and is never sent to the browser — every call in
+ * this module runs inside server functions / server routes.
+ *
+ * Nothing in here invents a price. Every number returned comes straight from
+ * the provider payload, tagged with the sportsbook it came from and the UTC
+ * timestamp at which it was captured.
  */
-import type { GameOdds, Injury, Sport } from "./lock-lab-types";
+import type { GameOdds, Injury, MarketOffer, Sport } from "./lock-lab-types";
 
 const PROVIDER_BASE = "https://api.the-odds-api.com/v4";
 
@@ -19,6 +22,22 @@ const ESPN_SCOREBOARD: Record<Sport, string> = {
   NFL: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries",
   CFB: "https://site.api.espn.com/apis/site/v2/sports/football/college-football/injuries",
 };
+
+/** Preferred books, in order. First one present in the payload wins. */
+const BOOK_PRIORITY = ["draftkings", "fanduel", "betmgm", "caesars"];
+
+/** Alternate / derivative markets used by the fun-bet section. */
+const ALT_MARKETS = ["alternate_spreads", "alternate_totals", "team_totals"];
+
+/** Player prop markets (football). Requires a props-enabled provider plan. */
+const PROP_MARKETS = [
+  "player_pass_yds",
+  "player_pass_tds",
+  "player_rush_yds",
+  "player_reception_yds",
+  "player_receptions",
+  "player_anytime_td",
+];
 
 export type NormalizedGame = {
   provider_game_id: string;
@@ -34,6 +53,8 @@ export type NormalizedGame = {
   odds: GameOdds;
   injuries: Injury[];
   is_demo: boolean;
+  odds_book: string | null;
+  odds_book_key: string | null;
   odds_updated_at: string;
 };
 
@@ -45,9 +66,14 @@ export function hasProviderKey(): boolean {
   return Boolean(getProviderKey());
 }
 
-type ProviderOutcome = { name: string; price: number; point?: number };
-type ProviderMarket = { key: string; outcomes: ProviderOutcome[] };
-type ProviderBookmaker = { key: string; title: string; markets: ProviderMarket[] };
+type ProviderOutcome = { name: string; price: number; point?: number; description?: string };
+type ProviderMarket = { key: string; last_update?: string; outcomes: ProviderOutcome[] };
+type ProviderBookmaker = {
+  key: string;
+  title: string;
+  last_update?: string;
+  markets: ProviderMarket[];
+};
 type ProviderEvent = {
   id: string;
   commence_time: string;
@@ -63,13 +89,23 @@ function shortName(team: string) {
   return (parts[parts.length - 1] ?? team).slice(0, 5).toUpperCase();
 }
 
-function normalizeOdds(event: ProviderEvent): GameOdds {
-  const book =
-    event.bookmakers?.find((b) => ["draftkings", "fanduel"].includes(b.key)) ??
-    event.bookmakers?.[0];
-  if (!book) return {};
+function pickBook(event: ProviderEvent): ProviderBookmaker | undefined {
+  for (const key of BOOK_PRIORITY) {
+    const match = event.bookmakers?.find((b) => b.key === key);
+    if (match) return match;
+  }
+  return event.bookmakers?.[0];
+}
 
-  const odds: GameOdds = { bookmaker: book.title };
+function normalizeOdds(event: ProviderEvent, capturedAt: string): GameOdds {
+  const book = pickBook(event);
+  if (!book) return { capturedAt };
+
+  const odds: GameOdds = {
+    bookmaker: book.title,
+    bookmakerKey: book.key,
+    capturedAt: book.last_update ?? capturedAt,
+  };
 
   const spreads = book.markets.find((m) => m.key === "spreads");
   if (spreads) {
@@ -120,6 +156,7 @@ async function providerFetch<T>(path: string, params: Record<string, string>): P
   const res = await fetch(url.toString());
   if (!res.ok) {
     const body = await res.text();
+    // Never leak the key through an error string.
     throw new Error(`Odds provider ${res.status}: ${body.slice(0, 300)}`);
   }
   return (await res.json()) as T;
@@ -133,22 +170,82 @@ export async function fetchUpcomingGames(sport: Sport): Promise<NormalizedGame[]
   });
 
   const now = new Date().toISOString();
-  return events.map((event) => ({
-    provider_game_id: event.id,
-    sport,
-    home_team: event.home_team,
-    away_team: event.away_team,
-    home_team_short: shortName(event.home_team),
-    away_team_short: shortName(event.away_team),
-    commence_time: event.commence_time,
-    status: new Date(event.commence_time) <= new Date() ? "live" : "scheduled",
-    home_score: null,
-    away_score: null,
-    odds: normalizeOdds(event),
-    injuries: [],
-    is_demo: false,
-    odds_updated_at: now,
-  }));
+  return events.map((event) => {
+    const odds = normalizeOdds(event, now);
+    return {
+      provider_game_id: event.id,
+      sport,
+      home_team: event.home_team,
+      away_team: event.away_team,
+      home_team_short: shortName(event.home_team),
+      away_team_short: shortName(event.away_team),
+      commence_time: event.commence_time,
+      status: (new Date(event.commence_time) <= new Date() ? "live" : "scheduled") as
+        | "live"
+        | "scheduled",
+      home_score: null,
+      away_score: null,
+      odds,
+      injuries: [],
+      is_demo: false,
+      odds_book: odds.bookmaker ?? null,
+      odds_book_key: odds.bookmakerKey ?? null,
+      odds_updated_at: odds.capturedAt ?? now,
+    };
+  });
+}
+
+/**
+ * Per-event alternate lines and player props. These live on a separate provider
+ * endpoint and are only available on props-enabled plans; when the provider
+ * returns nothing we return empty arrays and the UI states that the market is
+ * unavailable rather than showing an estimate.
+ */
+export async function fetchEventMarkets(
+  sport: Sport,
+  providerGameId: string,
+): Promise<{ alternates: MarketOffer[]; props: MarketOffer[]; capturedAt: string }> {
+  const capturedAt = new Date().toISOString();
+  const result = { alternates: [] as MarketOffer[], props: [] as MarketOffer[], capturedAt };
+
+  const load = async (markets: string[]) => {
+    try {
+      return await providerFetch<ProviderEvent>(
+        `/sports/${SPORT_KEYS[sport]}/events/${providerGameId}/odds`,
+        { regions: "us", oddsFormat: "american", markets: markets.join(",") },
+      );
+    } catch (error) {
+      console.warn(`[odds] event markets unavailable (${markets[0]}):`, (error as Error).message);
+      return null;
+    }
+  };
+
+  const collect = (event: ProviderEvent | null): MarketOffer[] => {
+    if (!event?.bookmakers?.length) return [];
+    const book = pickBook(event);
+    if (!book) return [];
+    const offers: MarketOffer[] = [];
+    for (const market of book.markets ?? []) {
+      for (const outcome of market.outcomes ?? []) {
+        offers.push({
+          market: market.key,
+          selection: outcome.name,
+          ...(outcome.description ? { player: outcome.description } : {}),
+          point: outcome.point ?? null,
+          price: outcome.price,
+          book: book.title,
+          bookKey: book.key,
+          capturedAt: market.last_update ?? book.last_update ?? capturedAt,
+        });
+      }
+    }
+    return offers;
+  };
+
+  const [alt, props] = await Promise.all([load(ALT_MARKETS), load(PROP_MARKETS)]);
+  result.alternates = collect(alt);
+  result.props = collect(props);
+  return result;
 }
 
 export type NormalizedScore = {
