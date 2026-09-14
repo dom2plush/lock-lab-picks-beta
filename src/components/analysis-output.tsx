@@ -65,8 +65,18 @@ export function AnalysisOutput({
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Kickoff {formatKickoff(game.commence_time)}
-          {analysis.odds_snapshot.bookmaker ? ` · lines from ${analysis.odds_snapshot.bookmaker}` : ""}
         </p>
+        {live ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Lines from {analysis.odds_snapshot.bookmaker} · captured{" "}
+            {formatCapturedAt(analysis.odds_captured_at ?? analysis.odds_snapshot.capturedAt)} ·
+            every pick below is priced from this exact snapshot
+          </p>
+        ) : (
+          <p className="mt-2 rounded-md border border-stop/40 bg-stop/10 px-3 py-2 text-xs font-semibold tracking-wide text-stop uppercase">
+            Live odds unavailable — no sportsbook prices for this game
+          </p>
+        )}
         {game.injuries.length > 0 && (
           <ul className="mt-3 flex flex-wrap gap-2">
             {game.injuries.slice(0, 6).map((injury, index) => (
