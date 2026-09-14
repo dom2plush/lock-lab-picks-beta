@@ -59,14 +59,61 @@ export type EngineOutput = {
   badBet: BadBet | null;
   funBets: FunBet[];
   playerProps: PropBet[];
-  notes: { propsAvailable: boolean };
+  notes: { propsAvailable: boolean; altMarketsAvailable: boolean };
 };
 
-export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
+/** Real provider prices for derivative markets. Empty = market unavailable. */
+export type ExtraOffers = { alternates: MarketOffer[]; props: MarketOffer[] };
+
+const PROP_MARKET_LABEL: Record<string, string> = {
+  player_pass_yds: "Passing yards",
+  player_pass_tds: "Passing TDs",
+  player_rush_yds: "Rushing yards",
+  player_reception_yds: "Receiving yards",
+  player_receptions: "Receptions",
+  player_anytime_td: "Anytime TD",
+};
+
+/** Nearest real offer to a target line — never interpolates a price. */
+function closestOffer(
+  offers: MarketOffer[],
+  market: string,
+  selection: string,
+  target: number,
+): MarketOffer | undefined {
+  const pool = offers.filter(
+    (o) =>
+      o.market === market &&
+      o.selection.toLowerCase() === selection.toLowerCase() &&
+      o.point != null,
+  );
+  if (!pool.length) return undefined;
+  return pool.reduce((best, offer) =>
+    Math.abs((offer.point ?? 0) - target) < Math.abs((best.point ?? 0) - target) ? offer : best,
+  );
+}
+
+function source(offer: MarketOffer) {
+  return {
+    point: offer.point,
+    price: offer.price,
+    book: offer.book,
+    bookKey: offer.bookKey ?? null,
+    capturedAt: offer.capturedAt,
+  };
+}
+
+export function runLockLabFormula(
+  game: GameRow,
+  odds: GameOdds,
+  extra: ExtraOffers = { alternates: [], props: [] },
+): EngineOutput {
   const seed = `${game.id}:${odds.spread?.home ?? 0}:${odds.total?.points ?? 0}`;
   const homeShort = game.home_team_short ?? game.home_team;
   const awayShort = game.away_team_short ?? game.away_team;
   const book = odds.bookmaker ?? "consensus";
+  const capturedAt = odds.capturedAt ?? null;
+  const bookKey = odds.bookmakerKey ?? null;
 
   const spread = odds.spread;
   const total = odds.total;
