@@ -44,6 +44,9 @@ export function AnalysisOutput({
   onTail: (target: TailTarget) => void;
 }) {
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
+  // Recomputed from the very objects rendered below, so the check covers what
+  // the user is actually looking at rather than what the server intended.
+  const audit = buildAuditReport(analysis);
 
   const tailTarget = (
     pickKey: string,
