@@ -300,8 +300,14 @@ export function createAltEvaluator(
     const keys = keysBetween(standardPoint, point, sport);
     const direction = point > standardPoint ? 1 : -1;
     // Half the key-number mass on top of the smooth model: the normal curve
-    // already contains part of it, but not the push lump itself.
-    const bump = keys.reduce((sum, k) => sum + (KEY_NUMBERS[sport][k] ?? 0), 0) * 0.5;
+    // already contains part of it, but not the push lump itself. Only a short
+    // buy genuinely harvests it, and it is capped — a long move across five
+    // numbers does not stack five lumps of extra win probability.
+    const distance = Math.abs(point - standardPoint);
+    const bump =
+      distance <= 3
+        ? Math.min(keys.reduce((sum, k) => sum + (KEY_NUMBERS[sport][k] ?? 0), 0) * 0.5, 0.06)
+        : 0;
     const winProb = clampProb(raw + direction * bump);
     const standardWinProb = clampProb(base);
 
@@ -348,7 +354,12 @@ export function createAltEvaluator(
   }): AltEvaluation {
     const probGain = input.winProb - input.standardWinProb;
     const priceCost = impliedProbability(input.price) - impliedProbability(input.standardPrice);
-    const valueDelta = probGain - priceCost;
+    // The further an alternate sits from the number the market actually made,
+    // the less the model deserves to be trusted against the book's own pricing.
+    // Without this haircut a deep alternate favourite always "wins" on paper.
+    const distance = Math.abs(input.point - input.standardPoint);
+    const haircut = 0.02 * Math.max(0, distance - 3);
+    const valueDelta = probGain - priceCost - haircut;
     // A whole point of value, not a rounding artefact, before Lock Lab moves
     // off the standard number — and the alternate must stand on its own price
     // too, so a long line is never recommended purely by comparison.
