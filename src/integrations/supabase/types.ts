@@ -70,6 +70,9 @@ export type Database = {
           generated_at: string
           graded_at: string | null
           id: string
+          is_live_odds: boolean
+          odds_book: string | null
+          odds_captured_at: string | null
           odds_snapshot: Json
           player_props: Json
           sport: string
@@ -84,6 +87,9 @@ export type Database = {
           generated_at?: string
           graded_at?: string | null
           id?: string
+          is_live_odds?: boolean
+          odds_book?: string | null
+          odds_captured_at?: string | null
           odds_snapshot?: Json
           player_props?: Json
           sport: string
@@ -98,6 +104,9 @@ export type Database = {
           generated_at?: string
           graded_at?: string | null
           id?: string
+          is_live_odds?: boolean
+          odds_book?: string | null
+          odds_captured_at?: string | null
           odds_snapshot?: Json
           player_props?: Json
           sport?: string
@@ -128,7 +137,11 @@ export type Database = {
           injuries: Json
           is_demo: boolean
           odds: Json
+          odds_book: string | null
+          odds_book_key: string | null
           odds_updated_at: string | null
+          props: Json
+          props_updated_at: string | null
           provider_game_id: string
           sport: string
           status: string
@@ -147,7 +160,11 @@ export type Database = {
           injuries?: Json
           is_demo?: boolean
           odds?: Json
+          odds_book?: string | null
+          odds_book_key?: string | null
           odds_updated_at?: string | null
+          props?: Json
+          props_updated_at?: string | null
           provider_game_id: string
           sport: string
           status?: string
@@ -166,7 +183,11 @@ export type Database = {
           injuries?: Json
           is_demo?: boolean
           odds?: Json
+          odds_book?: string | null
+          odds_book_key?: string | null
           odds_updated_at?: string | null
+          props?: Json
+          props_updated_at?: string | null
           provider_game_id?: string
           sport?: string
           status?: string

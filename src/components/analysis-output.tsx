@@ -2,7 +2,7 @@ import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
-import { formatKickoff } from "@/lib/lock-lab-types";
+import { formatCapturedAt, formatKickoff, hasLiveOdds } from "@/lib/lock-lab-types";
 
 function Section({
   step,
@@ -42,6 +42,8 @@ export function AnalysisOutput({
   analysis: AnalysisRow;
   onTail: (target: TailTarget) => void;
 }) {
+  const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
+
   const tailTarget = (
     pickKey: string,
     pickLabel: string,
@@ -65,8 +67,18 @@ export function AnalysisOutput({
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Kickoff {formatKickoff(game.commence_time)}
-          {analysis.odds_snapshot.bookmaker ? ` · lines from ${analysis.odds_snapshot.bookmaker}` : ""}
         </p>
+        {live ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Lines from {analysis.odds_snapshot.bookmaker} · captured{" "}
+            {formatCapturedAt(analysis.odds_captured_at ?? analysis.odds_snapshot.capturedAt)} ·
+            every pick below is priced from this exact snapshot
+          </p>
+        ) : (
+          <p className="mt-2 rounded-md border border-stop/40 bg-stop/10 px-3 py-2 text-xs font-semibold tracking-wide text-stop uppercase">
+            Live odds unavailable — no sportsbook prices for this game
+          </p>
+        )}
         {game.injuries.length > 0 && (
           <ul className="mt-3 flex flex-wrap gap-2">
             {game.injuries.slice(0, 6).map((injury, index) => (
@@ -93,8 +105,10 @@ export function AnalysisOutput({
               <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
-                  Logged at {pick.odds ?? "—"}
+                  Logged {pick.line ? `${pick.line} ` : ""}
+                  {pick.odds ?? "—"}
                   {pick.book ? ` · ${pick.book}` : ""}
+                  {pick.capturedAt ? ` · ${formatCapturedAt(pick.capturedAt)}` : ""}
                 </span>
                 <Button
                   size="sm"
@@ -160,6 +174,12 @@ export function AnalysisOutput({
       )}
 
       <Section step={3} title="Fun bets" subtitle="Small-ticket swings: alternate lines and scoring.">
+        {analysis.fun_bets.length === 0 && (
+          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
+            Live odds unavailable for alternate lines and team totals on this game. Lock Lab only
+            posts a price a sportsbook is actually offering.
+          </p>
+        )}
         <div className="grid gap-3 md:grid-cols-3">
           {analysis.fun_bets.map((bet) => (
             <article key={bet.key} className="rounded-lg border border-hairline bg-card p-4">

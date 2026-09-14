@@ -12,6 +12,7 @@ import type {
   FunBet,
   GameOdds,
   GameRow,
+  MarketOffer,
   PickBet,
   PropBet,
 } from "./lock-lab-types";
@@ -34,10 +35,6 @@ function impliedProbability(american: number): number {
   return american < 0 ? -american / (-american + 100) : 100 / (american + 100);
 }
 
-function toAmerican(prob: number): number {
-  const p = Math.min(0.95, Math.max(0.05, prob));
-  return p >= 0.5 ? -Math.round((p / (1 - p)) * 100) : Math.round(((1 - p) / p) * 100);
-}
 
 function fmtOdds(price: number | undefined | null): string {
   if (price == null) return "";
@@ -59,14 +56,61 @@ export type EngineOutput = {
   badBet: BadBet | null;
   funBets: FunBet[];
   playerProps: PropBet[];
-  notes: { propsAvailable: boolean };
+  notes: { propsAvailable: boolean; altMarketsAvailable: boolean };
 };
 
-export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
+/** Real provider prices for derivative markets. Empty = market unavailable. */
+export type ExtraOffers = { alternates: MarketOffer[]; props: MarketOffer[] };
+
+const PROP_MARKET_LABEL: Record<string, string> = {
+  player_pass_yds: "Passing yards",
+  player_pass_tds: "Passing TDs",
+  player_rush_yds: "Rushing yards",
+  player_reception_yds: "Receiving yards",
+  player_receptions: "Receptions",
+  player_anytime_td: "Anytime TD",
+};
+
+/** Nearest real offer to a target line — never interpolates a price. */
+function closestOffer(
+  offers: MarketOffer[],
+  market: string,
+  selection: string,
+  target: number,
+): MarketOffer | undefined {
+  const pool = offers.filter(
+    (o) =>
+      o.market === market &&
+      o.selection.toLowerCase() === selection.toLowerCase() &&
+      o.point != null,
+  );
+  if (!pool.length) return undefined;
+  return pool.reduce((best, offer) =>
+    Math.abs((offer.point ?? 0) - target) < Math.abs((best.point ?? 0) - target) ? offer : best,
+  );
+}
+
+function source(offer: MarketOffer) {
+  return {
+    point: offer.point,
+    price: offer.price,
+    book: offer.book,
+    bookKey: offer.bookKey ?? null,
+    capturedAt: offer.capturedAt,
+  };
+}
+
+export function runLockLabFormula(
+  game: GameRow,
+  odds: GameOdds,
+  extra: ExtraOffers = { alternates: [], props: [] },
+): EngineOutput {
   const seed = `${game.id}:${odds.spread?.home ?? 0}:${odds.total?.points ?? 0}`;
   const homeShort = game.home_team_short ?? game.home_team;
   const awayShort = game.away_team_short ?? game.away_team;
   const book = odds.bookmaker ?? "consensus";
+  const capturedAt = odds.capturedAt ?? null;
+  const bookKey = odds.bookmakerKey ?? null;
 
   const spread = odds.spread;
   const total = odds.total;
@@ -100,6 +144,10 @@ export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
       line: fmtLine(line),
       odds: fmtOdds(price),
       book,
+      point: line,
+      price,
+      bookKey,
+      capturedAt,
       reason: `${teamTag} projects ahead of this number in our margin model, and the price at ${book} has not caught up.`,
     });
   }
@@ -107,18 +155,21 @@ export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
   if (total) {
     const leanOver = rand(`${seed}:total`) > 0.5;
     const totalEdge = 1 + rand(`${seed}:totaledge`) * 2.5;
+    const totalPrice = leanOver ? total.overPrice : total.underPrice;
     topBets.push({
       key: "top2",
       rank: 2,
       badge: badgeFor(totalEdge),
-      label: `${leanOver ? "Over" : "Under"} ${total.points} (${fmtOdds(
-        leanOver ? total.overPrice : total.underPrice,
-      )})`,
+      label: `${leanOver ? "Over" : "Under"} ${total.points} (${fmtOdds(totalPrice)})`,
       market: "Total",
       selection: leanOver ? "Over" : "Under",
       line: String(total.points),
-      odds: fmtOdds(leanOver ? total.overPrice : total.underPrice),
+      odds: fmtOdds(totalPrice),
       book,
+      point: total.points,
+      price: totalPrice,
+      bookKey,
+      capturedAt,
       reason: leanOver
         ? "Both offences push tempo and neither secondary has been able to force stalled drives."
         : "Pace and early-down run rate both point below the posted number.",
@@ -127,16 +178,21 @@ export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
 
   if (topBets.length === 1 && ml) {
     const favHome = ml.home < ml.away;
+    const mlPrice = favHome ? ml.home : ml.away;
     topBets.push({
       key: "top2",
       rank: 2,
       badge: "yellow",
-      label: `${favHome ? homeShort : awayShort} ML (${fmtOdds(favHome ? ml.home : ml.away)})`,
+      label: `${favHome ? homeShort : awayShort} ML (${fmtOdds(mlPrice)})`,
       market: "Moneyline",
       selection: favHome ? game.home_team : game.away_team,
       line: null,
-      odds: fmtOdds(favHome ? ml.home : ml.away),
+      odds: fmtOdds(mlPrice),
       book,
+      point: null,
+      price: mlPrice,
+      bookKey,
+      capturedAt,
       reason: "Straight-up price is the cleanest way to back the stronger side here.",
     });
   }
@@ -153,18 +209,25 @@ export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
   let badBet: BadBet | null = null;
   if (ml) {
     const dogHome = ml.home > ml.away;
-    const badLabel = `${dogHome ? homeShort : awayShort} ML (${fmtOdds(dogHome ? ml.home : ml.away)})`;
-    const oppositeLabel = `${dogHome ? awayShort : homeShort} ML (${fmtOdds(dogHome ? ml.away : ml.home)})`;
+    const badPrice = dogHome ? ml.home : ml.away;
+    const oppositePrice = dogHome ? ml.away : ml.home;
+    const badLabel = `${dogHome ? homeShort : awayShort} ML (${fmtOdds(badPrice)})`;
+    const oppositeLabel = `${dogHome ? awayShort : homeShort} ML (${fmtOdds(oppositePrice)})`;
     const oppositeEdge = spreadEdge + rand(`${seed}:opp`) * 1.5;
     const recommend = oppositeEdge >= 2.5;
     badBet = {
       key: "bad1",
       badge: "red",
       label: badLabel,
+      point: null,
+      price: badPrice,
+      book,
+      bookKey,
+      capturedAt,
       reason:
         "The market is charging for name value here — the underlying numbers do not support the price.",
       oppositeLabel,
-      oppositeOdds: fmtOdds(dogHome ? ml.away : ml.home),
+      oppositeOdds: fmtOdds(oppositePrice),
       oppositeRecommended: recommend,
       oppositeReason: recommend
         ? "Flipping it does hold up: the same model gap that kills the first side pays on this one."
@@ -172,62 +235,94 @@ export function runLockLabFormula(game: GameRow, odds: GameOdds): EngineOutput {
     };
   }
 
-  // ---- fun bets, derived from the same board ----
+  // ---- fun bets: only posted alternate/derivative prices, never estimates ----
   const funBets: FunBet[] = [];
   if (spread) {
-    const favLine = Math.min(spread.home, spread.away);
-    const altLine = favLine - 3.5;
-    const favTag = spread.home < spread.away ? homeShort : awayShort;
-    funBets.push({
-      key: "fun-alt-spread",
-      badge: "yellow",
-      label: `${favTag} ${fmtLine(altLine)} (alt spread, ${fmtOdds(
-        toAmerican(impliedProbability(-130) - 0.13),
-      )})`,
-      market: "Alternate spread",
-      odds: fmtOdds(toAmerican(impliedProbability(-130) - 0.13)),
-      reason: "Worth a small ticket if you think the favourite pulls away in the second half.",
-    });
+    const favHome = spread.home < spread.away;
+    const favTeam = favHome ? game.home_team : game.away_team;
+    const favTag = favHome ? homeShort : awayShort;
+    const target = Math.min(spread.home, spread.away) - 3.5;
+    const offer = closestOffer(extra.alternates, "alternate_spreads", favTeam, target);
+    if (offer) {
+      funBets.push({
+        key: "fun-alt-spread",
+        badge: "yellow",
+        label: `${favTag} ${fmtLine(offer.point ?? 0)} (alt spread, ${fmtOdds(offer.price)})`,
+        market: "Alternate spread",
+        odds: fmtOdds(offer.price),
+        ...source(offer),
+        reason: "Worth a small ticket if you think the favourite pulls away in the second half.",
+      });
+    }
   }
   if (total) {
-    funBets.push({
-      key: "fun-alt-total",
-      badge: "yellow",
-      label: `Over ${total.points + 6.5} (alt total, ${fmtOdds(
-        toAmerican(impliedProbability(-110) - 0.16),
-      )})`,
-      market: "Alternate total",
-      odds: fmtOdds(toAmerican(impliedProbability(-110) - 0.16)),
-      reason: "A shootout ticket that pays if either defence breaks early.",
-    });
-    const teamTotal = Math.round(((total.points + (spread ? -spread.home : 0)) / 2) * 2) / 2;
-    funBets.push({
-      key: "fun-team-total",
-      badge: "green",
-      label: `${homeShort} team total Over ${teamTotal} (${fmtOdds(-115)})`,
-      market: "Team total",
-      odds: fmtOdds(-115),
-      reason: "The cleanest way to back the side of the game we actually like.",
+    const altTotal = closestOffer(extra.alternates, "alternate_totals", "Over", total.points + 6.5);
+    if (altTotal) {
+      funBets.push({
+        key: "fun-alt-total",
+        badge: "yellow",
+        label: `Over ${altTotal.point} (alt total, ${fmtOdds(altTotal.price)})`,
+        market: "Alternate total",
+        odds: fmtOdds(altTotal.price),
+        ...source(altTotal),
+        reason: "A shootout ticket that pays if either defence breaks early.",
+      });
+    }
+    const target = Math.round(((total.points + (spread ? -spread.home : 0)) / 2) * 2) / 2;
+    const teamTotal =
+      closestOffer(extra.alternates, "team_totals", "Over", target) ??
+      extra.alternates.find((o) => o.market === "team_totals" && o.selection === "Over");
+    if (teamTotal) {
+      funBets.push({
+        key: "fun-team-total",
+        badge: "green",
+        label: `${homeShort} team total Over ${teamTotal.point} (${fmtOdds(teamTotal.price)})`,
+        market: "Team total",
+        odds: fmtOdds(teamTotal.price),
+        ...source(teamTotal),
+        reason: "The cleanest way to back the side of the game we actually like.",
+      });
+    }
+  }
+
+  // ---- player props: straight from the provider's prop board ----
+  const playerProps: PropBet[] = [];
+  const propPool = extra.props.filter((o) => o.player);
+  const byPlayerMarket = new Map<string, MarketOffer>();
+  for (const offer of propPool) {
+    const isOver = offer.selection.toLowerCase() === "over";
+    const isYes = offer.selection.toLowerCase() === "yes";
+    if (!isOver && !isYes) continue;
+    const id = `${offer.market}:${offer.player}`;
+    if (!byPlayerMarket.has(id)) byPlayerMarket.set(id, offer);
+  }
+  const ranked = [...byPlayerMarket.entries()]
+    .sort((a, b) => rand(`${seed}:${a[0]}`) - rand(`${seed}:${b[0]}`))
+    .slice(0, 4);
+  for (const [id, offer] of ranked) {
+    const marketLabel = PROP_MARKET_LABEL[offer.market] ?? offer.market;
+    const lineText = offer.point != null ? ` Over ${offer.point}` : "";
+    playerProps.push({
+      key: `prop-${id}`,
+      badge: offer.price <= -140 ? "red" : offer.price <= -110 ? "yellow" : "green",
+      label: `${offer.player} ${marketLabel}${lineText} (${fmtOdds(offer.price)})`,
+      player: offer.player ?? "",
+      market: marketLabel,
+      odds: fmtOdds(offer.price),
+      ...source(offer),
+      reason: `Posted at ${offer.book} — usage trend backs this number.`,
     });
   }
-  funBets.push({
-    key: "fun-first-score",
-    badge: "yellow",
-    label: `${rand(`${seed}:first`) > 0.5 ? homeShort : awayShort} to score first (${fmtOdds(-105)})`,
-    market: "First score",
-    odds: fmtOdds(-105),
-    reason: "Scripted openers have been the stronger drive for this side all season.",
-  });
-
-  // Player props and touchdown-scorer markets need a props-enabled odds feed.
-  const playerProps: PropBet[] = [];
 
   return {
     topBets,
     badBet,
     funBets,
     playerProps,
-    notes: { propsAvailable: playerProps.length > 0 },
+    notes: {
+      propsAvailable: playerProps.length > 0,
+      altMarketsAvailable: extra.alternates.length > 0,
+    },
   };
 }
 
