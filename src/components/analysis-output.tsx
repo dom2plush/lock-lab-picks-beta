@@ -105,8 +105,10 @@ export function AnalysisOutput({
               <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
-                  Logged at {pick.odds ?? "—"}
+                  Logged {pick.line ? `${pick.line} ` : ""}
+                  {pick.odds ?? "—"}
                   {pick.book ? ` · ${pick.book}` : ""}
+                  {pick.capturedAt ? ` · ${formatCapturedAt(pick.capturedAt)}` : ""}
                 </span>
                 <Button
                   size="sm"
