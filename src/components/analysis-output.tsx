@@ -3,6 +3,7 @@ import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
 import { formatCapturedAt, formatKickoff, hasLiveOdds } from "@/lib/lock-lab-types";
+import { buildAuditReport } from "@/lib/odds-audit";
 
 function Section({
   step,
@@ -247,6 +248,76 @@ export function AnalysisOutput({
             Props only appear when the price and the role actually line up.
           </p>
         )}
+      </Section>
+
+      <Section
+        step={5}
+        title="Odds audit trail"
+        subtitle="The exact price record behind every pick above, checked against the odds shown on this page."
+      >
+        <div className="rounded-lg border border-hairline bg-card">
+          <div
+            className={`flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-3 text-xs font-semibold tracking-wide uppercase ${
+              audit.verified ? "text-go" : "text-stop"
+            }`}
+          >
+            <span>
+              {audit.verified
+                ? "Verified — every pick matches the displayed snapshot"
+                : "Mismatch detected — do not bet these numbers"}
+            </span>
+            <span className="font-normal text-muted-foreground normal-case">
+              {audit.snapshotBook ?? "No book"} · {formatCapturedAt(audit.snapshotCapturedAt)}
+            </span>
+          </div>
+
+          {audit.entries.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-muted-foreground">
+              No picks were posted for this game, so there is nothing to audit.
+            </p>
+          ) : (
+            <ul className="divide-y divide-hairline">
+              {audit.entries.map((entry) => (
+                <li key={`${entry.section}-${entry.pickKey}`} className="px-4 py-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="eyebrow">{entry.section}</span>
+                    <span
+                      className={`text-xs font-semibold tracking-wide uppercase ${
+                        entry.problems.length ? "text-stop" : "text-go"
+                      }`}
+                    >
+                      {entry.problems.length ? "Mismatch" : "Match"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">{entry.label}</p>
+                  <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <div>
+                      <dt className="inline">Sportsbook: </dt>
+                      <dd className="inline">{entry.book ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline">Line: </dt>
+                      <dd className="inline">{entry.line ?? (entry.point != null ? entry.point : "—")}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline">Price: </dt>
+                      <dd className="inline">{entry.displayedOdds ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline">Captured: </dt>
+                      <dd className="inline">{formatCapturedAt(entry.capturedAt)}</dd>
+                    </div>
+                  </dl>
+                  {entry.problems.map((problem) => (
+                    <p key={problem} className="mt-1 text-xs font-medium text-stop">
+                      {problem}
+                    </p>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </Section>
     </div>
   );
