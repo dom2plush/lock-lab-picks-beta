@@ -174,6 +174,12 @@ export function AnalysisOutput({
       )}
 
       <Section step={3} title="Fun bets" subtitle="Small-ticket swings: alternate lines and scoring.">
+        {analysis.fun_bets.length === 0 && (
+          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
+            Live odds unavailable for alternate lines and team totals on this game. Lock Lab only
+            posts a price a sportsbook is actually offering.
+          </p>
+        )}
         <div className="grid gap-3 md:grid-cols-3">
           {analysis.fun_bets.map((bet) => (
             <article key={bet.key} className="rounded-lg border border-hairline bg-card p-4">
