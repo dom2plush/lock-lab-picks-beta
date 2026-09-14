@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AnalysisRow, GameRow, MarketOffer } from "./lock-lab-types";
 import { hasLiveOdds } from "./lock-lab-types";
-import { applyReasoning, runLockLabFormula, writeReasoning } from "./analysis-engine.server";
+import { runLockLabFormula } from "./analysis-engine.server";
 
 const Input = z.object({ gameId: z.string().uuid() });
 
@@ -65,9 +65,8 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       props: ((game.props ?? []) as MarketOffer[]).filter((o) => o.market.startsWith("player_")),
     };
 
-    const engine = runLockLabFormula(game, game.odds, extra);
-    const reasons = await writeReasoning(game, engine);
-    const finished = applyReasoning(engine, reasons);
+    // The previously stored snapshot is what line movement is measured against.
+    const finished = await runLockLabFormula(game, game.odds, extra, stored?.odds_snapshot ?? null);
 
     const insert = await supabaseAdmin
       .from("game_analyses")
@@ -84,6 +83,7 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
           bad_bet: finished.badBet,
           fun_bets: finished.funBets,
           player_props: finished.playerProps,
+          verdict: finished.notes.verdict,
         },
         { onConflict: "game_id" },
       )

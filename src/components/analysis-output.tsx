@@ -94,6 +94,18 @@ export function AnalysisOutput({
       </div>
 
       <Section step={1} title="Top 2 bets" subtitle="Best bet on the board, then the next best.">
+        {analysis.top_bets.length === 0 && (
+          <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+            <div className="flex items-center gap-2">
+              <BadgePill badge="red" />
+              <span className="font-display text-sm font-bold tracking-wide uppercase">No bet</span>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {analysis.verdict ??
+                "No meaningful edge on this board. Lock Lab is passing rather than forcing a bet."}
+            </p>
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
           {analysis.top_bets.map((pick) => (
             <article key={pick.key} className="rounded-lg border border-hairline bg-card p-4">
@@ -139,7 +151,10 @@ export function AnalysisOutput({
             <p className="mt-2 text-sm text-muted-foreground">{analysis.bad_bet.reason}</p>
 
             <div className="mt-4 rounded-md border border-hairline bg-surface p-3">
-              <span className="eyebrow">Opposite side</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="eyebrow">Opposite side</span>
+                <BadgePill badge={analysis.bad_bet.oppositeBadge ?? "red"} />
+              </div>
               <p className="mt-1 font-display text-lg font-semibold">
                 {analysis.bad_bet.oppositeLabel}
               </p>
@@ -176,8 +191,8 @@ export function AnalysisOutput({
       <Section step={3} title="Fun bets" subtitle="Small-ticket swings: alternate lines and scoring.">
         {analysis.fun_bets.length === 0 && (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
-            Live odds unavailable for alternate lines and team totals on this game. Lock Lab only
-            posts a price a sportsbook is actually offering.
+            Nothing here worth a ticket: no alternate line or scoring market on this game has a real
+            matchup reason behind it. Lock Lab leaves the section empty rather than filling it.
           </p>
         )}
         <div className="grid gap-3 md:grid-cols-3">
@@ -228,8 +243,8 @@ export function AnalysisOutput({
           </div>
         ) : (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
-            Player prop and touchdown-scorer lines aren't available for this game yet. Lock Lab only
-            posts props when real prices are in — nothing here is estimated.
+            No prop on this board has a real matchup or usage edge, so Lock Lab isn't posting one.
+            Props only appear when the price and the role actually line up.
           </p>
         )}
       </Section>
