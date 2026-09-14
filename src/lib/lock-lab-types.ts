@@ -4,10 +4,40 @@ export type Result = "pending" | "win" | "loss" | "push";
 
 export type GameOdds = {
   bookmaker?: string;
+  bookmakerKey?: string;
+  /** UTC timestamp at which this snapshot was captured from the provider. */
+  capturedAt?: string;
   spread?: { home: number; away: number; homePrice: number; awayPrice: number };
   total?: { points: number; overPrice: number; underPrice: number };
   moneyline?: { home: number; away: number };
 };
+
+/** A single real price returned by the provider. Never synthesised. */
+export type MarketOffer = {
+  market: string;
+  selection: string;
+  player?: string;
+  point: number | null;
+  price: number;
+  book: string;
+  bookKey?: string;
+  capturedAt: string;
+};
+
+/** True when a stored snapshot came from the live provider feed. */
+export function hasLiveOdds(odds: GameOdds | null | undefined): boolean {
+  return Boolean(odds?.bookmaker && odds?.capturedAt);
+}
+
+export function formatCapturedAt(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export type Injury = {
   team: string;
