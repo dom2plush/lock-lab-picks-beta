@@ -277,14 +277,16 @@ export function AnalysisOutput({
               </div>
               <p className="mt-2 font-display text-lg leading-tight font-semibold">{bet.label}</p>
               <p className="mt-2 text-sm text-muted-foreground">{bet.reason}</p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-3"
-                onClick={() => onTail(tailTarget(bet.key, bet.label, bet.odds ?? null, "fun_bets"))}
-              >
-                Tail
-              </Button>
+              {tailable && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => onTail(tailTarget(bet.key, bet.label, bet.odds ?? null, "fun_bets"))}
+                >
+                  Tail
+                </Button>
+              )}
             </article>
           ))}
         </div>
