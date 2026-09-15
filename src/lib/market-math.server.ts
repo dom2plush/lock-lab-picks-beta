@@ -435,6 +435,14 @@ export function expectedValue(probability: number, american: number): number {
 
 export type ValueGroup = "core" | "alt" | "prop";
 
+/**
+ * How much the estimate can be trusted:
+ * - "strong": edge clears the full uncertainty band — can be green.
+ * - "playable": edge clears half the band with positive EV — yellow at best.
+ * - "insufficient": the edge is inside the noise or the EV is negative.
+ */
+export type ValueTier = "strong" | "playable" | "insufficient";
+
 export type ValueGrade = {
   /** Lock Lab's estimated win probability, or null when nothing supports one. */
   modelProb: number | null;
@@ -445,20 +453,34 @@ export type ValueGrade = {
   ev: number | null;
   /** How much the probability estimate can be trusted (1 sd, in probability). */
   uncertainty: number;
-  /** Edge the candidate must clear before it can be a top bet. */
+  /** Edge required for the "strong" tier (one full uncertainty band). */
   requiredEdge: number;
-  /** True when the estimate genuinely beats the price by more than the noise. */
+  tier: ValueTier;
+  /** Edge measured in uncertainty bands — the risk-adjusted ranking number. */
+  valueScore: number | null;
+  /** True when the candidate may compete for a top bet at all. */
   qualifies: boolean;
   note: string;
 };
 
 /**
+ * Continuous tail adjustment. Probability estimates get relatively less reliable
+ * the further the price sits from a coin flip, so the uncertainty band widens
+ * smoothly with log-odds distance instead of a fixed long-shot wall.
+ */
+function tailStretch(implied: number): number {
+  const p = clampProb(implied);
+  const logitDistance = Math.abs(Math.log(p / (1 - p)));
+  return 1 + Math.min(0.6, 0.26 * logitDistance);
+}
+
+/**
  * Connects price to probability for every candidate.
  *
- * The estimate is never a payout read: a long price is only attractive when the
- * modelled probability clears the implied probability by more than the estimate's
- * own uncertainty, and long shots are held to a stiffer bar because the model is
- * least reliable furthest from the number the market actually made.
+ * Nothing qualifies on payout: the modelled probability has to beat the implied
+ * probability by more than the estimate's own error. That error grows gradually
+ * with price length, alternate distance and weak matchup evidence rather than
+ * through a single blunt long-shot penalty.
  */
 export function gradeValue(input: {
   modelProb: number | null;
@@ -466,15 +488,18 @@ export function gradeValue(input: {
   group: ValueGroup;
   /** Points away from the standard line, for alternates. */
   distance?: number;
+  /** 0-1 confidence in the matchup evidence behind the estimate (default 0.5). */
+  evidenceStrength?: number;
 }): ValueGrade {
   const implied = impliedProbability(input.price);
   const distance = Math.abs(input.distance ?? 0);
-  const base = input.group === "core" ? 0.03 : input.group === "prop" ? 0.055 : 0.04;
-  const uncertainty = base + (input.group === "alt" ? 0.012 * distance : 0);
-  // Long shots demand a bigger measured edge: model error is asymmetric there
-  // and a big payout makes a weak estimate look profitable on paper.
-  const longShotPenalty = implied < 0.45 ? (0.45 - implied) * 0.35 : 0;
-  const requiredEdge = uncertainty + longShotPenalty;
+  const base = input.group === "core" ? 0.03 : input.group === "prop" ? 0.05 : 0.035;
+  const evidence = Math.min(1, Math.max(0, input.evidenceStrength ?? 0.5));
+  // Weak evidence widens the band by up to 25%, strong evidence narrows it by 25%.
+  const evidenceFactor = 1.25 - 0.5 * evidence;
+  const spread = base + (input.group === "alt" ? 0.008 * distance : 0);
+  const uncertainty = Math.min(0.16, spread * tailStretch(implied) * evidenceFactor);
+  const requiredEdge = uncertainty;
 
   if (input.modelProb == null) {
     return {
@@ -484,6 +509,8 @@ export function gradeValue(input: {
       ev: null,
       uncertainty,
       requiredEdge,
+      tier: "insufficient",
+      valueScore: null,
       qualifies: false,
       note: `Price implies ${pct(implied)}; no supportable probability estimate for this selection, so it cannot be ranked on value.`,
     };
@@ -492,7 +519,13 @@ export function gradeValue(input: {
   const modelProb = clampProb(input.modelProb);
   const edge = modelProb - implied;
   const ev = expectedValue(modelProb, input.price);
-  const qualifies = edge >= requiredEdge && ev > 0;
+  const valueScore = edge / uncertainty;
+  const tier: ValueTier =
+    edge >= requiredEdge && ev > 0
+      ? "strong"
+      : edge >= 0.5 * requiredEdge && ev > 0.01
+        ? "playable"
+        : "insufficient";
   return {
     modelProb,
     impliedProb: implied,
@@ -500,14 +533,19 @@ export function gradeValue(input: {
     ev,
     uncertainty,
     requiredEdge,
-    qualifies,
+    tier,
+    valueScore,
+    qualifies: tier !== "insufficient",
     note:
       `Estimated win chance ${pct(modelProb)} vs implied ${pct(implied)} at ${input.price} ` +
-      `(edge ${pts(edge)}, EV ${ev >= 0 ? "+" : ""}${ev.toFixed(3)} per $1, needs ${pts(requiredEdge)} to clear the noise band). ` +
-      (qualifies
-        ? "Probability genuinely beats the price."
-        : ev > 0
-          ? "Positive on paper but inside the uncertainty band — not a supported edge."
-          : "Negative expectation at this price: the payout does not make up for how often it loses."),
+      `(edge ${pts(edge)}, EV ${ev >= 0 ? "+" : ""}${ev.toFixed(3)} per $1, ` +
+      `uncertainty ±${pts(uncertainty)}, risk-adjusted ${valueScore.toFixed(2)} bands). ` +
+      (tier === "strong"
+        ? "Edge clears the full uncertainty band: supportable as a strong bet."
+        : tier === "playable"
+          ? "Edge clears half the uncertainty band with positive expectation: playable, but the estimate carries real doubt."
+          : ev > 0
+            ? "Positive on paper but well inside the uncertainty band — not a supported edge."
+            : "Negative expectation at this price: the payout does not make up for how often it loses."),
   };
 }
