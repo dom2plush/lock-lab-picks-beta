@@ -41,7 +41,13 @@ function AnalyzePage() {
   const [sport, setSport] = useState<Sport>("NFL");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<{ game: GameRow; row: AnalysisRow } | null>(null);
+  const [analysis, setAnalysis] = useState<{
+    game: GameRow;
+    row: AnalysisRow | null;
+    status: "pregame" | "locked" | "historical";
+    message: string | null;
+    propsVerified: boolean;
+  } | null>(null);
   const [running, setRunning] = useState(false);
   const [tailTarget, setTailTarget] = useState<TailTarget | null>(null);
 
