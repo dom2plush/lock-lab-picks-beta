@@ -90,17 +90,28 @@ export function AnalysisOutput({
             Live odds unavailable — no sportsbook prices for this game
           </p>
         )}
-        {game.injuries.length > 0 && (
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {game.injuries.slice(0, 6).map((injury, index) => (
-              <li
-                key={`${injury.player}-${index}`}
-                className="rounded-full bg-surface px-2.5 py-1 text-xs text-muted-foreground"
-              >
-                {injury.player} — {injury.status}
-              </li>
-            ))}
-          </ul>
+        {game.injuries.length > 0 ? (
+          <>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {game.injuries.slice(0, 6).map((injury, index) => (
+                <li
+                  key={`${injury.player}-${index}`}
+                  className="rounded-full bg-surface px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  {injury.player} — {injury.status}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Availability shown is the current reported injury list only. Any player not listed is
+              of uncertain status — Lock Lab does not treat a missing designation as proof of health.
+            </p>
+          </>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Injury and availability data is uncertain for this game — no current report was returned,
+            so nothing below claims a player is active or out.
+          </p>
         )}
       </div>
 
