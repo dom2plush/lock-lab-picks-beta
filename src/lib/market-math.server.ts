@@ -418,3 +418,96 @@ export function summariseAltValue(evaluations: AltEvaluation[]): string[] {
   }
   return notes;
 }
+
+// ---------------------------------------------------------------------------
+// Probability / price / expected value
+// ---------------------------------------------------------------------------
+
+/** Profit on a $1 stake at American odds. */
+export function netProfit(american: number): number {
+  return american > 0 ? american / 100 : 100 / Math.abs(american);
+}
+
+/** Expected value per $1 staked at an estimated win probability. */
+export function expectedValue(probability: number, american: number): number {
+  return probability * netProfit(american) - (1 - probability);
+}
+
+export type ValueGroup = "core" | "alt" | "prop";
+
+export type ValueGrade = {
+  /** Lock Lab's estimated win probability, or null when nothing supports one. */
+  modelProb: number | null;
+  impliedProb: number;
+  /** modelProb - impliedProb. */
+  edge: number | null;
+  /** Expected value per $1 staked at the estimated probability. */
+  ev: number | null;
+  /** How much the probability estimate can be trusted (1 sd, in probability). */
+  uncertainty: number;
+  /** Edge the candidate must clear before it can be a top bet. */
+  requiredEdge: number;
+  /** True when the estimate genuinely beats the price by more than the noise. */
+  qualifies: boolean;
+  note: string;
+};
+
+/**
+ * Connects price to probability for every candidate.
+ *
+ * The estimate is never a payout read: a long price is only attractive when the
+ * modelled probability clears the implied probability by more than the estimate's
+ * own uncertainty, and long shots are held to a stiffer bar because the model is
+ * least reliable furthest from the number the market actually made.
+ */
+export function gradeValue(input: {
+  modelProb: number | null;
+  price: number;
+  group: ValueGroup;
+  /** Points away from the standard line, for alternates. */
+  distance?: number;
+}): ValueGrade {
+  const implied = impliedProbability(input.price);
+  const distance = Math.abs(input.distance ?? 0);
+  const base = input.group === "core" ? 0.03 : input.group === "prop" ? 0.055 : 0.04;
+  const uncertainty = base + (input.group === "alt" ? 0.012 * distance : 0);
+  // Long shots demand a bigger measured edge: model error is asymmetric there
+  // and a big payout makes a weak estimate look profitable on paper.
+  const longShotPenalty = implied < 0.45 ? (0.45 - implied) * 0.35 : 0;
+  const requiredEdge = uncertainty + longShotPenalty;
+
+  if (input.modelProb == null) {
+    return {
+      modelProb: null,
+      impliedProb: implied,
+      edge: null,
+      ev: null,
+      uncertainty,
+      requiredEdge,
+      qualifies: false,
+      note: `Price implies ${pct(implied)}; no supportable probability estimate for this selection, so it cannot be ranked on value.`,
+    };
+  }
+
+  const modelProb = clampProb(input.modelProb);
+  const edge = modelProb - implied;
+  const ev = expectedValue(modelProb, input.price);
+  const qualifies = edge >= requiredEdge && ev > 0;
+  return {
+    modelProb,
+    impliedProb: implied,
+    edge,
+    ev,
+    uncertainty,
+    requiredEdge,
+    qualifies,
+    note:
+      `Estimated win chance ${pct(modelProb)} vs implied ${pct(implied)} at ${input.price} ` +
+      `(edge ${pts(edge)}, EV ${ev >= 0 ? "+" : ""}${ev.toFixed(3)} per $1, needs ${pts(requiredEdge)} to clear the noise band). ` +
+      (qualifies
+        ? "Probability genuinely beats the price."
+        : ev > 0
+          ? "Positive on paper but inside the uncertainty band — not a supported edge."
+          : "Negative expectation at this price: the payout does not make up for how often it loses."),
+  };
+}
