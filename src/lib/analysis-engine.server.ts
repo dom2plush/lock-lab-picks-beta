@@ -132,12 +132,16 @@ export type CandidateAudit = {
   propMarketsSupplied: number;
   /** Standard spread/total/moneyline selections graded on this run. */
   standardMarketsEvaluated: number;
+  /** Alternate prices received from the sportsbook feed. */
+  alternateMarketsReceived: number;
   /** Alternate ladder rungs graded against their standard line on this run. */
   alternateMarketsEvaluated: number;
   /** The single best-graded alternate rung considered. */
   strongestAlternate: CandidateAuditEntry | null;
   /** Why that alternate was selected or rejected. */
   strongestAlternateOutcome: string;
+  /** Best rung's risk-adjusted score minus its standard line's, or null. */
+  standardVsAlternateEdge: number | null;
   entries: CandidateAuditEntry[];
   /** Highest-edge candidate that was considered and not published. */
   strongestRejected: CandidateAuditEntry | null;
@@ -986,9 +990,11 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
           altMarketsSupplied: 0,
           propMarketsSupplied: 0,
           standardMarketsEvaluated: 0,
+          alternateMarketsReceived: 0,
           alternateMarketsEvaluated: 0,
           strongestAlternate: null,
-          strongestAlternateOutcome: "No board was available to evaluate.",
+          strongestAlternateOutcome: "ALTERNATE LINES UNAVAILABLE — cannot line-shop this game.",
+          standardVsAlternateEdge: null,
           entries: [],
           strongestRejected: null,
         },
@@ -1083,15 +1089,24 @@ function buildCandidateAudit(
     .slice()
     .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
   const bestAltEntry = bestAlt ? (entries.find((e) => e.key === bestAlt.key) ?? null) : null;
-  const strongestAlternateOutcome = !bestAlt
-    ? "No alternate spread or total was supplied by the sportsbook for this game."
-    : bestAltEntry && bestAltEntry.section != null
-      ? `Selected (${bestAltEntry.section}): ${bestAltEntry.reason}`
-      : `Rejected: ${
-          !bestAlt.alt?.worthIt
-            ? "the extra juice outweighs the protection it buys against the standard line. "
-            : ""
-        }${eligibleForTop(bestAlt).ok ? leadCheck(bestAlt).why || "not the sharpest risk-adjusted bet on the board." : eligibleForTop(bestAlt).why}`;
+  const strongestAlternateOutcome = !extra.alternates.length
+    ? "ALTERNATE LINES UNAVAILABLE — cannot line-shop this game."
+    : !bestAlt
+      ? "Alternate prices were received but none could be graded against a standard line."
+      : bestAltEntry && bestAltEntry.section != null
+        ? `Selected (${bestAltEntry.section}): ${bestAltEntry.reason}`
+        : `Rejected: ${
+            !bestAlt.alt?.worthIt
+              ? "the extra juice outweighs the protection it buys against the standard line. "
+              : ""
+          }${eligibleForTop(bestAlt).ok ? leadCheck(bestAlt).why || "not the sharpest risk-adjusted bet on the board." : eligibleForTop(bestAlt).why}`;
+  // How much better (or worse) the best rung grades than the standard line it is
+  // measured against, in uncertainty-band terms.
+  const bestAltStandard = bestAlt?.standardKey
+    ? candidates.find((c) => c.key === bestAlt.standardKey)
+    : undefined;
+  const standardVsAlternateEdge =
+    bestAlt && bestAltStandard ? candidateRank(bestAlt) - candidateRank(bestAltStandard) : null;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -1100,9 +1115,12 @@ function buildCandidateAudit(
     altMarketsSupplied: extra.alternates.length,
     propMarketsSupplied: extra.props.length,
     standardMarketsEvaluated: candidates.filter((c) => c.group === "core").length,
+    alternateMarketsReceived: extra.alternates.length,
     alternateMarketsEvaluated: altCandidates.length,
     strongestAlternate: bestAltEntry,
     strongestAlternateOutcome,
+    standardVsAlternateEdge,
+
     entries,
     strongestRejected,
   };
@@ -1203,7 +1221,34 @@ export async function runLockLabFormula(
     });
   }
 
-
+  // Side first, then line. Once a selection has an underlying case, shop its own
+  // posted ladder: if a rung on that same side carries better risk-adjusted value
+  // than the number the read named, take that rung instead. The side does not
+  // change here, only the number, and the swap happens solely on graded value —
+  // never on the biggest number, the cheapest price or the standard tag.
+  for (let i = 0; i < shortlist.length; i += 1) {
+    const s = shortlist[i]!;
+    if (s.c.group !== "core") continue;
+    const better = bestGradedAlternate(s.c, candidates, used);
+    if (!better || candidateRank(better) <= candidateRank(s.c)) continue;
+    const reason = altPreferenceReason(better);
+    used.add(better.key);
+    decisions.set(s.c.key, {
+      section: null,
+      badge: "red",
+      reason: `Passed over in favour of the sharper number on the same side: ${better.label}.`,
+    });
+    shortlist[i] = {
+      c: better,
+      entry: {
+        key: better.key,
+        badge: better.grade?.tier === "strong" ? "green" : "yellow",
+        reason: s.entry.reason || reason,
+        standardKey: better.standardKey ?? null,
+        standardComparison: reason,
+      },
+    };
+  }
 
 
   // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
@@ -1334,10 +1379,16 @@ export async function runLockLabFormula(
         declaredAlt!.key !== c.key &&
         declaredBadge !== "red" &&
         eligibleForTop(declaredAlt!).ok;
-      const sweptAlt = declaredUsable
-        ? undefined
-        : (bestGradedAlternate(c, candidates, used) ??
-          (opposite ? bestGradedAlternate(opposite, candidates, used) : undefined));
+      // Both ladders are shopped — the flagged side's own better number and the
+      // opposite side's rungs — and whichever carries the stronger independently
+      // graded value is offered. The flip side is never forced by the bad bet.
+      const sameSideAlt = declaredUsable ? undefined : bestGradedAlternate(c, candidates, used);
+      const oppositeSideAlt =
+        declaredUsable || !opposite ? undefined : bestGradedAlternate(opposite, candidates, used);
+      const sweptAlt = [sameSideAlt, oppositeSideAlt]
+        .filter((x): x is Candidate => Boolean(x))
+        .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+
       const alternate = declaredUsable ? declaredAlt : sweptAlt;
       const alternateBadge = declaredUsable
         ? declaredBadge
