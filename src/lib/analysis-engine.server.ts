@@ -1361,10 +1361,16 @@ export async function runLockLabFormula(
         declaredAlt!.key !== c.key &&
         declaredBadge !== "red" &&
         eligibleForTop(declaredAlt!).ok;
-      const sweptAlt = declaredUsable
-        ? undefined
-        : (bestGradedAlternate(c, candidates, used) ??
-          (opposite ? bestGradedAlternate(opposite, candidates, used) : undefined));
+      // Both ladders are shopped — the flagged side's own better number and the
+      // opposite side's rungs — and whichever carries the stronger independently
+      // graded value is offered. The flip side is never forced by the bad bet.
+      const sameSideAlt = declaredUsable ? undefined : bestGradedAlternate(c, candidates, used);
+      const oppositeSideAlt =
+        declaredUsable || !opposite ? undefined : bestGradedAlternate(opposite, candidates, used);
+      const sweptAlt = [sameSideAlt, oppositeSideAlt]
+        .filter((x): x is Candidate => Boolean(x))
+        .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+
       const alternate = declaredUsable ? declaredAlt : sweptAlt;
       const alternateBadge = declaredUsable
         ? declaredBadge
