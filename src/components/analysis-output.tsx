@@ -349,7 +349,7 @@ export function AnalysisOutput({
           >
             <span>
               {audit.verified
-                ? "Verified — every pick matches the displayed snapshot"
+                ? "Verified — every pick matches its recorded price record"
                 : "Mismatch detected — do not bet these numbers"}
             </span>
             <span className="font-normal text-muted-foreground normal-case">
