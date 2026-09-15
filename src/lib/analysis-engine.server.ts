@@ -1136,6 +1136,37 @@ export async function runLockLabFormula(
     shortlist.push({ c, entry });
   }
 
+  // Alternate-line sweep. Part of the formula, not a display extra: every
+  // posted alternate spread and total has already been graded against its own
+  // standard line, so when the handicap read leaves a top slot open the sharpest
+  // graded alternate is considered on its own numbers before the board may pass.
+  // It still has to be worth the juice and clear the same uncertainty gates as
+  // anything else, and nothing is added just for having more points.
+  if (shortlist.length < 2) {
+    const sweep = candidates
+      .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
+      .filter((c) => eligibleForTop(c).ok && leadCheck(c).ok)
+      .sort((a, b) => candidateRank(b) - candidateRank(a));
+    for (const c of sweep) {
+      if (shortlist.length >= 2) break;
+      if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) continue;
+      const reason = altPreferenceReason(c);
+      used.add(c.key);
+      shortlist.push({
+        c,
+        entry: {
+          key: c.key,
+          badge: c.grade?.tier === "strong" ? "green" : "yellow",
+          reason,
+          standardKey: c.standardKey ?? null,
+          standardComparison: reason,
+        },
+      });
+    }
+  }
+
+
+
   // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
   // by how reliable the estimate behind it is. Raw EV never sets the order.
   shortlist.sort((a, b) => candidateRank(b.c) - candidateRank(a.c));
