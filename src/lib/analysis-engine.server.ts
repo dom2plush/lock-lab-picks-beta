@@ -695,6 +695,8 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
           key: worst.key,
           badge: "red",
           label: worst.label,
+          market: worst.marketLabel,
+          oppositeMarket: opposite?.marketLabel ?? null,
           ...pickSource(worst),
           reason:
             "This is the most expensive way to bet the game: you are paying the heaviest price on the board for the least room for error.",
