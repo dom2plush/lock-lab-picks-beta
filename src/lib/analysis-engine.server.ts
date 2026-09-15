@@ -861,6 +861,17 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
     funBets: [],
     playerProps: [],
     notes: { propsAvailable: false, altMarketsAvailable: false, verdict },
+    candidateAudit: game
+      ? buildCandidateAudit(game, candidates, { alternates: [], props: [] }, new Map())
+      : {
+          generatedAt: new Date().toISOString(),
+          snapshotBook: null,
+          snapshotCapturedAt: null,
+          altMarketsSupplied: 0,
+          propMarketsSupplied: 0,
+          entries: [],
+          strongestRejected: null,
+        },
   };
 }
 
@@ -988,6 +999,7 @@ export async function runLockLabFormula(
 
   const used = new Set<string>();
 
+  const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
   const topBets: PickBet[] = [];
   const rejected: string[] = [];
   for (const entry of handicap.top ?? []) {
@@ -998,6 +1010,11 @@ export async function runLockLabFormula(
     const eligible = eligibleForTop(c);
     if (!eligible.ok) {
       rejected.push(eligible.why);
+      decisions.set(c.key, {
+        section: null,
+        badge: "red",
+        reason: `Selected by the handicap read but blocked by the value gate. ${eligible.why}`,
+      });
       continue;
     }
     // A second pick in the same market/player as the first is not distinct.
@@ -1040,6 +1057,11 @@ export async function runLockLabFormula(
           ? "Lock Lab's win estimate for this selection sits above what the posted price implies, and the matchup read supports it."
           : "Priced below where this matchup projects.",
       ),
+    });
+    decisions.set(c.key, {
+      section: "top",
+      badge: asBadge(entry.badge),
+      reason: clean(entry.reason, "Selected as a top bet."),
     });
     if (topBets.length === 2) break;
   }
@@ -1123,8 +1145,23 @@ export async function runLockLabFormula(
           : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         ...alternateFields,
       };
-      if (alternateUsable) used.add(alternate!.key);
+      if (alternateUsable) {
+        used.add(alternate!.key);
+        decisions.set(alternate!.key, {
+          section: "better-number",
+          badge: alternateBadge,
+          reason: "Offered as the sharper number on the same side as the flagged bad bet.",
+        });
+      }
       used.add(c.key);
+      decisions.set(c.key, { section: "bad-bet", badge: "red", reason: badBet.reason });
+      if (opposite) {
+        decisions.set(opposite.key, {
+          section: "opposite",
+          badge: oppositeBadge,
+          reason: badBet.oppositeReason,
+        });
+      }
     }
   }
 
@@ -1141,6 +1178,11 @@ export async function runLockLabFormula(
       odds: fmtOdds(c.price),
       ...pickSource(c),
       reason: clean(entry.reason, "Small-ticket swing with a real matchup reason behind it."),
+    });
+    decisions.set(c.key, {
+      section: "fun",
+      badge: asBadge(entry.badge),
+      reason: clean(entry.reason, "Fun bet."),
     });
     if (funBets.length === 3) break;
   }
@@ -1159,6 +1201,11 @@ export async function runLockLabFormula(
       odds: fmtOdds(c.price),
       ...pickSource(c),
       reason: clean(entry.reason, "Usage and matchup back this number."),
+    });
+    decisions.set(c.key, {
+      section: "prop",
+      badge: asBadge(entry.badge),
+      reason: clean(entry.reason, "Player prop."),
     });
     if (playerProps.length === 4) break;
   }
@@ -1182,6 +1229,7 @@ export async function runLockLabFormula(
       altMarketsAvailable: extra.alternates.length > 0,
       verdict,
     },
+    candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
   };
 }
 
