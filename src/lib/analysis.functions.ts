@@ -87,15 +87,38 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       };
     }
 
-    // Refresh this game's live odds if the stored snapshot is stale.
+    // Refresh this game's live odds if the stored snapshot is stale, or if the
+    // alternate/prop board has never been pulled for it. A pull that legitimately
+    // returns nothing stamps props_updated_at, so we do not re-ask every visit.
     const { hasProviderKey, refreshGameOdds } = await import("./ingest.server");
     const staleOdds =
       !game.odds_updated_at || Date.now() - new Date(game.odds_updated_at).getTime() > SNAPSHOT_TTL_MS;
-    const missingDerivatives = !game.props || game.props.length === 0;
-    if (hasProviderKey() && !game.is_demo && (staleOdds || missingDerivatives)) {
+    const derivativesNeverPulled = !game.props_updated_at;
+    const staleDerivatives =
+      !!game.props_updated_at &&
+      Date.now() - new Date(game.props_updated_at).getTime() > SNAPSHOT_TTL_MS;
+    if (
+      hasProviderKey() &&
+      !game.is_demo &&
+      (staleOdds || derivativesNeverPulled || staleDerivatives)
+    ) {
       const refreshed = await refreshGameOdds(game);
       if (refreshed) game = refreshed;
     }
+
+    // ---- production path is live data only ----
+    // Sample fixtures and snapshot-less rows never reach the formula: Lock Lab
+    // says the feed is missing rather than analysing a market that isn't real.
+    if (game.is_demo || !hasLiveOdds(game.odds)) {
+      return {
+        status: "unavailable",
+        analysis: null,
+        message:
+          "DATA CONNECTION REQUIRED — no live sportsbook odds are connected for this game, so Lock Lab has no real market to analyse.",
+        propsVerified: false,
+      };
+    }
+
 
     const stored = await readStored();
     const storedCapture = stored?.odds_captured_at ?? null;
