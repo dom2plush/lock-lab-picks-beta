@@ -780,13 +780,29 @@ export async function runLockLabFormula(
 
   let badBet: BadBet | null = null;
   if (handicap.badBet) {
-    const c = byKey.get(handicap.badBet.key);
+    const chosen = byKey.get(handicap.badBet.key);
+    // A bad bet is only useful when the flip side is actually priced. If the
+    // model flagged a one-sided market (anytime TD and the like) while a
+    // two-sided market was available, fall back to the worst-priced game line.
+    const swapped =
+      chosen && !hasOpposite(chosen, candidates, game)
+        ? candidates
+            .filter((x) => x.group === "core" && hasOpposite(x, candidates, game))
+            .slice()
+            .sort((a, b) => a.price - b.price)[0]
+        : undefined;
+    const c = swapped ?? chosen;
     if (c) {
-      const opposite = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
-      const oppositeBadge = asBadge(handicap.badBet.oppositeBadge);
+      const declared = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
+      const natural = findOpposite(c, candidates, game);
+      // The declared opposite is honoured only when it really is the flip side
+      // of the flagged bet; otherwise the posted opposing selection is used.
+      const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
+      const oppositeBadge = opposite ? asBadge(handicap.badBet.oppositeBadge) : "red";
       // The opposite side is only tailable when it was independently graded
       // as an edge — a bad bet never promotes its own flip side.
-      const recommended = Boolean(opposite) && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
+      const recommended =
+        Boolean(opposite) && !swapped && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
       // Same side, better number: only offered when the alternate is genuinely
       // the sharper version of this bet, not merely a longer line.
       const altKey = handicap.badBet.alternateKey;
