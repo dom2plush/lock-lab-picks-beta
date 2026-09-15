@@ -40,7 +40,13 @@ export async function refreshGameOdds(game: GameRow): Promise<GameRow | null> {
     try {
       const markets = await fetchEventMarkets(game.sport, game.provider_game_id);
       props = [...markets.alternates, ...markets.props];
-      propsUpdatedAt = props.length ? markets.capturedAt : null;
+      // Always stamp the pull, even when the board came back empty: that is the
+      // difference between "no alternate market exists" and "never asked".
+      propsUpdatedAt = markets.capturedAt;
+      console.info(
+        `[odds] derivative coverage ${game.away_team} @ ${game.home_team}:`,
+        JSON.stringify(markets.coverage),
+      );
     } catch {
       // Derivative markets are optional; the main board still stands.
     }
@@ -50,9 +56,10 @@ export async function refreshGameOdds(game: GameRow): Promise<GameRow | null> {
       odds_book: match.odds_book,
       odds_book_key: match.odds_book_key,
       odds_updated_at: match.odds_updated_at,
-      ...(props.length ? { props, props_updated_at: propsUpdatedAt } : {}),
+      ...(propsUpdatedAt ? { props, props_updated_at: propsUpdatedAt } : {}),
       updated_at: new Date().toISOString(),
     };
+
 
     const { data, error } = await supabaseAdmin
       .from("games")
