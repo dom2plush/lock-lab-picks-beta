@@ -71,7 +71,7 @@ export function verifyPropOffers(offers: MarketOffer[], game: GameRow): OfferVer
   const seen = new Set<string>();
 
   for (const offer of offers) {
-    const problems = baseProblems(offer, game);
+    const problems = baseProblems(offer, game, true);
 
     if (!(VERIFIED_PROP_MARKETS as readonly string[]).includes(offer.market)) {
       problems.push("market is not a verified player-prop market");
