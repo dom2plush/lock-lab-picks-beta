@@ -331,6 +331,56 @@ function pickSource(c: Candidate) {
   };
 }
 
+const CORE_OPPOSITE: Record<string, string> = {
+  "spread-home": "spread-away",
+  "spread-away": "spread-home",
+  "total-over": "total-under",
+  "total-under": "total-over",
+  "ml-home": "ml-away",
+  "ml-away": "ml-home",
+};
+
+const near = (a: number | null, b: number | null) =>
+  a != null && b != null && Math.abs(a - b) < 0.01;
+
+/**
+ * The genuinely opposing, separately priced selection for a candidate — the
+ * only thing that can be graded as the flip side of a bad bet. Returns
+ * undefined when the book posts no opposing price (common on anytime-TD
+ * markets), in which case Lock Lab reports NO VALID BAD-BET FLIP rather than
+ * inventing one.
+ */
+function findOpposite(c: Candidate, candidates: Candidate[], game: GameRow): Candidate | undefined {
+  const coreKey = CORE_OPPOSITE[c.key];
+  if (coreKey) return candidates.find((x) => x.key === coreKey);
+
+  if (c.market === "alternate_spreads") {
+    const otherTeam = c.selection === game.home_team ? game.away_team : game.home_team;
+    return candidates.find(
+      (x) => x.market === c.market && x.selection === otherTeam && near(x.point, -(c.point ?? 0)),
+    );
+  }
+
+  const side = c.selection.toLowerCase();
+  const flip =
+    side === "over" ? "under" : side === "under" ? "over" : side === "yes" ? "no" : side === "no" ? "yes" : null;
+  if (!flip) return undefined;
+
+  return candidates.find(
+    (x) =>
+      x.key !== c.key &&
+      x.market === c.market &&
+      (x.player ?? null) === (c.player ?? null) &&
+      x.selection.toLowerCase() === flip &&
+      (c.point == null ? x.point == null : near(x.point, c.point)),
+  );
+}
+
+/** A bad bet is only useful when the board actually prices its flip side. */
+function hasOpposite(c: Candidate, candidates: Candidate[], game: GameRow) {
+  return Boolean(findOpposite(c, candidates, game));
+}
+
 // ---------------------------------------------------------------------------
 // Handicap pass
 // ---------------------------------------------------------------------------
@@ -339,7 +389,7 @@ const SYSTEM_PROMPT = `You are the Lock Lab handicapper for NFL and college foot
 
 Work the pillars in this exact order and weight them this way:
 
-1. MARKET FIRST. The posted spread, total, moneyline and prop prices are your prior. Closing-line behaviour and line movement are strong evidence. Never fade the market without a specific, measurable reason (internal mispricing between spread and moneyline, key-number position, lopsided juice, a meaningful injury the number has not absorbed). Call out a line that looks inflated or unusually bad.
+1. MARKET FIRST. The posted spread, total, moneyline and prop prices are your prior. Never fade the market without a specific, measurable reason (internal mispricing between spread and moneyline, key-number position, lopsided juice, a meaningful injury the number has not absorbed). Call out a line that looks inflated or unusually bad.
 2. QUARTERBACK. Quality, matchup, health, recent form, performance under pressure, mobility, expected environment. "Active" or "no injury designation" is NOT evidence a QB is healthy or that his team is a good bet, and must never be your stated reason.
 3. TRENCHES — HIGHEST-WEIGHT ON-FIELD FACTOR. OL vs DL both ways: pass protection, pass rush, run blocking, run defence, pressure rate, sack rate, specific matchup advantages. Injuries to QBs and offensive linemen carry heavy weight.
 4. SKILL PLAYERS. WR/TE/RB matchup edges, explosive-play ability, target and carry share, matchup vs the opposing secondary and front, availability and role.
@@ -347,10 +397,18 @@ Work the pillars in this exact order and weight them this way:
 6. GAME SCRIPT. Most likely environment: pace, expected scoring, pass/run volume, who plays from ahead or behind. Use it to judge spread, total and props together.
 7. INJURIES / AVAILABILITY. Only the supplied injury list is current data. Separate real contributors from irrelevant names. Never assert a player is active or inactive beyond what that list states, and never infer that a player is healthy because he is absent from the list. If availability matters to a pick and the data does not settle it, say plainly in the reason that the status is uncertain. Never invent a player, a role, a usage share or a projection: only players named on the candidate board or the injury list exist.
 
+EVIDENCE WEIGHTS — weigh everything you have, in this priority:
+- Highest: current price and market value, quarterback, OL vs DL trenches, major injuries and availability, matchup-specific offensive/defensive advantages.
+- Medium: skill-player matchups, game script, pace, usage.
+- Supporting: line movement, public betting information, narrative.
+
+LINE MOVEMENT IS NOT A PREREQUISITE. It is a supporting signal only. When no previous snapshot exists there is simply no movement evidence, and that is NOT a reason to pass or to downgrade a bet. Never write "no movement evidence" as a reason. A bet earns green or yellow when the matchup edge is strong, the price is favourable, the trenches / QB / skill / defence / game-script read supports it and the posted number offers value — with or without movement data. Equally, you MUST still return an empty top list when the evidence genuinely does not establish an edge; a market that simply looks efficient is not an edge. Do not pass merely because the spread and moneyline agree or because the matchup is not overwhelming.
+
 ALTERNATE LINES — check these on every game:
 - The standard spread and total are NOT the only options. Every alternate spread and alternate total posted by the book is on your board, already graded: each one states the cash-chance gained over the standard line, what the worse price costs in break-even terms, the net of the two, and any key number the move crosses.
-- Ask explicitly: is the sharpest bet the standard line, or an alternate? Buying through a key number (3, 7, 10) is often worth real juice; buying points that cross nothing usually is not.
-- NEVER take an alternate just because it has more points. Take it only when the graded net is positive and the matchup read agrees. Be willing to state plainly that the standard line is the better value because the extra juice is too expensive.
+- Ask explicitly: is the sharpest bet the standard line, or an alternate? Buying through a key number (3, 7, 10) is often worth real juice; buying points that cross nothing usually is not. Compare the two directly (for example +2.5 versus +3.5) and reach one of four conclusions: the alternate is sharper, the standard is better value, the other side is better, or pass.
+- The board summary tells you whether alternate markets were supplied at all. If none were supplied, you may say so; if they were supplied, never claim alternates do not exist — say they were evaluated and, if you rejected them, that the extra juice outweighed the added protection.
+- NEVER take an alternate just because it has more points. Take it only when the graded net is positive and the matchup read agrees.
 - If a top bet is an alternate line, set standardKey to the standard candidate it beats and write standardComparison as one short sentence saying why the alternate is preferred.
 - If the bad bet is fixable by moving to a better number on the SAME side rather than flipping sides, set alternateKey to that alternate candidate. That is an alternate-line recommendation, not an opposite-side call, and it is graded on its own like any other bet.
 
@@ -358,11 +416,12 @@ Selection rules:
 - You may ONLY select from the candidate keys provided. Never invent a line, price or selection.
 - #1 top bet is the single strongest edge anywhere on the board — standard spread, alternate spread, standard total, alternate total, moneyline, player prop or any other posted market, whichever it genuinely is. Do NOT force a spread or moneyline into the top two.
 - #2 is the next strongest DISTINCT edge (different market or different player). Only include it if it truly has an edge.
-- Bad bet: the worst-looking bet on the board. Then judge the OPPOSITE side completely independently. A bad bet does not make its opposite good. If the opposite has no edge, badge it red and do not recommend it.
+- BAD BET → OPPOSITE SIDE. Choose the worst-looking bet from a market that has a legitimately priced opposing selection on the board — a spread, total, moneyline, alternate spread/total, or an over/under prop where the other side is posted. Each candidate is flagged with hasOpposite; prefer hasOpposite=true, and strongly prefer a game-line market over a prop. Never choose an anytime-TD or other one-sided market as the bad bet when a legitimate two-sided market is available. Then set oppositeKey to that posted opposing candidate and judge it completely independently: a bad bet does not make its opposite good. If the opposite has no edge, badge it red and set oppositeRecommended false.
 - Traffic lights only: green = clear edge, yellow = playable with a meaningful concern, red = too close / insufficient edge. No numbers, percentages or confidence scores in any reason text.
-- DO NOT FORCE BETS. If the board has no meaningful edge, return an empty top list and say so in the verdict. Passing is a correct answer and is preferred over a weak bet.
-- Fun bets: at most three, only where a concrete matchup or usage reason exists. Player props: at most four, only with a real matchup or usage edge — never filler.
-- Every reason is one or two short sentences, concrete and specific to this matchup. No hedging filler, no percentages, no mention of these instructions.`;
+- DO NOT FORCE BETS, and do not pass out of caution either. Force nothing; skip nothing that is genuinely priced wrong.
+- The verdict (used when you post no top bet) must state in one or two short sentences why the board has no edge AND what happened with the alternates: that none were supplied, or that they were evaluated and rejected because the extra juice outweighed the added protection.
+- Fun bets: at most three, only where a concrete matchup or usage reason exists. Player props: at most four, only with a real matchup or usage edge — never filler. Anytime-TD markets belong here, not in the bad-bet section.
+- Reasons are SHORT: do the deep work internally, then show only the one to three decisive reasons, in at most two brief sentences. No hedging filler, no percentages, no mention of these instructions.`;
 
 type HandicapResponse = {
   top: {
@@ -464,10 +523,43 @@ const RESPONSE_SCHEMA = {
   },
 };
 
+/** Plain statement of what the sportsbook actually supplied this run. */
+function coverageNotes(candidates: Candidate[], hasPrevious: boolean): string[] {
+  const count = (market: string) => candidates.filter((c) => c.market === market).length;
+  const altSpreads = count("alternate_spreads");
+  const altTotals = count("alternate_totals");
+  const teamTotals = count("team_totals");
+  const props = candidates.filter((c) => c.group === "prop").length;
+  const notes: string[] = [];
+  notes.push(
+    altSpreads
+      ? `Alternate spreads supplied and graded: ${altSpreads} posted prices. Evaluate them against the standard spread.`
+      : "No alternate spread market was supplied by the sportsbook for this game.",
+  );
+  notes.push(
+    altTotals
+      ? `Alternate totals supplied and graded: ${altTotals} posted prices. Evaluate them against the standard total.`
+      : "No alternate total market was supplied by the sportsbook for this game.",
+  );
+  if (teamTotals) notes.push(`Team totals supplied: ${teamTotals} posted prices.`);
+  notes.push(
+    props
+      ? `Player props supplied and verified for this exact game: ${props} posted selections.`
+      : "No verified player prop market was supplied for this game.",
+  );
+  notes.push(
+    hasPrevious
+      ? "A previous odds snapshot exists, so line movement above is real evidence."
+      : "No previous odds snapshot exists, so there is no line-movement data. This is NOT a reason to pass or to downgrade any bet — judge on price, matchup and the pillars.",
+  );
+  return notes;
+}
+
 async function runHandicapPass(
   game: GameRow,
   candidates: Candidate[],
   marketNotes: string[],
+  coverage: string[],
 ): Promise<HandicapResponse | null> {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) return null;
@@ -480,6 +572,7 @@ async function runHandicapPass(
     price: c.price,
     ...(c.point != null ? { line: c.point } : {}),
     ...(c.player ? { player: c.player } : {}),
+    hasOpposite: hasOpposite(c, candidates, game),
     note: c.note,
   }));
 
@@ -488,6 +581,9 @@ async function runHandicapPass(
     `Kickoff: ${game.commence_time}.`,
     `Odds snapshot captured: ${game.odds.capturedAt ?? game.odds_updated_at ?? "unknown"} at ${game.odds.bookmaker ?? "unknown book"}.`,
     "",
+    "MARKET COVERAGE SUPPLIED BY THE SPORTSBOOK THIS RUN:",
+    ...coverage.map((n) => `- ${n}`),
+    "",
     "MARKET READ (vig removed, computed from the exact posted snapshot):",
     ...marketNotes.map((n) => `- ${n}`),
     "",
@@ -495,7 +591,7 @@ async function runHandicapPass(
       ? `CURRENT INJURY REPORT (the only availability data you have):\n${JSON.stringify(game.injuries)}`
       : "CURRENT INJURY REPORT: none supplied. Do not assert anything about availability.",
     "",
-    "CANDIDATE BOARD — you may only reference these keys:",
+    "CANDIDATE BOARD — you may only reference these keys. hasOpposite=true means the board prices the opposing selection, so it can serve as the bad bet:",
     JSON.stringify(board),
   ].join("\n");
 
@@ -571,18 +667,27 @@ function clean(text: string | undefined, fallback: string): string {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return fallback;
   // Strip any numeric confidence the model tries to smuggle in.
-  return trimmed.replace(/\b\d{1,3}(\.\d+)?\s?%/g, "").replace(/\s{2,}/g, " ").trim() || fallback;
+  const stripped = trimmed
+    .replace(/\b\d{1,3}(\.\d+)?\s?%/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!stripped) return fallback;
+  // Displayed reasons stay short: the deep reasoning is internal, the user
+  // sees only the decisive points — at most two sentences.
+  const sentences = stripped.match(/[^.!?]+[.!?]*/g) ?? [stripped];
+  return sentences.slice(0, 2).join("").trim() || fallback;
 }
 
 /**
  * Deterministic fallback when the handicap pass is unavailable: Lock Lab does
  * not guess. It reports the market read and passes on the board.
  */
-function passingBoard(candidates: Candidate[], verdict: string): EngineOutput {
+function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow): EngineOutput {
   const worst = candidates
     .filter((c) => c.group === "core")
     .slice()
     .sort((a, b) => a.price - b.price)[0];
+  const opposite = worst && game ? findOpposite(worst, candidates, game) : undefined;
   return {
     topBets: [],
     badBet: worst
@@ -590,15 +695,22 @@ function passingBoard(candidates: Candidate[], verdict: string): EngineOutput {
           key: worst.key,
           badge: "red",
           label: worst.label,
+          market: worst.marketLabel,
+          oppositeMarket: opposite?.marketLabel ?? null,
           ...pickSource(worst),
           reason:
             "This is the most expensive way to bet the game: you are paying the heaviest price on the board for the least room for error.",
-          oppositeLabel: "No graded opposite side",
-          oppositeOdds: null,
+          oppositeLabel: opposite ? opposite.label : "NO VALID BAD-BET FLIP",
+          oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
+          oppositePoint: opposite?.point ?? null,
+          oppositePrice: opposite?.price ?? null,
+          oppositeBook: opposite?.book ?? null,
+          oppositeCapturedAt: opposite?.capturedAt ?? null,
           oppositeRecommended: false,
           oppositeBadge: "red",
-          oppositeReason:
-            "The opposite side was not independently graded on this run, so Lock Lab is not recommending it.",
+          oppositeReason: opposite
+            ? "The opposite side was not independently graded on this run, so Lock Lab is not recommending it."
+            : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         }
       : null,
     funBets: [],
@@ -624,12 +736,18 @@ export async function runLockLabFormula(
   const altNotes = summariseAltValue(
     candidates.map((c) => c.alt).filter((a): a is AltEvaluation => Boolean(a)),
   );
-  const handicap = await runHandicapPass(game, candidates, [...market.notes, ...altNotes]);
+  const handicap = await runHandicapPass(
+    game,
+    candidates,
+    [...market.notes, ...altNotes],
+    coverageNotes(candidates, Boolean(previousOdds)),
+  );
 
   if (!handicap) {
     return passingBoard(
       candidates,
       "Lock Lab could not complete a full read on this game, so it is passing rather than posting a bet it cannot defend.",
+      game,
     );
   }
 
@@ -680,13 +798,29 @@ export async function runLockLabFormula(
 
   let badBet: BadBet | null = null;
   if (handicap.badBet) {
-    const c = byKey.get(handicap.badBet.key);
+    const chosen = byKey.get(handicap.badBet.key);
+    // A bad bet is only useful when the flip side is actually priced. If the
+    // model flagged a one-sided market (anytime TD and the like) while a
+    // two-sided market was available, fall back to the worst-priced game line.
+    const swapped =
+      chosen && !hasOpposite(chosen, candidates, game)
+        ? candidates
+            .filter((x) => x.group === "core" && hasOpposite(x, candidates, game))
+            .slice()
+            .sort((a, b) => a.price - b.price)[0]
+        : undefined;
+    const c = swapped ?? chosen;
     if (c) {
-      const opposite = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
-      const oppositeBadge = asBadge(handicap.badBet.oppositeBadge);
+      const declared = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
+      const natural = findOpposite(c, candidates, game);
+      // The declared opposite is honoured only when it really is the flip side
+      // of the flagged bet; otherwise the posted opposing selection is used.
+      const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
+      const oppositeBadge = opposite ? asBadge(handicap.badBet.oppositeBadge) : "red";
       // The opposite side is only tailable when it was independently graded
       // as an edge — a bad bet never promotes its own flip side.
-      const recommended = Boolean(opposite) && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
+      const recommended =
+        Boolean(opposite) && !swapped && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
       // Same side, better number: only offered when the alternate is genuinely
       // the sharper version of this bet, not merely a longer line.
       const altKey = handicap.badBet.alternateKey;
@@ -713,9 +847,13 @@ export async function runLockLabFormula(
         key: "bad1",
         badge: "red",
         label: c.label,
+        market: c.marketLabel,
+        oppositeMarket: opposite?.marketLabel ?? null,
         ...pickSource(c),
-        reason: clean(handicap.badBet.reason, "The price does not match what this matchup projects."),
-        oppositeLabel: opposite ? opposite.label : "No live price on the opposite side",
+        reason: swapped
+          ? "This is the most expensive way to bet the game: the heaviest price on the board for the least room for error."
+          : clean(handicap.badBet.reason, "The price does not match what this matchup projects."),
+        oppositeLabel: opposite ? opposite.label : "NO VALID BAD-BET FLIP",
         oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
         oppositePoint: opposite?.point ?? null,
         oppositePrice: opposite?.price ?? null,
@@ -723,10 +861,14 @@ export async function runLockLabFormula(
         oppositeCapturedAt: opposite?.capturedAt ?? null,
         oppositeRecommended: recommended,
         oppositeBadge,
-        oppositeReason: clean(
-          handicap.badBet.oppositeReason,
-          "Graded on its own, the flip side does not have an edge either — pass on both.",
-        ),
+        oppositeReason: opposite
+          ? swapped
+            ? "The posted flip side was not independently graded on this run, so Lock Lab is not recommending it."
+            : clean(
+                handicap.badBet.oppositeReason,
+                "Graded on its own, the flip side does not have an edge either — pass on both.",
+              )
+          : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         ...alternateFields,
       };
       if (alternateUsable) used.add(alternate!.key);

@@ -83,7 +83,7 @@ export function AnalysisOutput({
           <p className="mt-1 text-xs text-muted-foreground">
             Lines from {analysis.odds_snapshot.bookmaker} · captured{" "}
             {formatCapturedAt(analysis.odds_captured_at ?? analysis.odds_snapshot.capturedAt)} ·
-            every pick below is priced from this exact snapshot
+            every pick below shows the exact sportsbook, line and price it was graded from
           </p>
         ) : (
           <p className="mt-2 rounded-md border border-stop/40 bg-stop/10 px-3 py-2 text-xs font-semibold tracking-wide text-stop uppercase">
@@ -349,7 +349,7 @@ export function AnalysisOutput({
           >
             <span>
               {audit.verified
-                ? "Verified — every pick matches the displayed snapshot"
+                ? "Verified — every pick matches its recorded price record"
                 : "Mismatch detected — do not bet these numbers"}
             </span>
             <span className="font-normal text-muted-foreground normal-case">

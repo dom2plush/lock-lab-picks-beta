@@ -25,4 +25,10 @@
 - Every posted alternate spread/total is graded against the standard line: cash-chance gained vs break-even cost of the worse price, key-number crossings (3/7/10), capped key bump for short buys only, distance haircut so deep alternates never win on paper.
 - Top 2 may be standard or alternate; an alternate pick displays the standard line it beat and why.
 - Bad bet can surface a same-side better number ("Better alternative") instead of an opposite-side call.
-- All alternate/standard prices are audited against the displayed snapshot; derivative markets allowed within a 15-minute refresh window.
+- All alternate/standard prices are audited against the displayed snapshot; derivative markets allowed within a 15-minute refresh window. Alternates/team totals/props may come from a different book than the main line — each pick carries and displays its own book, line, price and capture time; core spread/total/ML must match the snapshot book; props must match the snapshot book.
+
+## Bet-selection refinement (done)
+- Line movement is a supporting signal only, never a prerequisite: evidence weights are price/value, QB, trenches, major injuries and matchup advantages (highest); skill matchups, game script, pace, usage (medium); movement, public info, narrative (supporting).
+- Coverage statement per run: the engine is told exactly how many alternate spreads/totals/team totals/props the book supplied, and the verdict must say whether alternates were absent, evaluated and rejected, or selected.
+- Bad bet prefers a market with a legitimately priced opposing selection; the posted flip side is matched from the board and graded independently. When the book posts no opposing price: "NO VALID BAD-BET FLIP".
+- Displayed reasons capped at two sentences; deep reasoning stays internal.

@@ -108,6 +108,9 @@ export type BadBet = PickSource & {
   badge: Badge;
   label: string;
   reason: string;
+  /** Market of the flagged bet and of its flip side, used by the odds audit. */
+  market?: string | null;
+  oppositeMarket?: string | null;
   oppositeLabel: string;
   oppositeOdds?: string | null;
   /** Price provenance for the opposite side, so it can be audited too. */

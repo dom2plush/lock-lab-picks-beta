@@ -147,7 +147,12 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       game.odds,
     );
     if (audited.dropped.length) {
-      console.warn("Lock Lab audit dropped unverifiable picks", game.id, audited.dropped);
+      console.warn(
+        "Lock Lab audit dropped unverifiable picks",
+        game.id,
+        audited.dropped,
+        audited.report.problems,
+      );
     }
     const verdict =
       finished.notes.verdict ??

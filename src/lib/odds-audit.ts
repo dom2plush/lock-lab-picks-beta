@@ -103,7 +103,12 @@ function checkEntry(
   }
   if (expected && !displayedOdds) problems.push("The price is recorded but not shown with the pick.");
 
-  if (snapshot.bookmaker && source.book && !sameBook(source.book, snapshot.bookmaker)) {
+  // Core spread/total/moneyline picks must come from the snapshot's book.
+  // Alternate lines, team totals and props are often posted by a different
+  // book; those are fine because the pick carries and displays its own record.
+  const tag = `${market} ${pickKey}`.toLowerCase();
+  const derivative = /alternat|team.total|player|prop|^alt-|[ -]alt-/.test(tag);
+  if (!derivative && snapshot.bookmaker && source.book && !sameBook(source.book, snapshot.bookmaker)) {
     problems.push(
       `Priced at ${source.book} but the page is showing a ${snapshot.bookmaker} snapshot.`,
     );
@@ -179,7 +184,16 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
   const bad = analysis.bad_bet;
   if (bad) {
     entries.push(
-      checkEntry("Bad bet", bad.key, bad.label, "Flagged", null, formatAmerican(bad.price), bad, snapshot),
+      checkEntry(
+        "Bad bet",
+        bad.key,
+        bad.label,
+        bad.market ?? "Flagged",
+        null,
+        formatAmerican(bad.price),
+        bad,
+        snapshot,
+      ),
     );
     if (bad.oppositePrice != null || bad.oppositeBook || bad.oppositeCapturedAt) {
       entries.push(
@@ -187,7 +201,7 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
           "Opposite side",
           `${bad.key}-opposite`,
           bad.oppositeLabel,
-          "Opposite",
+          bad.oppositeMarket ?? "Opposite",
           null,
           bad.oppositeOdds ?? null,
           {
@@ -277,7 +291,9 @@ export function enforceAuditIntegrity<T extends AuditInput>(
     return { output, report, dropped: [] };
   }
 
-  const dropped = report.entries.filter((e) => e.problems.length > 0).map((e) => e.label);
+  const dropped = report.entries
+    .filter((e) => e.problems.length > 0)
+    .map((e) => `${e.label}: ${e.problems.join("; ")}`);
 
   const stripStandard = (bet: PickBet): PickBet => {
     if (!failedStandard.has(bet.key)) return bet;
