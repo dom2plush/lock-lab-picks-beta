@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as DevAuditRouteImport } from './routes/dev-audit'
 import { Route as HistoricalRouteImport } from './routes/historical'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as MyBetsRouteImport } from './routes/my-bets'
@@ -25,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevAuditRoute = DevAuditRouteImport.update({
+  id: '/dev-audit',
+  path: '/dev-audit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoricalRoute = HistoricalRouteImport.update({
@@ -57,6 +63,7 @@ const ApiPublicHooksRefreshSportsDataRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dev-audit': typeof DevAuditRoute
   '/historical': typeof HistoricalRoute
   '/leaderboard': typeof LeaderboardRoute
   '/my-bets': typeof MyBetsRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dev-audit': typeof DevAuditRoute
   '/historical': typeof HistoricalRoute
   '/leaderboard': typeof LeaderboardRoute
   '/my-bets': typeof MyBetsRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dev-audit': typeof DevAuditRoute
   '/historical': typeof HistoricalRoute
   '/leaderboard': typeof LeaderboardRoute
   '/my-bets': typeof MyBetsRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/dev-audit'
     | '/historical'
     | '/leaderboard'
     | '/my-bets'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/dev-audit'
     | '/historical'
     | '/leaderboard'
     | '/my-bets'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
+    | '/dev-audit'
     | '/historical'
     | '/leaderboard'
     | '/my-bets'
@@ -115,6 +127,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  DevAuditRoute: typeof DevAuditRoute
   HistoricalRoute: typeof HistoricalRoute
   LeaderboardRoute: typeof LeaderboardRoute
   MyBetsRoute: typeof MyBetsRoute
@@ -136,6 +149,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev-audit': {
+      id: '/dev-audit'
+      path: '/dev-audit'
+      fullPath: '/dev-audit'
+      preLoaderRoute: typeof DevAuditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/historical': {
@@ -179,6 +199,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  DevAuditRoute: DevAuditRoute,
   HistoricalRoute: HistoricalRoute,
   LeaderboardRoute: LeaderboardRoute,
   MyBetsRoute: MyBetsRoute,
