@@ -184,7 +184,16 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
   const bad = analysis.bad_bet;
   if (bad) {
     entries.push(
-      checkEntry("Bad bet", bad.key, bad.label, "Flagged", null, formatAmerican(bad.price), bad, snapshot),
+      checkEntry(
+        "Bad bet",
+        bad.key,
+        bad.label,
+        bad.market ?? "Flagged",
+        null,
+        formatAmerican(bad.price),
+        bad,
+        snapshot,
+      ),
     );
     if (bad.oppositePrice != null || bad.oppositeBook || bad.oppositeCapturedAt) {
       entries.push(
@@ -192,7 +201,7 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
           "Opposite side",
           `${bad.key}-opposite`,
           bad.oppositeLabel,
-          "Opposite",
+          bad.oppositeMarket ?? "Opposite",
           null,
           bad.oppositeOdds ?? null,
           {
