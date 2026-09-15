@@ -32,7 +32,11 @@ export type OfferVerification = {
   rejected: OfferRejection[];
 };
 
-function baseProblems(offer: MarketOffer, game: GameRow): string[] {
+function baseProblems(
+  offer: MarketOffer,
+  game: GameRow,
+  requireSnapshotBook: boolean,
+): string[] {
   const problems: string[] = [];
 
   // Event scoping: the provider returns derivative markets per event. An offer
@@ -48,10 +52,12 @@ function baseProblems(offer: MarketOffer, game: GameRow): string[] {
     problems.push("no usable price");
   }
 
-  // The snapshot on screen names a sportsbook; an offer from another book is
-  // not part of that snapshot and must not be priced against it.
+  // Player props must belong to the sportsbook named on the snapshot. Game-line
+  // alternates are frequently posted by a different book than the one pricing
+  // the main line; those stay eligible because every pick carries and displays
+  // its own book, line, price and capture time.
   const snapshotBookKey = game.odds?.bookmakerKey;
-  if (snapshotBookKey && offer.bookKey && offer.bookKey !== snapshotBookKey) {
+  if (requireSnapshotBook && snapshotBookKey && offer.bookKey && offer.bookKey !== snapshotBookKey) {
     problems.push("sportsbook differs from the displayed snapshot");
   }
 
