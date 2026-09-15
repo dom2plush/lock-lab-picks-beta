@@ -736,6 +736,7 @@ export async function runLockLabFormula(
     return passingBoard(
       candidates,
       "Lock Lab could not complete a full read on this game, so it is passing rather than posting a bet it cannot defend.",
+      game,
     );
   }
 
