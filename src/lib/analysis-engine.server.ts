@@ -847,6 +847,8 @@ export async function runLockLabFormula(
         key: "bad1",
         badge: "red",
         label: c.label,
+        market: c.marketLabel,
+        oppositeMarket: opposite?.marketLabel ?? null,
         ...pickSource(c),
         reason: swapped
           ? "This is the most expensive way to bet the game: the heaviest price on the board for the least room for error."
