@@ -496,8 +496,17 @@ EVIDENCE WEIGHTS — weigh everything you have, in this priority:
 
 LINE MOVEMENT IS NOT A PREREQUISITE. It is a supporting signal only. When no previous snapshot exists there is simply no movement evidence, and that is NOT a reason to pass or to downgrade a bet. Never write "no movement evidence" as a reason. A bet earns green or yellow when the matchup edge is strong, the price is favourable, the trenches / QB / skill / defence / game-script read supports it and the posted number offers value — with or without movement data. Equally, you MUST still return an empty top list when the evidence genuinely does not establish an edge; a market that simply looks efficient is not an edge. Do not pass merely because the spread and moneyline agree or because the matchup is not overwhelming.
 
+PROBABILITY VS PRICE — this decides the ranking:
+- Every candidate carries its implied probability at the posted price, Lock Lab's estimated win probability, the resulting edge, the expected value per $1 and the uncertainty band that estimate has to clear. Read those numbers before you rank anything.
+- A bet is only good when the estimated win probability beats the implied probability by more than the noise in the estimate. A big payout is NEVER a reason. Never write that a larger payout compensates for a tougher cover — that reasoning is rejected in code.
+- A +190 alternate must not outrank a -110 bet unless its estimated probability genuinely clears its implied probability by a wide margin. Long shots need a bigger edge than standard markets because the estimate is less reliable there.
+- Rank the top two by risk-adjusted value (edge relative to uncertainty), not by EV alone and never by payout size.
+- Be conservative with uncertain estimates: if the edge sits inside the band, that is not an edge — badge it red or leave it off.
+- Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
+
 ALTERNATE LINES — check these on every game:
 - The standard spread and total are NOT the only options. Every alternate spread and alternate total posted by the book is on your board, already graded: each one states the cash-chance gained over the standard line, what the worse price costs in break-even terms, the net of the two, and any key number the move crosses.
+- Walk the whole posted curve on the side you like (for example -4.5, -5.5, -6.5, -7.5, -8.5) and compare estimated probability against implied probability at each rung, not just the longest one. The standard line never wins automatically, and neither does the alternate.
 - Ask explicitly: is the sharpest bet the standard line, or an alternate? Buying through a key number (3, 7, 10) is often worth real juice; buying points that cross nothing usually is not. Compare the two directly (for example +2.5 versus +3.5) and reach one of four conclusions: the alternate is sharper, the standard is better value, the other side is better, or pass.
 - The board summary tells you whether alternate markets were supplied at all. If none were supplied, you may say so; if they were supplied, never claim alternates do not exist — say they were evaluated and, if you rejected them, that the extra juice outweighed the added protection.
 - NEVER take an alternate just because it has more points. Take it only when the graded net is positive and the matchup read agrees.
@@ -755,10 +764,15 @@ function asBadge(value: string | undefined): Badge {
   return BADGES.includes(value as Badge) ? (value as Badge) : "red";
 }
 
+/** Reasoning that ranks a bet by payout rather than probability is rejected. */
+const PAYOUT_CLICHE =
+  /(larger|bigger|longer|plus[- ]money|extra)\s+(payout|price|return|money)|payout\s+(compensates|makes up|justifies|outweighs)|worth the risk for the (payout|price)|pays (enough|more) to/i;
+
 function clean(text: string | undefined, fallback: string): string {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return fallback;
   // Strip any numeric confidence the model tries to smuggle in.
+  if (PAYOUT_CLICHE.test(trimmed)) return fallback;
   const stripped = trimmed
     .replace(/\b\d{1,3}(\.\d+)?\s?%/g, "")
     .replace(/\s{2,}/g, " ")
@@ -846,9 +860,17 @@ export async function runLockLabFormula(
   const used = new Set<string>();
 
   const topBets: PickBet[] = [];
+  const rejected: string[] = [];
   for (const entry of handicap.top ?? []) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key)) continue;
+    // Price must be beaten by the estimated win probability. A pick that only
+    // looks good because it pays more is dropped here, never published.
+    const eligible = eligibleForTop(c);
+    if (!eligible.ok) {
+      rejected.push(eligible.why);
+      continue;
+    }
     // A second pick in the same market/player as the first is not distinct.
     if (topBets.some((b) => b.market === c.marketLabel && b.selection === (c.player ?? c.selection))) {
       continue;
@@ -883,7 +905,12 @@ export async function runLockLabFormula(
       odds: fmtOdds(c.price),
       ...pickSource(c),
       ...standardFields,
-      reason: clean(entry.reason, "Priced below where this matchup projects."),
+      reason: clean(
+        entry.reason,
+        c.grade?.modelProb != null && c.grade.edge != null && c.grade.edge > 0
+          ? "Lock Lab's win estimate for this selection sits above what the posted price implies, and the matchup read supports it."
+          : "Priced below where this matchup projects.",
+      ),
     });
     if (topBets.length === 2) break;
   }
@@ -1005,10 +1032,12 @@ export async function runLockLabFormula(
 
   const verdict = topBets.length
     ? null
-    : clean(
-        handicap.verdict,
-        "No meaningful edge on this board. Lock Lab is passing rather than forcing a bet.",
-      );
+    : rejected.length
+      ? `No bet: every candidate considered failed the probability-versus-price test. ${rejected[0]}`
+      : clean(
+          handicap.verdict,
+          "No meaningful edge on this board. Lock Lab is passing rather than forcing a bet.",
+        );
 
   return {
     topBets,
