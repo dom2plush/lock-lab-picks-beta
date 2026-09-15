@@ -130,6 +130,14 @@ export type CandidateAudit = {
   snapshotCapturedAt: string | null;
   altMarketsSupplied: number;
   propMarketsSupplied: number;
+  /** Standard spread/total/moneyline selections graded on this run. */
+  standardMarketsEvaluated: number;
+  /** Alternate ladder rungs graded against their standard line on this run. */
+  alternateMarketsEvaluated: number;
+  /** The single best-graded alternate rung considered. */
+  strongestAlternate: CandidateAuditEntry | null;
+  /** Why that alternate was selected or rejected. */
+  strongestAlternateOutcome: string;
   entries: CandidateAuditEntry[];
   /** Highest-edge candidate that was considered and not published. */
   strongestRejected: CandidateAuditEntry | null;
