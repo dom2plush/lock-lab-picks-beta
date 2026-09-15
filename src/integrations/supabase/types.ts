@@ -64,6 +64,7 @@ export type Database = {
       game_analyses: {
         Row: {
           bad_bet: Json | null
+          candidate_audit: Json | null
           engine_version: string
           fun_bets: Json
           game_id: string
@@ -82,6 +83,7 @@ export type Database = {
         }
         Insert: {
           bad_bet?: Json | null
+          candidate_audit?: Json | null
           engine_version?: string
           fun_bets?: Json
           game_id: string
@@ -100,6 +102,7 @@ export type Database = {
         }
         Update: {
           bad_bet?: Json | null
+          candidate_audit?: Json | null
           engine_version?: string
           fun_bets?: Json
           game_id?: string
