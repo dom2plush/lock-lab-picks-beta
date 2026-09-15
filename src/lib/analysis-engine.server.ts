@@ -453,6 +453,29 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
   return { ok: true, why: "" };
 }
 
+/**
+ * Shifts a candidate's probability estimate off the market's vig-free number by
+ * the handicap read's stated lean, bounded so a confident-sounding model can
+ * never manufacture a large edge out of nothing, then regrades it.
+ */
+function applyLean(c: Candidate, lean: number | null | undefined, evidence: number | null | undefined): void {
+  const g = c.grade;
+  if (!g || g.modelProb == null || lean == null || !Number.isFinite(lean)) return;
+  const cap = c.group === "prop" ? 5 : 6;
+  const shift = Math.max(-cap, Math.min(cap, lean)) / 100;
+  if (shift === 0) return;
+  const strength = evidence != null && Number.isFinite(evidence) ? Math.max(0, Math.min(1, evidence)) : 0.5;
+  // A shakier read both moves the number less and widens its own band.
+  const damped = shift * (0.5 + 0.5 * strength);
+  c.grade = gradeValue({
+    modelProb: g.modelProb + damped,
+    price: c.price,
+    group: c.group,
+    distance: c.alt ? Math.abs(c.alt.point - c.alt.standardPoint) : 0,
+    evidenceStrength: strength,
+  });
+}
+
 /** Playable-tier candidates can reach the board, but never as a green bet. */
 function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
@@ -570,6 +593,7 @@ PROBABILITY VS PRICE — this decides the ranking:
 - Rank the top two by risk-adjusted value (edge relative to uncertainty), never by EV alone and never by payout size. A candidate scoring above one full band outranks a higher-EV candidate scoring below one band.
 - Raw EV never sets the order. Rank by risk-adjusted value: the edge in uncertainty bands, discounted by how reliable that estimate is. A prop, a long price, a one-sided market and especially an alternate that SELLS points (fewer points for a bigger payout, e.g. +7 down to +2.5) all estimate worse and are discounted accordingly. A +200-or-longer candidate must not be #1 when its edge only partly clears its band.
 - When a top bet is an alternate on the same side as a standard line, state the comparison plainly: points surrendered or bought, what the price change is worth, and whether the trade is justified. Never take fewer points just because the payout is bigger.
+- For each bet you put in the Top 2, set probabilityLean: how many percentage points your handicap read moves the true win chance away from the market's own vig-free number, from -6 to +6. Zero means the market has it right, and a bet with no lean has no edge. Only move it for a concrete, stated reason (trench mismatch, quarterback, injury, game script). Also set evidenceStrength from 0 to 1 for how solid that read is; thin or speculative reads must stay below 0.5. Never invent a lean to manufacture a bet.
 - Positive EV alone is NOT green. YELLOW is a real rating, not a consolation: a genuine playable edge belongs in the Top 2 as YELLOW. Do not return an empty board just because nothing is strong enough for GREEN. Still return no bet when every candidate's edge sits inside the noise. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
 - Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
 
@@ -598,6 +622,10 @@ type HandicapResponse = {
     key: string;
     badge: string;
     reason: string;
+    /** Percentage points the matchup evidence moves the fair probability, -6..6. */
+    probabilityLean?: number | null;
+    /** 0-1 confidence in that lean. */
+    evidenceStrength?: number | null;
     standardKey?: string | null;
     standardComparison?: string | null;
   }[];
@@ -627,13 +655,23 @@ const RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["key", "badge", "reason", "standardKey", "standardComparison"],
+        required: [
+          "key",
+          "badge",
+          "reason",
+          "standardKey",
+          "standardComparison",
+          "probabilityLean",
+          "evidenceStrength",
+        ],
         properties: {
           key: { type: "string" },
           badge: { type: "string", enum: ["green", "yellow", "red"] },
           reason: { type: "string" },
           standardKey: { type: ["string", "null"] },
           standardComparison: { type: ["string", "null"] },
+          probabilityLean: { type: ["number", "null"] },
+          evidenceStrength: { type: ["number", "null"] },
         },
       },
     },
@@ -1038,6 +1076,10 @@ export async function runLockLabFormula(
   for (const entry of handicap.top ?? []) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key)) continue;
+    // The market's own vig-free number is the starting point; the handicap read
+    // may move it within a bounded range, for a stated reason, before the value
+    // gate runs. Without a lean a bet simply matches the market and has no edge.
+    applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     // Price must be beaten by the estimated win probability. A pick that only
     // looks good because it pays more is dropped here, never published.
     const eligible = eligibleForTop(c);
