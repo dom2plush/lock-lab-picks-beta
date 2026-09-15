@@ -35,6 +35,9 @@ import {
   createAltEvaluator,
   devig,
   gradeValue,
+  robustnessScore,
+  riskAdjustedScore,
+  canLeadBoard,
   impliedProbability,
   readMarket,
   summariseAltValue,
@@ -451,6 +454,28 @@ function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
 }
 
+/** How reliable a candidate's probability estimate is (0-1). */
+function candidateRobustness(c: Candidate): number {
+  if (!c.grade) return 0.5;
+  return robustnessScore({
+    grade: c.grade,
+    group: c.group,
+    probGain: c.alt ? c.alt.probGain : null,
+    keysCrossed: c.alt ? c.alt.keysCrossed.length : 0,
+  });
+}
+
+/** Risk-adjusted ranking number: edge in uncertainty bands, discounted by robustness. */
+function candidateRank(c: Candidate): number {
+  if (!c.grade) return 0;
+  return riskAdjustedScore(c.grade, candidateRobustness(c));
+}
+
+function leadCheck(c: Candidate): { ok: boolean; why: string } {
+  if (!c.grade) return { ok: false, why: "no supportable probability estimate" };
+  return canLeadBoard(c.grade, candidateRobustness(c));
+}
+
 function pickSource(c: Candidate) {
   return {
     point: c.point,
@@ -539,6 +564,8 @@ PROBABILITY VS PRICE — this decides the ranking:
 - A bet is only good when the estimated win probability beats the implied probability by more than the noise in the estimate. A big payout is NEVER a reason. Never write that a larger payout compensates for a tougher cover — that reasoning is rejected in code.
 - The uncertainty band already widens with price length, alternate distance and weak evidence. So a long price is not banned: it simply has a wider band to clear. Judge it on its risk-adjusted score, not on the fact that it is plus money.
 - Rank the top two by risk-adjusted value (edge relative to uncertainty), never by EV alone and never by payout size. A candidate scoring above one full band outranks a higher-EV candidate scoring below one band.
+- Raw EV never sets the order. Rank by risk-adjusted value: the edge in uncertainty bands, discounted by how reliable that estimate is. A prop, a long price, a one-sided market and especially an alternate that SELLS points (fewer points for a bigger payout, e.g. +7 down to +2.5) all estimate worse and are discounted accordingly. A +200-or-longer candidate must not be #1 when its edge only partly clears its band.
+- When a top bet is an alternate on the same side as a standard line, state the comparison plainly: points surrendered or bought, what the price change is worth, and whether the trade is justified. Never take fewer points just because the payout is bigger.
 - Positive EV alone is NOT green. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
 - Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
 
@@ -1003,6 +1030,7 @@ export async function runLockLabFormula(
   const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
   const topBets: PickBet[] = [];
   const rejected: string[] = [];
+  const shortlist: { c: Candidate; entry: (typeof handicap.top)[number] }[] = [];
   for (const entry of handicap.top ?? []) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key)) continue;
@@ -1019,10 +1047,41 @@ export async function runLockLabFormula(
       continue;
     }
     // A second pick in the same market/player as the first is not distinct.
-    if (topBets.some((b) => b.market === c.marketLabel && b.selection === (c.player ?? c.selection))) {
+    if (shortlist.some((s) => s.c.marketLabel === c.marketLabel && (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) {
       continue;
     }
     used.add(c.key);
+    shortlist.push({ c, entry });
+  }
+
+  // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
+  // by how reliable the estimate behind it is. Raw EV never sets the order.
+  shortlist.sort((a, b) => candidateRank(b.c) - candidateRank(a.c));
+
+  // #1 has to be able to carry the board. A partial-band edge at a long price
+  // steps aside for a steadier bet, and leads only when nothing steadier exists
+  // and it is still clearly the strongest risk-adjusted opportunity.
+  if (shortlist.length) {
+    const leadIndex = shortlist.findIndex((s) => leadCheck(s.c).ok);
+    if (leadIndex > 0) {
+      const [lead] = shortlist.splice(leadIndex, 1);
+      shortlist.unshift(lead!);
+    } else if (leadIndex === -1) {
+      const head = shortlist[0]!;
+      const check = leadCheck(head.c);
+      if (candidateRank(head.c) < 0.6) {
+        rejected.push(`${head.c.label}: ${check.why}.`);
+        decisions.set(head.c.key, {
+          section: null,
+          badge: "red",
+          reason: `Not posted as the top bet: ${check.why}.`,
+        });
+        shortlist.shift();
+      }
+    }
+  }
+
+  for (const { c, entry } of shortlist.slice(0, 2)) {
     // An alternate line always shows the standard number it beat, quoted from
     // the same snapshot, so the standard-vs-alternate decision is visible.
     const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
@@ -1041,10 +1100,11 @@ export async function runLockLabFormula(
           ),
         }
       : {};
+    const badge = capBadge(c, asBadge(entry.badge));
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
-      badge: capBadge(c, asBadge(entry.badge)),
+      badge,
       label: c.label,
       market: c.marketLabel,
       selection: c.player ?? c.selection,
@@ -1061,10 +1121,9 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "top",
-      badge: capBadge(c, asBadge(entry.badge)),
+      badge,
       reason: clean(entry.reason, "Selected as a top bet."),
     });
-    if (topBets.length === 2) break;
   }
 
   let badBet: BadBet | null = null;
