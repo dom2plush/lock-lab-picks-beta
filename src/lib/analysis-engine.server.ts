@@ -522,10 +522,43 @@ const RESPONSE_SCHEMA = {
   },
 };
 
+/** Plain statement of what the sportsbook actually supplied this run. */
+function coverageNotes(candidates: Candidate[], hasPrevious: boolean): string[] {
+  const count = (market: string) => candidates.filter((c) => c.market === market).length;
+  const altSpreads = count("alternate_spreads");
+  const altTotals = count("alternate_totals");
+  const teamTotals = count("team_totals");
+  const props = candidates.filter((c) => c.group === "prop").length;
+  const notes: string[] = [];
+  notes.push(
+    altSpreads
+      ? `Alternate spreads supplied and graded: ${altSpreads} posted prices. Evaluate them against the standard spread.`
+      : "No alternate spread market was supplied by the sportsbook for this game.",
+  );
+  notes.push(
+    altTotals
+      ? `Alternate totals supplied and graded: ${altTotals} posted prices. Evaluate them against the standard total.`
+      : "No alternate total market was supplied by the sportsbook for this game.",
+  );
+  if (teamTotals) notes.push(`Team totals supplied: ${teamTotals} posted prices.`);
+  notes.push(
+    props
+      ? `Player props supplied and verified for this exact game: ${props} posted selections.`
+      : "No verified player prop market was supplied for this game.",
+  );
+  notes.push(
+    hasPrevious
+      ? "A previous odds snapshot exists, so line movement above is real evidence."
+      : "No previous odds snapshot exists, so there is no line-movement data. This is NOT a reason to pass or to downgrade any bet — judge on price, matchup and the pillars.",
+  );
+  return notes;
+}
+
 async function runHandicapPass(
   game: GameRow,
   candidates: Candidate[],
   marketNotes: string[],
+  coverage: string[],
 ): Promise<HandicapResponse | null> {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) return null;
@@ -538,6 +571,7 @@ async function runHandicapPass(
     price: c.price,
     ...(c.point != null ? { line: c.point } : {}),
     ...(c.player ? { player: c.player } : {}),
+    hasOpposite: hasOpposite(c, candidates, game),
     note: c.note,
   }));
 
@@ -546,6 +580,9 @@ async function runHandicapPass(
     `Kickoff: ${game.commence_time}.`,
     `Odds snapshot captured: ${game.odds.capturedAt ?? game.odds_updated_at ?? "unknown"} at ${game.odds.bookmaker ?? "unknown book"}.`,
     "",
+    "MARKET COVERAGE SUPPLIED BY THE SPORTSBOOK THIS RUN:",
+    ...coverage.map((n) => `- ${n}`),
+    "",
     "MARKET READ (vig removed, computed from the exact posted snapshot):",
     ...marketNotes.map((n) => `- ${n}`),
     "",
@@ -553,7 +590,7 @@ async function runHandicapPass(
       ? `CURRENT INJURY REPORT (the only availability data you have):\n${JSON.stringify(game.injuries)}`
       : "CURRENT INJURY REPORT: none supplied. Do not assert anything about availability.",
     "",
-    "CANDIDATE BOARD — you may only reference these keys:",
+    "CANDIDATE BOARD — you may only reference these keys. hasOpposite=true means the board prices the opposing selection, so it can serve as the bad bet:",
     JSON.stringify(board),
   ].join("\n");
 
