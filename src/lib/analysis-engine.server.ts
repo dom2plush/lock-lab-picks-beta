@@ -945,7 +945,11 @@ export async function runLockLabFormula(
       const altKey = handicap.badBet.alternateKey;
       const alternate = altKey ? byKey.get(altKey) : undefined;
       const alternateBadge = asBadge(handicap.badBet.alternateBadge ?? undefined);
-      const alternateUsable = Boolean(alternate) && alternate!.key !== c.key && alternateBadge !== "red";
+      const alternateUsable =
+        Boolean(alternate) &&
+        alternate!.key !== c.key &&
+        alternateBadge !== "red" &&
+        eligibleForTop(alternate!).ok;
       const alternateFields = alternateUsable
         ? {
             alternateLabel: alternate!.label,
