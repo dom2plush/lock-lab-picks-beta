@@ -24,7 +24,10 @@ export type MarketOffer = {
   capturedAt: string;
   /** Provider event id this offer was pulled for — proves game ownership. */
   eventId?: string;
+  /** True when this price is an alternate line rather than the standard market. */
+  isAlternate?: boolean;
 };
+
 
 /** True when a stored snapshot came from the live provider feed. */
 export function hasLiveOdds(odds: GameOdds | null | undefined): boolean {

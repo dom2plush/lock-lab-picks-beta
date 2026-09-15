@@ -195,18 +195,47 @@ export async function fetchUpcomingGames(sport: Sport): Promise<NormalizedGame[]
   });
 }
 
+/** How much of the derivative board the provider actually returned. */
+export type MarketCoverage = {
+  /** Market keys requested from the provider. */
+  requested: string[];
+  /** Posted prices received, per market key. */
+  received: Record<string, number>;
+  /** Sportsbook used for each market key (best available, by priority). */
+  books: Record<string, string>;
+  /** Market keys the provider returned nothing for. */
+  missing: string[];
+  /** Provider error text per failed request, if any. */
+  errors: string[];
+};
+
 /**
- * Per-event alternate lines and player props. These live on a separate provider
- * endpoint and are only available on props-enabled plans; when the provider
- * returns nothing we return empty arrays and the UI states that the market is
- * unavailable rather than showing an estimate.
+ * Per-event alternate lines and player props.
+ *
+ * The provider returns every US book for the event, but not every book posts
+ * every market: DraftKings may price alternate spreads while only FanDuel
+ * posts team totals. The book is therefore chosen PER MARKET — the highest
+ * priority book that actually posted that market — so a full ladder is never
+ * lost because the snapshot book skipped it. Nothing is invented: when no book
+ * posts a market it is reported as missing.
  */
 export async function fetchEventMarkets(
   sport: Sport,
   providerGameId: string,
-): Promise<{ alternates: MarketOffer[]; props: MarketOffer[]; capturedAt: string }> {
+): Promise<{
+  alternates: MarketOffer[];
+  props: MarketOffer[];
+  capturedAt: string;
+  coverage: MarketCoverage;
+}> {
   const capturedAt = new Date().toISOString();
-  const result = { alternates: [] as MarketOffer[], props: [] as MarketOffer[], capturedAt };
+  const coverage: MarketCoverage = {
+    requested: [...ALT_MARKETS, ...PROP_MARKETS],
+    received: {},
+    books: {},
+    missing: [],
+    errors: [],
+  };
 
   const load = async (markets: string[]) => {
     try {
@@ -215,25 +244,51 @@ export async function fetchEventMarkets(
         { regions: "us", oddsFormat: "american", markets: markets.join(",") },
       );
     } catch (error) {
-      console.warn(`[odds] event markets unavailable (${markets[0]}):`, (error as Error).message);
+      const message = (error as Error).message;
+      coverage.errors.push(`${markets[0]}: ${message}`);
+      console.warn(`[odds] event markets unavailable (${markets[0]}):`, message);
       return null;
     }
   };
 
-  const collect = (event: ProviderEvent | null): MarketOffer[] => {
-    if (!event?.bookmakers?.length) return [];
+  /** Best book for one market key: first in priority order that posted it. */
+  const bookForMarket = (event: ProviderEvent, marketKey: string) => {
+    const withMarket = (event.bookmakers ?? []).filter((b) =>
+      (b.markets ?? []).some((m) => m.key === marketKey && (m.outcomes?.length ?? 0) > 0),
+    );
+    if (!withMarket.length) return undefined;
+    for (const key of BOOK_PRIORITY) {
+      const match = withMarket.find((b) => b.key === key);
+      if (match) return match;
+    }
+    return withMarket[0];
+  };
+
+  const collect = (event: ProviderEvent | null, marketKeys: string[]): MarketOffer[] => {
+    const offers: MarketOffer[] = [];
+    if (!event?.bookmakers?.length) {
+      for (const key of marketKeys) coverage.missing.push(key);
+      return offers;
+    }
     // Hard game match: never accept markets returned under another event id.
     if (event.id && event.id !== providerGameId) {
       console.warn("[odds] event id mismatch on derivative markets", event.id, providerGameId);
-      return [];
+      for (const key of marketKeys) coverage.missing.push(key);
+      return offers;
     }
-    const book = pickBook(event);
-    if (!book) return [];
-    const offers: MarketOffer[] = [];
-    for (const market of book.markets ?? []) {
+
+    for (const marketKey of marketKeys) {
+      const book = bookForMarket(event, marketKey);
+      if (!book) {
+        coverage.missing.push(marketKey);
+        continue;
+      }
+      const market = book.markets.find((m) => m.key === marketKey)!;
+      coverage.books[marketKey] = book.title;
+      let count = 0;
       for (const outcome of market.outcomes ?? []) {
         offers.push({
-          market: market.key,
+          market: marketKey,
           selection: outcome.name,
           ...(outcome.description ? { player: outcome.description } : {}),
           point: outcome.point ?? null,
@@ -242,17 +297,24 @@ export async function fetchEventMarkets(
           bookKey: book.key,
           capturedAt: market.last_update ?? book.last_update ?? capturedAt,
           eventId: providerGameId,
+          isAlternate: marketKey.startsWith("alternate_"),
         });
+        count += 1;
       }
+      coverage.received[marketKey] = count;
     }
     return offers;
   };
 
   const [alt, props] = await Promise.all([load(ALT_MARKETS), load(PROP_MARKETS)]);
-  result.alternates = collect(alt);
-  result.props = collect(props);
-  return result;
+  return {
+    alternates: collect(alt, ALT_MARKETS),
+    props: collect(props, PROP_MARKETS),
+    capturedAt,
+    coverage,
+  };
 }
+
 
 export type NormalizedScore = {
   provider_game_id: string;

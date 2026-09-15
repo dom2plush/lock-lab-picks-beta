@@ -126,6 +126,9 @@ export type CandidateAuditEntry = {
 
 export type CandidateAudit = {
   generatedAt: string;
+  /** The game this board belongs to — proves the trail is not shared. */
+  gameId: string | null;
+  providerGameId: string | null;
   snapshotBook: string | null;
   snapshotCapturedAt: string | null;
   altMarketsSupplied: number;
@@ -136,6 +139,12 @@ export type CandidateAudit = {
   alternateMarketsReceived: number;
   /** Alternate ladder rungs graded against their standard line on this run. */
   alternateMarketsEvaluated: number;
+  /** Sportsbooks that supplied the alternate rungs actually graded. */
+  alternateBooks: string[];
+  /** Every graded rung, cheapest line first — the ladder the engine really saw. */
+  ladder: { market: string; side: string; line: string | null; price: number; book: string }[];
+  /** The best-graded candidate of any kind on the board. */
+  bestCandidate: CandidateAuditEntry | null;
   /** The single best-graded alternate rung considered. */
   strongestAlternate: CandidateAuditEntry | null;
   /** Why that alternate was selected or rejected. */
@@ -146,6 +155,7 @@ export type CandidateAudit = {
   /** Highest-edge candidate that was considered and not published. */
   strongestRejected: CandidateAuditEntry | null;
 };
+
 
 export type EngineOutput = {
   topBets: PickBet[];
@@ -304,9 +314,12 @@ function buildCandidates(
     return undefined;
   };
 
+  // Every posted rung is graded. The price window only excludes quotes no one
+  // can sensibly bet (deep buy-outs and lottery numbers); it is not a value
+  // filter — value is decided later, on probability against price.
   type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
   const scored: ScoredAlt[] = extra.alternates
-    .filter((o) => o.point != null && o.price <= 900 && o.price >= -400)
+    .filter((o) => o.point != null && o.price <= 1200 && o.price >= -1000)
     .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
 
   // Both rungs of the ladder matter: the cap is per market AND per side, so a
@@ -323,8 +336,9 @@ function buildCandidates(
   ordered.forEach(({ offer, evaluation }, index) => {
     const ladder = `${offer.market}|${offer.player ?? offer.selection}`;
     const count = perLadder.get(ladder) ?? 0;
-    if (count >= 12) return;
+    if (count >= 24) return;
     perLadder.set(ladder, count + 1);
+
 
     const standardKey = standardKeyFor(offer.market, offer.selection);
     out.push({
@@ -982,9 +996,11 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
     playerProps: [],
     notes: { propsAvailable: false, altMarketsAvailable: false, verdict },
     candidateAudit: game
-      ? buildCandidateAudit(game, candidates, { alternates: [], props: [] }, new Map())
+      ? buildCandidateAudit(game, candidates, extra, new Map())
       : {
           generatedAt: new Date().toISOString(),
+          gameId: null,
+          providerGameId: null,
           snapshotBook: null,
           snapshotCapturedAt: null,
           altMarketsSupplied: 0,
@@ -992,12 +1008,16 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
           standardMarketsEvaluated: 0,
           alternateMarketsReceived: 0,
           alternateMarketsEvaluated: 0,
+          alternateBooks: [],
+          ladder: [],
+          bestCandidate: null,
           strongestAlternate: null,
           strongestAlternateOutcome: "ALTERNATE LINES UNAVAILABLE — cannot line-shop this game.",
           standardVsAlternateEdge: null,
           entries: [],
           strongestRejected: null,
         },
+
   };
 }
 
