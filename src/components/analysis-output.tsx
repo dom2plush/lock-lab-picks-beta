@@ -38,12 +38,19 @@ export function AnalysisOutput({
   game,
   analysis,
   onTail,
+  status = "pregame",
+  propsVerified = true,
 }: {
   game: GameRow;
   analysis: AnalysisRow;
   onTail: (target: TailTarget) => void;
+  /** Pregame cards are tailable; locked/historical cards are read-only. */
+  status?: "pregame" | "locked" | "historical";
+  /** Whether the live feed returned any prop that passed verification. */
+  propsVerified?: boolean;
 }) {
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
+  const tailable = status === "pregame";
   // Recomputed from the very objects rendered below, so the check covers what
   // the user is actually looking at rather than what the server intended.
   const audit = buildAuditReport(analysis);
@@ -83,17 +90,28 @@ export function AnalysisOutput({
             Live odds unavailable — no sportsbook prices for this game
           </p>
         )}
-        {game.injuries.length > 0 && (
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {game.injuries.slice(0, 6).map((injury, index) => (
-              <li
-                key={`${injury.player}-${index}`}
-                className="rounded-full bg-surface px-2.5 py-1 text-xs text-muted-foreground"
-              >
-                {injury.player} — {injury.status}
-              </li>
-            ))}
-          </ul>
+        {game.injuries.length > 0 ? (
+          <>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {game.injuries.slice(0, 6).map((injury, index) => (
+                <li
+                  key={`${injury.player}-${index}`}
+                  className="rounded-full bg-surface px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  {injury.player} — {injury.status}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Availability shown is the current reported injury list only. Any player not listed is
+              of uncertain status — Lock Lab does not treat a missing designation as proof of health.
+            </p>
+          </>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Injury and availability data is uncertain for this game — no current report was returned,
+            so nothing below claims a player is active or out.
+          </p>
         )}
       </div>
 
@@ -136,14 +154,16 @@ export function AnalysisOutput({
                   {pick.book ? ` · ${pick.book}` : ""}
                   {pick.capturedAt ? ` · ${formatCapturedAt(pick.capturedAt)}` : ""}
                 </span>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    onTail(tailTarget(pick.key, pick.label, pick.odds ?? null, "top_bets"))
-                  }
-                >
-                  Tail
-                </Button>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      onTail(tailTarget(pick.key, pick.label, pick.odds ?? null, "top_bets"))
+                    }
+                  >
+                    Tail
+                  </Button>
+                )}
               </div>
             </article>
           ))}
@@ -176,22 +196,24 @@ export function AnalysisOutput({
                 {analysis.bad_bet.oppositeReason}
               </p>
               {analysis.bad_bet.oppositeRecommended ? (
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  onClick={() =>
-                    onTail(
-                      tailTarget(
-                        `${analysis.bad_bet!.key}-opposite`,
-                        analysis.bad_bet!.oppositeLabel,
-                        analysis.bad_bet!.oppositeOdds ?? null,
-                        "bad_bet",
-                      ),
-                    )
-                  }
-                >
-                  Tail the opposite side
-                </Button>
+                tailable && (
+                  <Button
+                    size="sm"
+                    className="mt-3"
+                    onClick={() =>
+                      onTail(
+                        tailTarget(
+                          `${analysis.bad_bet!.key}-opposite`,
+                          analysis.bad_bet!.oppositeLabel,
+                          analysis.bad_bet!.oppositeOdds ?? null,
+                          "bad_bet",
+                        ),
+                      )
+                    }
+                  >
+                    Tail the opposite side
+                  </Button>
+                )
               ) : (
                 <p className="mt-3 text-xs font-semibold text-stop uppercase">
                   Not recommended — pass on both sides
@@ -213,23 +235,25 @@ export function AnalysisOutput({
                     {analysis.bad_bet.alternateReason}
                   </p>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() =>
-                    onTail(
-                      tailTarget(
-                        `${analysis.bad_bet!.key}-alternate`,
-                        analysis.bad_bet!.alternateLabel!,
-                        analysis.bad_bet!.alternateOdds ?? null,
-                        "bad_bet",
-                      ),
-                    )
-                  }
-                >
-                  Tail the better number
-                </Button>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() =>
+                      onTail(
+                        tailTarget(
+                          `${analysis.bad_bet!.key}-alternate`,
+                          analysis.bad_bet!.alternateLabel!,
+                          analysis.bad_bet!.alternateOdds ?? null,
+                          "bad_bet",
+                        ),
+                      )
+                    }
+                  >
+                    Tail the better number
+                  </Button>
+                )}
               </div>
             )}
 
@@ -253,14 +277,16 @@ export function AnalysisOutput({
               </div>
               <p className="mt-2 font-display text-lg leading-tight font-semibold">{bet.label}</p>
               <p className="mt-2 text-sm text-muted-foreground">{bet.reason}</p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-3"
-                onClick={() => onTail(tailTarget(bet.key, bet.label, bet.odds ?? null, "fun_bets"))}
-              >
-                Tail
-              </Button>
+              {tailable && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => onTail(tailTarget(bet.key, bet.label, bet.odds ?? null, "fun_bets"))}
+                >
+                  Tail
+                </Button>
+              )}
             </article>
           ))}
         </div>
@@ -277,24 +303,36 @@ export function AnalysisOutput({
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
                 <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() =>
-                    onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))
-                  }
-                >
-                  Tail
-                </Button>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() =>
+                      onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))
+                    }
+                  >
+                    Tail
+                  </Button>
+                )}
               </article>
             ))}
           </div>
-        ) : (
+        ) : propsVerified ? (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
             No prop on this board has a real matchup or usage edge, so Lock Lab isn't posting one.
             Props only appear when the price and the role actually line up.
           </p>
+        ) : (
+          <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+            <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+              No verified player props available
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The sportsbook feed returned no player prop that could be matched to this exact game
+              and snapshot. Lock Lab leaves the section empty rather than generating one.
+            </p>
+          </div>
         )}
       </Section>
 

@@ -41,7 +41,13 @@ function AnalyzePage() {
   const [sport, setSport] = useState<Sport>("NFL");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<{ game: GameRow; row: AnalysisRow } | null>(null);
+  const [analysis, setAnalysis] = useState<{
+    game: GameRow;
+    row: AnalysisRow | null;
+    status: "pregame" | "locked" | "historical";
+    message: string | null;
+    propsVerified: boolean;
+  } | null>(null);
   const [running, setRunning] = useState(false);
   const [tailTarget, setTailTarget] = useState<TailTarget | null>(null);
 
@@ -92,9 +98,20 @@ function AnalyzePage() {
     }
     setRunning(true);
     try {
-      const row = await analyze({ data: { gameId: game.id } });
+      const result = await analyze({ data: { gameId: game.id } });
       setSelectedId(game.id);
-      setAnalysis({ game, row: row as AnalysisRow });
+      setAnalysis({
+        game,
+        row: (result.analysis ?? null) as AnalysisRow | null,
+        status: result.status,
+        message: result.message,
+        propsVerified: result.propsVerified,
+      });
+      if (result.status !== "pregame") {
+        toast.message(
+          result.status === "historical" ? "Final — pregame card only" : "Game in progress / picks locked",
+        );
+      }
     } catch (error) {
       toast.error((error as Error).message || "Analysis failed");
     } finally {
@@ -182,12 +199,26 @@ function AnalyzePage() {
       )}
 
       {analysis && (
-        <div className="mt-12">
-          <AnalysisOutput
-            game={analysis.game}
-            analysis={analysis.row}
-            onTail={(target) => setTailTarget(target)}
-          />
+        <div className="mt-12 space-y-6">
+          {analysis.status !== "pregame" && (
+            <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+              <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+                {analysis.status === "historical"
+                  ? "Final — pregame picks only"
+                  : "Game in progress / picks locked"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{analysis.message}</p>
+            </div>
+          )}
+          {analysis.row && (
+            <AnalysisOutput
+              game={analysis.game}
+              analysis={analysis.row}
+              status={analysis.status}
+              propsVerified={analysis.propsVerified}
+              onTail={(target) => setTailTarget(target)}
+            />
+          )}
         </div>
       )}
 
