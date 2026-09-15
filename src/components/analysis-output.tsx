@@ -303,24 +303,36 @@ export function AnalysisOutput({
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
                 <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() =>
-                    onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))
-                  }
-                >
-                  Tail
-                </Button>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() =>
+                      onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))
+                    }
+                  >
+                    Tail
+                  </Button>
+                )}
               </article>
             ))}
           </div>
-        ) : (
+        ) : propsVerified ? (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
             No prop on this board has a real matchup or usage edge, so Lock Lab isn't posting one.
             Props only appear when the price and the role actually line up.
           </p>
+        ) : (
+          <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+            <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+              No verified player props available
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The sportsbook feed returned no player prop that could be matched to this exact game
+              and snapshot. Lock Lab leaves the section empty rather than generating one.
+            </p>
+          </div>
         )}
       </Section>
 
