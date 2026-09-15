@@ -439,7 +439,11 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
     };
   }
 
-  if (c.group === "alt" && c.alt && !c.alt.worthIt && g.tier !== "strong") {
+  // An alternate whose juice outruns the protection it buys is only allowed
+  // through on a strong edge, or when the miss is marginal and it is genuinely
+  // buying points rather than selling them.
+  const marginalAlt = c.alt ? c.alt.valueDelta > -0.01 && c.alt.probGain > 0 : false;
+  if (c.group === "alt" && c.alt && !c.alt.worthIt && g.tier !== "strong" && !marginalAlt) {
     return {
       ok: false,
       why: `${c.label}: the extra juice costs more than the extra points buy against the standard line, and the edge is not strong enough to override that.`,
@@ -566,7 +570,7 @@ PROBABILITY VS PRICE — this decides the ranking:
 - Rank the top two by risk-adjusted value (edge relative to uncertainty), never by EV alone and never by payout size. A candidate scoring above one full band outranks a higher-EV candidate scoring below one band.
 - Raw EV never sets the order. Rank by risk-adjusted value: the edge in uncertainty bands, discounted by how reliable that estimate is. A prop, a long price, a one-sided market and especially an alternate that SELLS points (fewer points for a bigger payout, e.g. +7 down to +2.5) all estimate worse and are discounted accordingly. A +200-or-longer candidate must not be #1 when its edge only partly clears its band.
 - When a top bet is an alternate on the same side as a standard line, state the comparison plainly: points surrendered or bought, what the price change is worth, and whether the trade is justified. Never take fewer points just because the payout is bigger.
-- Positive EV alone is NOT green. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
+- Positive EV alone is NOT green. YELLOW is a real rating, not a consolation: a genuine playable edge belongs in the Top 2 as YELLOW. Do not return an empty board just because nothing is strong enough for GREEN. Still return no bet when every candidate's edge sits inside the noise. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
 - Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
 
 ALTERNATE LINES — check these on every game:
