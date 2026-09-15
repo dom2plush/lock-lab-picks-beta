@@ -12,7 +12,7 @@ const Input = z.object({ gameId: z.string().uuid() });
 /** Odds older than this are re-pulled before the formula runs. */
 const SNAPSHOT_TTL_MS = 10 * 60 * 1000;
 
-export type AnalysisStatus = "pregame" | "locked" | "historical";
+export type AnalysisStatus = "pregame" | "locked" | "historical" | "unavailable";
 
 export type AnalysisResponse = {
   status: AnalysisStatus;
