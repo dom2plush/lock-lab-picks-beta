@@ -107,6 +107,10 @@ export type CandidateAuditEntry = {
   ev: number | null;
   uncertainty: number;
   requiredEdge: number;
+  /** "strong" | "playable" | "insufficient" under the calibrated bands. */
+  tier: string;
+  /** Edge measured in uncertainty bands (risk-adjusted ranking number). */
+  valueScore: number | null;
   decision: "green" | "yellow" | "red" | "pass";
   section: "top" | "bad-bet" | "opposite" | "better-number" | "fun" | "prop" | null;
   reason: string;
@@ -892,6 +896,8 @@ function auditEntry(
     ev: g?.ev ?? null,
     uncertainty: g?.uncertainty ?? 0,
     requiredEdge: g?.requiredEdge ?? 0,
+    tier: g?.tier ?? "insufficient",
+    valueScore: g?.valueScore ?? null,
     decision,
     section,
     reason,
@@ -1038,7 +1044,7 @@ export async function runLockLabFormula(
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
-      badge: asBadge(entry.badge),
+      badge: capBadge(c, asBadge(entry.badge)),
       label: c.label,
       market: c.marketLabel,
       selection: c.player ?? c.selection,
@@ -1055,7 +1061,7 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "top",
-      badge: asBadge(entry.badge),
+      badge: capBadge(c, asBadge(entry.badge)),
       reason: clean(entry.reason, "Selected as a top bet."),
     });
     if (topBets.length === 2) break;
@@ -1081,7 +1087,9 @@ export async function runLockLabFormula(
       // The declared opposite is honoured only when it really is the flip side
       // of the flagged bet; otherwise the posted opposing selection is used.
       const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
-      const oppositeBadge = opposite ? asBadge(handicap.badBet.oppositeBadge) : "red";
+      const oppositeBadge = opposite
+        ? capBadge(opposite, asBadge(handicap.badBet.oppositeBadge))
+        : "red";
       // The opposite side is only tailable when it was independently graded
       // as an edge — a bad bet never promotes its own flip side.
       const recommended =
@@ -1090,7 +1098,9 @@ export async function runLockLabFormula(
       // the sharper version of this bet, not merely a longer line.
       const altKey = handicap.badBet.alternateKey;
       const alternate = altKey ? byKey.get(altKey) : undefined;
-      const alternateBadge = asBadge(handicap.badBet.alternateBadge ?? undefined);
+      const alternateBadge = alternate
+        ? capBadge(alternate, asBadge(handicap.badBet.alternateBadge ?? undefined))
+        : asBadge(handicap.badBet.alternateBadge ?? undefined);
       const alternateUsable =
         Boolean(alternate) &&
         alternate!.key !== c.key &&
