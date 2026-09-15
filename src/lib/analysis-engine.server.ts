@@ -35,6 +35,9 @@ import {
   createAltEvaluator,
   devig,
   gradeValue,
+  robustnessScore,
+  riskAdjustedScore,
+  canLeadBoard,
   impliedProbability,
   readMarket,
   summariseAltValue,
@@ -561,6 +564,8 @@ PROBABILITY VS PRICE — this decides the ranking:
 - A bet is only good when the estimated win probability beats the implied probability by more than the noise in the estimate. A big payout is NEVER a reason. Never write that a larger payout compensates for a tougher cover — that reasoning is rejected in code.
 - The uncertainty band already widens with price length, alternate distance and weak evidence. So a long price is not banned: it simply has a wider band to clear. Judge it on its risk-adjusted score, not on the fact that it is plus money.
 - Rank the top two by risk-adjusted value (edge relative to uncertainty), never by EV alone and never by payout size. A candidate scoring above one full band outranks a higher-EV candidate scoring below one band.
+- Raw EV never sets the order. Rank by risk-adjusted value: the edge in uncertainty bands, discounted by how reliable that estimate is. A prop, a long price, a one-sided market and especially an alternate that SELLS points (fewer points for a bigger payout, e.g. +7 down to +2.5) all estimate worse and are discounted accordingly. A +200-or-longer candidate must not be #1 when its edge only partly clears its band.
+- When a top bet is an alternate on the same side as a standard line, state the comparison plainly: points surrendered or bought, what the price change is worth, and whether the trade is justified. Never take fewer points just because the payout is bigger.
 - Positive EV alone is NOT green. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
 - Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
 
