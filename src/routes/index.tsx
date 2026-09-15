@@ -205,11 +205,14 @@ function AnalyzePage() {
               <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
                 {analysis.status === "historical"
                   ? "Final — pregame picks only"
-                  : "Game in progress / picks locked"}
+                  : analysis.status === "unavailable"
+                    ? "Data connection required"
+                    : "Game in progress / picks locked"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">{analysis.message}</p>
             </div>
           )}
+
           {analysis.row && (
             <AnalysisOutput
               game={analysis.game}
