@@ -830,8 +830,10 @@ export async function runLockLabFormula(
         badge: "red",
         label: c.label,
         ...pickSource(c),
-        reason: clean(handicap.badBet.reason, "The price does not match what this matchup projects."),
-        oppositeLabel: opposite ? opposite.label : "No live price on the opposite side",
+        reason: swapped
+          ? "This is the most expensive way to bet the game: the heaviest price on the board for the least room for error."
+          : clean(handicap.badBet.reason, "The price does not match what this matchup projects."),
+        oppositeLabel: opposite ? opposite.label : "NO VALID BAD-BET FLIP",
         oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
         oppositePoint: opposite?.point ?? null,
         oppositePrice: opposite?.price ?? null,
@@ -839,10 +841,14 @@ export async function runLockLabFormula(
         oppositeCapturedAt: opposite?.capturedAt ?? null,
         oppositeRecommended: recommended,
         oppositeBadge,
-        oppositeReason: clean(
-          handicap.badBet.oppositeReason,
-          "Graded on its own, the flip side does not have an edge either — pass on both.",
-        ),
+        oppositeReason: opposite
+          ? swapped
+            ? "The posted flip side was not independently graded on this run, so Lock Lab is not recommending it."
+            : clean(
+                handicap.badBet.oppositeReason,
+                "Graded on its own, the flip side does not have an edge either — pass on both.",
+              )
+          : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         ...alternateFields,
       };
       if (alternateUsable) used.add(alternate!.key);
