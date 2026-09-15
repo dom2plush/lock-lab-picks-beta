@@ -80,6 +80,8 @@ type Candidate = {
   alt?: AltEvaluation;
   /** Key of the standard-market candidate this alternate is measured against. */
   standardKey?: string;
+  /** Probability vs price: estimated chance, implied chance, edge, EV, noise band. */
+  grade?: ValueGrade;
 };
 
 export type EngineOutput = {
