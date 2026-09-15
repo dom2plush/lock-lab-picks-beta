@@ -996,9 +996,11 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
     playerProps: [],
     notes: { propsAvailable: false, altMarketsAvailable: false, verdict },
     candidateAudit: game
-      ? buildCandidateAudit(game, candidates, { alternates: [], props: [] }, new Map())
+      ? buildCandidateAudit(game, candidates, extra, new Map())
       : {
           generatedAt: new Date().toISOString(),
+          gameId: null,
+          providerGameId: null,
           snapshotBook: null,
           snapshotCapturedAt: null,
           altMarketsSupplied: 0,
@@ -1006,12 +1008,16 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
           standardMarketsEvaluated: 0,
           alternateMarketsReceived: 0,
           alternateMarketsEvaluated: 0,
+          alternateBooks: [],
+          ladder: [],
+          bestCandidate: null,
           strongestAlternate: null,
           strongestAlternateOutcome: "ALTERNATE LINES UNAVAILABLE — cannot line-shop this game.",
           standardVsAlternateEdge: null,
           entries: [],
           strongestRejected: null,
         },
+
   };
 }
 
