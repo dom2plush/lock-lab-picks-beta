@@ -98,9 +98,20 @@ function AnalyzePage() {
     }
     setRunning(true);
     try {
-      const row = await analyze({ data: { gameId: game.id } });
+      const result = await analyze({ data: { gameId: game.id } });
       setSelectedId(game.id);
-      setAnalysis({ game, row: row as AnalysisRow });
+      setAnalysis({
+        game,
+        row: (result.analysis ?? null) as AnalysisRow | null,
+        status: result.status,
+        message: result.message,
+        propsVerified: result.propsVerified,
+      });
+      if (result.status !== "pregame") {
+        toast.message(
+          result.status === "historical" ? "Final — pregame card only" : "Game in progress / picks locked",
+        );
+      }
     } catch (error) {
       toast.error((error as Error).message || "Analysis failed");
     } finally {
