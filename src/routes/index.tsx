@@ -44,7 +44,7 @@ function AnalyzePage() {
   const [analysis, setAnalysis] = useState<{
     game: GameRow;
     row: AnalysisRow | null;
-    status: "pregame" | "locked" | "historical";
+    status: "pregame" | "locked" | "historical" | "unavailable";
     message: string | null;
     propsVerified: boolean;
   } | null>(null);
