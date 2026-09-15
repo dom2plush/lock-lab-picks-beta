@@ -128,7 +128,8 @@ export function AnalysisOutput({
             </p>
           </div>
         )}
-        {(analysis.candidate_audit?.alternateMarketsReceived ?? 0) === 0 && (
+        {analysis.candidate_audit != null &&
+          (analysis.candidate_audit.alternateMarketsReceived ?? 0) === 0 && (
           <p className="mb-3 text-xs text-muted-foreground">
             ALTERNATE LINES UNAVAILABLE — cannot line-shop this game.
           </p>
