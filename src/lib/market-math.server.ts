@@ -590,9 +590,13 @@ export function riskAdjustedScore(grade: ValueGrade, robustness: number): number
 }
 
 /**
- * Whether a candidate may hold the #1 slot. A full-band edge can lead on its
- * own; a partial-band edge may only lead when the estimate behind it is solid
- * and the price is not a long shot.
+ * Whether a candidate may hold the #1 slot.
+ *
+ * A full-band edge ("strong"/GREEN) leads on its own. A partial-band edge
+ * ("playable"/YELLOW) is a publishable rating and is allowed to lead too, as
+ * long as the estimate behind it is not fragile. Long prices are not banned,
+ * but they must be close to a full-band edge with a robust estimate before they
+ * can lead, so payout alone never buys the top slot.
  */
 export function canLeadBoard(
   grade: ValueGrade,
@@ -602,17 +606,21 @@ export function canLeadBoard(
   if (grade.tier === "insufficient") {
     return { ok: false, why: "the edge sits inside the model's uncertainty band" };
   }
+  const score = grade.valueScore ?? 0;
   if (grade.impliedProb < 0.4) {
+    // Long price: needs a near-full band edge and a reliable estimate to lead.
+    if (score >= 0.9 && robustness >= 0.8) return { ok: true, why: "" };
     return {
       ok: false,
       why: "the edge clears only part of the uncertainty band at a long price, which needs unusually strong support to lead the board",
     };
   }
-  if (robustness < 0.8) {
+  if (robustness < 0.55) {
     return {
       ok: false,
-      why: "the edge clears only part of the uncertainty band and the estimate behind it is not robust enough to lead the board",
+      why: "the edge clears only part of the uncertainty band and the estimate behind it rests on one fragile assumption",
     };
   }
   return { ok: true, why: "" };
 }
+
