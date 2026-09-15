@@ -195,23 +195,25 @@ export function AnalysisOutput({
               <p className="mt-1 text-sm text-muted-foreground">
                 {analysis.bad_bet.oppositeReason}
               </p>
-              {analysis.bad_bet.oppositeRecommended && tailable ? (
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  onClick={() =>
-                    onTail(
-                      tailTarget(
-                        `${analysis.bad_bet!.key}-opposite`,
-                        analysis.bad_bet!.oppositeLabel,
-                        analysis.bad_bet!.oppositeOdds ?? null,
-                        "bad_bet",
-                      ),
-                    )
-                  }
-                >
-                  Tail the opposite side
-                </Button>
+              {analysis.bad_bet.oppositeRecommended ? (
+                tailable && (
+                  <Button
+                    size="sm"
+                    className="mt-3"
+                    onClick={() =>
+                      onTail(
+                        tailTarget(
+                          `${analysis.bad_bet!.key}-opposite`,
+                          analysis.bad_bet!.oppositeLabel,
+                          analysis.bad_bet!.oppositeOdds ?? null,
+                          "bad_bet",
+                        ),
+                      )
+                    }
+                  >
+                    Tail the opposite side
+                  </Button>
+                )
               ) : (
                 <p className="mt-3 text-xs font-semibold text-stop uppercase">
                   Not recommended — pass on both sides
