@@ -142,10 +142,14 @@ export function AnalysisOutput({
                   <span className="eyebrow">Standard line</span>
                   <p className="mt-1 text-sm font-semibold">{pick.standardLabel}</p>
                   {pick.standardComparison && (
-                    <p className="mt-1 text-xs text-muted-foreground">{pick.standardComparison}</p>
+                    <>
+                      <span className="eyebrow mt-2 block">Why this number</span>
+                      <p className="mt-1 text-xs text-muted-foreground">{pick.standardComparison}</p>
+                    </>
                   )}
                 </div>
               )}
+
 
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">

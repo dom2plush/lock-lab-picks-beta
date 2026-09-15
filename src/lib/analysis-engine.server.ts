@@ -130,6 +130,14 @@ export type CandidateAudit = {
   snapshotCapturedAt: string | null;
   altMarketsSupplied: number;
   propMarketsSupplied: number;
+  /** Standard spread/total/moneyline selections graded on this run. */
+  standardMarketsEvaluated: number;
+  /** Alternate ladder rungs graded against their standard line on this run. */
+  alternateMarketsEvaluated: number;
+  /** The single best-graded alternate rung considered. */
+  strongestAlternate: CandidateAuditEntry | null;
+  /** Why that alternate was selected or rejected. */
+  strongestAlternateOutcome: string;
   entries: CandidateAuditEntry[];
   /** Highest-edge candidate that was considered and not published. */
   strongestRejected: CandidateAuditEntry | null;
@@ -297,7 +305,9 @@ function buildCandidates(
     .filter((o) => o.point != null && o.price <= 900 && o.price >= -400)
     .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
 
-  const perMarket = new Map<string, number>();
+  // Both rungs of the ladder matter: the cap is per market AND per side, so a
+  // long favourite ladder can never crowd the other side's numbers off the board.
+  const perLadder = new Map<string, number>();
   const ordered = scored.slice().sort((a, b) => {
     if (a.offer.market !== b.offer.market) return a.offer.market.localeCompare(b.offer.market);
     const av = a.evaluation?.valueDelta ?? -Infinity;
@@ -307,9 +317,11 @@ function buildCandidates(
   });
 
   ordered.forEach(({ offer, evaluation }, index) => {
-    const count = perMarket.get(offer.market) ?? 0;
-    if (count >= 14) return;
-    perMarket.set(offer.market, count + 1);
+    const ladder = `${offer.market}|${offer.player ?? offer.selection}`;
+    const count = perLadder.get(ladder) ?? 0;
+    if (count >= 12) return;
+    perLadder.set(ladder, count + 1);
+
     const standardKey = standardKeyFor(offer.market, offer.selection);
     out.push({
       key: `alt-${index}`,
@@ -973,6 +985,10 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
           snapshotCapturedAt: null,
           altMarketsSupplied: 0,
           propMarketsSupplied: 0,
+          standardMarketsEvaluated: 0,
+          alternateMarketsEvaluated: 0,
+          strongestAlternate: null,
+          strongestAlternateOutcome: "No board was available to evaluate.",
           entries: [],
           strongestRejected: null,
         },
@@ -1060,12 +1076,33 @@ function buildCandidateAudit(
       .filter((e) => e.section == null && e.edge != null)
       .sort((a, b) => (b.edge ?? -Infinity) - (a.edge ?? -Infinity))[0] ?? null;
 
+  // Ladder coverage: how much of the alternate market was actually measured,
+  // and what happened to the single best rung on it.
+  const altCandidates = candidates.filter((c) => c.group === "alt" && c.alt != null);
+  const bestAlt = altCandidates
+    .slice()
+    .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+  const bestAltEntry = bestAlt ? (entries.find((e) => e.key === bestAlt.key) ?? null) : null;
+  const strongestAlternateOutcome = !bestAlt
+    ? "No alternate spread or total was supplied by the sportsbook for this game."
+    : bestAltEntry && bestAltEntry.section != null
+      ? `Selected (${bestAltEntry.section}): ${bestAltEntry.reason}`
+      : `Rejected: ${
+          !bestAlt.alt?.worthIt
+            ? "the extra juice outweighs the protection it buys against the standard line. "
+            : ""
+        }${eligibleForTop(bestAlt).ok ? leadCheck(bestAlt).why || "not the sharpest risk-adjusted bet on the board." : eligibleForTop(bestAlt).why}`;
+
   return {
     generatedAt: new Date().toISOString(),
     snapshotBook: game.odds.bookmaker ?? null,
     snapshotCapturedAt: game.odds.capturedAt ?? game.odds_updated_at ?? null,
     altMarketsSupplied: extra.alternates.length,
     propMarketsSupplied: extra.props.length,
+    standardMarketsEvaluated: candidates.filter((c) => c.group === "core").length,
+    alternateMarketsEvaluated: altCandidates.length,
+    strongestAlternate: bestAltEntry,
+    strongestAlternateOutcome,
     entries,
     strongestRejected,
   };
@@ -1136,40 +1173,56 @@ export async function runLockLabFormula(
     shortlist.push({ c, entry });
   }
 
-  // Alternate-line sweep. Part of the formula, not a display extra: every
-  // posted alternate spread and total has already been graded against its own
-  // standard line, so when the handicap read leaves a top slot open the sharpest
-  // graded alternate is considered on its own numbers before the board may pass.
-  // It still has to be worth the juice and clear the same uncertainty gates as
-  // anything else, and nothing is added just for having more points.
-  if (shortlist.length < 2) {
-    const sweep = candidates
-      .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
-      .filter((c) => eligibleForTop(c).ok && leadCheck(c).ok)
-      .sort((a, b) => candidateRank(b) - candidateRank(a));
-    for (const c of sweep) {
-      if (shortlist.length >= 2) break;
-      if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) continue;
-      const reason = altPreferenceReason(c);
-      used.add(c.key);
-      shortlist.push({
-        c,
-        entry: {
-          key: c.key,
-          badge: c.grade?.tier === "strong" ? "green" : "yellow",
-          reason,
-          standardKey: c.standardKey ?? null,
-          standardComparison: reason,
-        },
-      });
+  // Alternate-line sweep. A line-shopping step of the formula, not a display
+  // extra: every posted rung of every ladder, both sides, has already been graded
+  // against its own standard line. The sharpest of them always enters the ranking
+  // pool — even when the standard line on that side is not recommended, and even
+  // when the handicap read already filled the top slots, so a better number can
+  // outrank a weaker standard pick. It must still beat its standard line on
+  // graded value and clear the same uncertainty gates; nothing is added for
+  // having more points or a bigger payout.
+  const sweptAlternates: Candidate[] = candidates
+    .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
+    .filter((c) => eligibleForTop(c).ok)
+    .sort((a, b) => candidateRank(b) - candidateRank(a));
+  for (const c of sweptAlternates.slice(0, 2)) {
+    if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection) && candidateRank(s.c) >= candidateRank(c))) {
+      continue;
     }
+    const reason = altPreferenceReason(c);
+    used.add(c.key);
+    shortlist.push({
+      c,
+      entry: {
+        key: c.key,
+        badge: c.grade?.tier === "strong" ? "green" : "yellow",
+        reason,
+        standardKey: c.standardKey ?? null,
+        standardComparison: reason,
+      },
+    });
   }
+
 
 
 
   // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
   // by how reliable the estimate behind it is. Raw EV never sets the order.
   shortlist.sort((a, b) => candidateRank(b.c) - candidateRank(a.c));
+
+  // One selection, one bet: when a standard line and a rung of its own ladder
+  // both survive, only the sharper of the two is posted.
+  const seenSelection = new Set<string>();
+  for (let i = 0; i < shortlist.length; i += 1) {
+    const id = String(shortlist[i]!.c.player ?? shortlist[i]!.c.selection);
+    if (seenSelection.has(id)) {
+      shortlist.splice(i, 1);
+      i -= 1;
+      continue;
+    }
+    seenSelection.add(id);
+  }
+
 
   // #1 has to be able to carry the board. A partial-band edge at a long price
   // steps aside for a steadier bet, and leads only when nothing steadier exists

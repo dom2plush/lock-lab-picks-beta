@@ -61,6 +61,22 @@ function DevAuditPage() {
                 : " · no audit recorded"}
             </div>
             {game.verdict && <div className="mt-1 text-muted-foreground">verdict: {game.verdict}</div>}
+            {game.audit && (
+              <div className="mt-1 text-muted-foreground">
+                standard markets evaluated: {game.audit.standardMarketsEvaluated ?? "—"} · alternate rungs
+                evaluated: {game.audit.alternateMarketsEvaluated ?? "—"}
+              </div>
+            )}
+            {game.audit?.strongestAlternate && (
+              <div className="mt-1">
+                strongest alternate: {game.audit.strongestAlternate.label} (edge{" "}
+                {signedPct(game.audit.strongestAlternate.edge)}, EV {ev(game.audit.strongestAlternate.ev)}) —{" "}
+                {game.audit.strongestAlternateOutcome}
+              </div>
+            )}
+            {game.audit && !game.audit.strongestAlternate && (
+              <div className="mt-1">strongest alternate: {game.audit.strongestAlternateOutcome}</div>
+            )}
             {game.audit?.strongestRejected && (
               <div className="mt-1">
                 strongest rejected: {game.audit.strongestRejected.label} (edge{" "}
