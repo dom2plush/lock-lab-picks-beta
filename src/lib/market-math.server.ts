@@ -549,3 +549,70 @@ export function gradeValue(input: {
             : "Negative expectation at this price: the payout does not make up for how often it loses."),
   };
 }
+
+/**
+ * How reliable the probability estimate behind a candidate is, independent of
+ * how large its edge looks. Props, long prices, alternates that sell protection
+ * and one-sided markets all estimate worse, so their raw value is discounted
+ * before anything is ranked.
+ */
+export function robustnessScore(input: {
+  grade: ValueGrade;
+  group: ValueGroup;
+  /** Win-probability gained (+) or surrendered (-) versus the standard line. */
+  probGain?: number | null;
+  keysCrossed?: number;
+  /** True when the book posts a price on both sides of this market. */
+  hasOpposite?: boolean;
+}): number {
+  let r = 1;
+  if (input.group === "prop") r *= 0.8;
+  else if (input.group === "alt") r *= 0.9;
+
+  const implied = input.grade.impliedProb;
+  // Continuous: the further below a coin flip the price sits, the less the
+  // estimate can be trusted. No cliff, no ban.
+  if (implied < 0.45) r *= 0.6 + 0.4 * (implied / 0.45);
+
+  const gain = input.probGain ?? 0;
+  // Selling protection (fewer points for a bigger payout) is the least robust
+  // alternate there is: it leans entirely on the modelled margin distribution.
+  if (gain < 0) r *= 1 - Math.min(0.4, Math.abs(gain) * 2.2);
+  else if ((input.keysCrossed ?? 0) > 0) r *= 1.05;
+
+  if (input.hasOpposite === false) r *= 0.85;
+  return Math.max(0.1, Math.min(1, r));
+}
+
+/** Edge in uncertainty bands, discounted by how reliable the estimate is. */
+export function riskAdjustedScore(grade: ValueGrade, robustness: number): number {
+  return (grade.valueScore ?? 0) * robustness;
+}
+
+/**
+ * Whether a candidate may hold the #1 slot. A full-band edge can lead on its
+ * own; a partial-band edge may only lead when the estimate behind it is solid
+ * and the price is not a long shot.
+ */
+export function canLeadBoard(
+  grade: ValueGrade,
+  robustness: number,
+): { ok: boolean; why: string } {
+  if (grade.tier === "strong") return { ok: true, why: "" };
+  if (grade.tier === "insufficient") {
+    return { ok: false, why: "the edge sits inside the model's uncertainty band" };
+  }
+  if (grade.impliedProb < 0.4) {
+    return {
+      ok: false,
+      why: "the edge clears only part of the uncertainty band at a long price, which needs unusually strong support to lead the board",
+    };
+  }
+  if (robustness < 0.9) {
+    return {
+      ok: false,
+      why: "the edge clears only part of the uncertainty band and the estimate behind it is not robust enough to lead the board",
+    };
+  }
+  return { ok: true, why: "" };
+}
