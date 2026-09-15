@@ -666,7 +666,15 @@ function clean(text: string | undefined, fallback: string): string {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return fallback;
   // Strip any numeric confidence the model tries to smuggle in.
-  return trimmed.replace(/\b\d{1,3}(\.\d+)?\s?%/g, "").replace(/\s{2,}/g, " ").trim() || fallback;
+  const stripped = trimmed
+    .replace(/\b\d{1,3}(\.\d+)?\s?%/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!stripped) return fallback;
+  // Displayed reasons stay short: the deep reasoning is internal, the user
+  // sees only the decisive points — at most two sentences.
+  const sentences = stripped.match(/[^.!?]+[.!?]*/g) ?? [stripped];
+  return sentences.slice(0, 2).join("").trim() || fallback;
 }
 
 /**
