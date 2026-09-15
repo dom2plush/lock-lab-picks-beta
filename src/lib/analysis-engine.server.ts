@@ -503,6 +503,41 @@ function leadCheck(c: Candidate): { ok: boolean; why: string } {
   return canLeadBoard(c.grade, candidateRobustness(c));
 }
 
+/**
+ * The sharpest posted alternate measured against one standard candidate, or
+ * undefined when none of them beats that number on graded value. Used so the
+ * alternate curve is searched by the formula itself, on both sides of a market,
+ * rather than only when the handicap read happens to nominate one.
+ */
+function bestGradedAlternate(
+  standard: Candidate,
+  candidates: Candidate[],
+  used: Set<string>,
+): Candidate | undefined {
+  return candidates
+    .filter(
+      (x) =>
+        x.group === "alt" &&
+        x.alt != null &&
+        x.alt.worthIt &&
+        x.standardKey === standard.key &&
+        !used.has(x.key) &&
+        eligibleForTop(x).ok,
+    )
+    .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+}
+
+/** One short sentence explaining why this alternate beats its standard line. */
+function altPreferenceReason(c: Candidate): string {
+  const keys = c.alt?.keysCrossed ?? [];
+  const bought = (c.alt?.probGain ?? 0) > 0;
+  const keyText = keys.length ? ` The move crosses ${keys.join(" and ")}.` : "";
+  return bought
+    ? `Lock Lab prefers this number: the extra points buy more winning chance than the extra juice costs.${keyText}`
+    : `Lock Lab prefers this number: the price gain outweighs the protection given up.${keyText}`;
+}
+
+
 function pickSource(c: Candidate) {
   return {
     point: c.point,
