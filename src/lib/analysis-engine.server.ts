@@ -1140,34 +1140,36 @@ export async function runLockLabFormula(
     shortlist.push({ c, entry });
   }
 
-  // Alternate-line sweep. Part of the formula, not a display extra: every
-  // posted alternate spread and total has already been graded against its own
-  // standard line, so when the handicap read leaves a top slot open the sharpest
-  // graded alternate is considered on its own numbers before the board may pass.
-  // It still has to be worth the juice and clear the same uncertainty gates as
-  // anything else, and nothing is added just for having more points.
-  if (shortlist.length < 2) {
-    const sweep = candidates
-      .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
-      .filter((c) => eligibleForTop(c).ok && leadCheck(c).ok)
-      .sort((a, b) => candidateRank(b) - candidateRank(a));
-    for (const c of sweep) {
-      if (shortlist.length >= 2) break;
-      if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) continue;
-      const reason = altPreferenceReason(c);
-      used.add(c.key);
-      shortlist.push({
-        c,
-        entry: {
-          key: c.key,
-          badge: c.grade?.tier === "strong" ? "green" : "yellow",
-          reason,
-          standardKey: c.standardKey ?? null,
-          standardComparison: reason,
-        },
-      });
+  // Alternate-line sweep. A line-shopping step of the formula, not a display
+  // extra: every posted rung of every ladder, both sides, has already been graded
+  // against its own standard line. The sharpest of them always enters the ranking
+  // pool — even when the standard line on that side is not recommended, and even
+  // when the handicap read already filled the top slots, so a better number can
+  // outrank a weaker standard pick. It must still beat its standard line on
+  // graded value and clear the same uncertainty gates; nothing is added for
+  // having more points or a bigger payout.
+  const sweptAlternates: Candidate[] = candidates
+    .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
+    .filter((c) => eligibleForTop(c).ok)
+    .sort((a, b) => candidateRank(b) - candidateRank(a));
+  for (const c of sweptAlternates.slice(0, 2)) {
+    if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection) && candidateRank(s.c) >= candidateRank(c))) {
+      continue;
     }
+    const reason = altPreferenceReason(c);
+    used.add(c.key);
+    shortlist.push({
+      c,
+      entry: {
+        key: c.key,
+        badge: c.grade?.tier === "strong" ? "green" : "yellow",
+        reason,
+        standardKey: c.standardKey ?? null,
+        standardComparison: reason,
+      },
+    });
   }
+
 
 
 
