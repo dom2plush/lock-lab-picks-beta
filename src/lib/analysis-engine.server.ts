@@ -535,11 +535,11 @@ EVIDENCE WEIGHTS — weigh everything you have, in this priority:
 LINE MOVEMENT IS NOT A PREREQUISITE. It is a supporting signal only. When no previous snapshot exists there is simply no movement evidence, and that is NOT a reason to pass or to downgrade a bet. Never write "no movement evidence" as a reason. A bet earns green or yellow when the matchup edge is strong, the price is favourable, the trenches / QB / skill / defence / game-script read supports it and the posted number offers value — with or without movement data. Equally, you MUST still return an empty top list when the evidence genuinely does not establish an edge; a market that simply looks efficient is not an edge. Do not pass merely because the spread and moneyline agree or because the matchup is not overwhelming.
 
 PROBABILITY VS PRICE — this decides the ranking:
-- Every candidate carries its implied probability at the posted price, Lock Lab's estimated win probability, the resulting edge, the expected value per $1 and the uncertainty band that estimate has to clear. Read those numbers before you rank anything.
+- Every candidate carries its implied probability at the posted price, Lock Lab's estimated win probability, the resulting edge, the expected value per $1, its uncertainty band and a risk-adjusted score stated in bands of that uncertainty. Read those numbers before you rank anything.
 - A bet is only good when the estimated win probability beats the implied probability by more than the noise in the estimate. A big payout is NEVER a reason. Never write that a larger payout compensates for a tougher cover — that reasoning is rejected in code.
-- A +190 alternate must not outrank a -110 bet unless its estimated probability genuinely clears its implied probability by a wide margin. Long shots need a bigger edge than standard markets because the estimate is less reliable there.
-- Rank the top two by risk-adjusted value (edge relative to uncertainty), not by EV alone and never by payout size.
-- Be conservative with uncertain estimates: if the edge sits inside the band, that is not an edge — badge it red or leave it off.
+- The uncertainty band already widens with price length, alternate distance and weak evidence. So a long price is not banned: it simply has a wider band to clear. Judge it on its risk-adjusted score, not on the fact that it is plus money.
+- Rank the top two by risk-adjusted value (edge relative to uncertainty), never by EV alone and never by payout size. A candidate scoring above one full band outranks a higher-EV candidate scoring below one band.
+- Positive EV alone is NOT green. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
 - Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
 
 ALTERNATE LINES — check these on every game:
