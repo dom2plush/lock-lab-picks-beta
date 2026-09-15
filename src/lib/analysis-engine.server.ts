@@ -331,6 +331,56 @@ function pickSource(c: Candidate) {
   };
 }
 
+const CORE_OPPOSITE: Record<string, string> = {
+  "spread-home": "spread-away",
+  "spread-away": "spread-home",
+  "total-over": "total-under",
+  "total-under": "total-over",
+  "ml-home": "ml-away",
+  "ml-away": "ml-home",
+};
+
+const near = (a: number | null, b: number | null) =>
+  a != null && b != null && Math.abs(a - b) < 0.01;
+
+/**
+ * The genuinely opposing, separately priced selection for a candidate — the
+ * only thing that can be graded as the flip side of a bad bet. Returns
+ * undefined when the book posts no opposing price (common on anytime-TD
+ * markets), in which case Lock Lab reports NO VALID BAD-BET FLIP rather than
+ * inventing one.
+ */
+function findOpposite(c: Candidate, candidates: Candidate[], game: GameRow): Candidate | undefined {
+  const coreKey = CORE_OPPOSITE[c.key];
+  if (coreKey) return candidates.find((x) => x.key === coreKey);
+
+  if (c.market === "alternate_spreads") {
+    const otherTeam = c.selection === game.home_team ? game.away_team : game.home_team;
+    return candidates.find(
+      (x) => x.market === c.market && x.selection === otherTeam && near(x.point, -(c.point ?? 0)),
+    );
+  }
+
+  const side = c.selection.toLowerCase();
+  const flip =
+    side === "over" ? "under" : side === "under" ? "over" : side === "yes" ? "no" : side === "no" ? "yes" : null;
+  if (!flip) return undefined;
+
+  return candidates.find(
+    (x) =>
+      x.key !== c.key &&
+      x.market === c.market &&
+      (x.player ?? null) === (c.player ?? null) &&
+      x.selection.toLowerCase() === flip &&
+      (c.point == null ? x.point == null : near(x.point, c.point)),
+  );
+}
+
+/** A bad bet is only useful when the board actually prices its flip side. */
+function hasOpposite(c: Candidate, candidates: Candidate[], game: GameRow) {
+  return Boolean(findOpposite(c, candidates, game));
+}
+
 // ---------------------------------------------------------------------------
 // Handicap pass
 // ---------------------------------------------------------------------------
