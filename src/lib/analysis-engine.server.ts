@@ -297,7 +297,9 @@ function buildCandidates(
     .filter((o) => o.point != null && o.price <= 900 && o.price >= -400)
     .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
 
-  const perMarket = new Map<string, number>();
+  // Both rungs of the ladder matter: the cap is per market AND per side, so a
+  // long favourite ladder can never crowd the other side's numbers off the board.
+  const perLadder = new Map<string, number>();
   const ordered = scored.slice().sort((a, b) => {
     if (a.offer.market !== b.offer.market) return a.offer.market.localeCompare(b.offer.market);
     const av = a.evaluation?.valueDelta ?? -Infinity;
@@ -307,9 +309,11 @@ function buildCandidates(
   });
 
   ordered.forEach(({ offer, evaluation }, index) => {
-    const count = perMarket.get(offer.market) ?? 0;
-    if (count >= 14) return;
-    perMarket.set(offer.market, count + 1);
+    const ladder = `${offer.market}|${offer.player ?? offer.selection}`;
+    const count = perLadder.get(ladder) ?? 0;
+    if (count >= 12) return;
+    perLadder.set(ladder, count + 1);
+
     const standardKey = standardKeyFor(offer.market, offer.selection);
     out.push({
       key: `alt-${index}`,
