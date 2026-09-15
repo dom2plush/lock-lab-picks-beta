@@ -222,6 +222,11 @@ export async function fetchEventMarkets(
 
   const collect = (event: ProviderEvent | null): MarketOffer[] => {
     if (!event?.bookmakers?.length) return [];
+    // Hard game match: never accept markets returned under another event id.
+    if (event.id && event.id !== providerGameId) {
+      console.warn("[odds] event id mismatch on derivative markets", event.id, providerGameId);
+      return [];
+    }
     const book = pickBook(event);
     if (!book) return [];
     const offers: MarketOffer[] = [];
@@ -236,6 +241,7 @@ export async function fetchEventMarkets(
           book: book.title,
           bookKey: book.key,
           capturedAt: market.last_update ?? book.last_update ?? capturedAt,
+          eventId: providerGameId,
         });
       }
     }

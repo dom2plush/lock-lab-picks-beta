@@ -22,6 +22,8 @@ export type MarketOffer = {
   book: string;
   bookKey?: string;
   capturedAt: string;
+  /** Provider event id this offer was pulled for — proves game ownership. */
+  eventId?: string;
 };
 
 /** True when a stored snapshot came from the live provider feed. */
