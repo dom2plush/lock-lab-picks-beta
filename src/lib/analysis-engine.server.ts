@@ -107,6 +107,10 @@ export type CandidateAuditEntry = {
   ev: number | null;
   uncertainty: number;
   requiredEdge: number;
+  /** "strong" | "playable" | "insufficient" under the calibrated bands. */
+  tier: string;
+  /** Edge measured in uncertainty bands (risk-adjusted ranking number). */
+  valueScore: number | null;
   decision: "green" | "yellow" | "red" | "pass";
   section: "top" | "bad-bet" | "opposite" | "better-number" | "fun" | "prop" | null;
   reason: string;
@@ -385,71 +389,66 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
   for (const c of candidates) {
     let modelProb: number | null = null;
     let distance = 0;
+    let evidence = 0.4;
 
     if (c.group === "core") {
       const opposite = candidates.find((x) => x.key === CORE_OPPOSITE[c.key]);
       modelProb = opposite ? pairFair(c.price, opposite.price).a : impliedProbability(c.price);
+      // A two-sided posted market is the most reliable evidence on the board.
+      evidence = opposite ? 0.65 : 0.35;
     } else if (c.alt) {
       modelProb = c.alt.winProb;
       distance = Math.abs(c.alt.point - c.alt.standardPoint);
+      evidence = Math.max(0.15, 0.45 + (c.alt.worthIt ? 0.2 : -0.1) - 0.03 * distance);
     } else if (c.group === "prop") {
       const opposite = findOpposite(c, candidates, game);
       modelProb = opposite ? pairFair(c.price, opposite.price).a : null;
+      evidence = opposite ? 0.5 : 0.25;
     }
 
-    c.grade = gradeValue({ modelProb, price: c.price, group: c.group, distance });
+    c.grade = gradeValue({ modelProb, price: c.price, group: c.group, distance, evidenceStrength: evidence });
     c.note = `${c.note} ${c.grade.note}`;
   }
 }
 
 /**
  * Ranking gate for the Top 2. A pick has to be priced below Lock Lab's own
- * estimate of how often it wins — payout size never qualifies a bet. Long
- * alternates additionally have to beat the standard number they are measured
- * against, so "+190 because it pays more" can never reach the board.
+ * estimate of how often it wins — payout size never qualifies a bet. The bar is
+ * the candidate's own uncertainty band, which widens gradually with price length
+ * and alternate distance, so nothing is rejected by a flat long-shot rule.
  */
 function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
   const g = c.grade;
   if (!g) return { ok: true, why: "" };
 
-  if (c.group === "alt") {
-    if (!c.alt) {
-      if (g.modelProb == null || !g.qualifies) {
-        return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
-      }
-    } else if (!c.alt.worthIt) {
-      return {
-        ok: false,
-        why: `${c.label}: the extra juice costs more than the extra points buy against the standard line.`,
-      };
-    }
-    if (g.ev != null && g.ev <= 0) {
-      return { ok: false, why: `${c.label}: negative expected value once the win chance is priced in.` };
-    }
-    if (!g.qualifies) {
-      return {
-        ok: false,
-        why: `${c.label}: the estimated edge sits inside the uncertainty band, which a long alternate must clear.`,
-      };
-    }
-    return { ok: true, why: "" };
+  if (g.modelProb == null) {
+    return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
   }
 
-  // Any long shot, in any market, must show a measured edge rather than a payout.
-  if (g.impliedProb < 0.45) {
-    if (!g.qualifies) {
-      return {
-        ok: false,
-        why: `${c.label}: a long price needs the estimated win chance to clear the implied chance by more than the model's own error, and it does not.`,
-      };
-    }
+  if (g.ev != null && g.ev <= 0) {
+    return { ok: false, why: `${c.label}: negative expected value once the estimated win chance is priced in.` };
   }
 
-  if (g.ev != null && g.ev < -0.06) {
-    return { ok: false, why: `${c.label}: expected value is clearly negative at this price.` };
+  if (g.tier === "insufficient") {
+    return {
+      ok: false,
+      why: `${c.label}: the estimated edge sits inside the model's own uncertainty band for a price and market of this type.`,
+    };
+  }
+
+  if (c.group === "alt" && c.alt && !c.alt.worthIt && g.tier !== "strong") {
+    return {
+      ok: false,
+      why: `${c.label}: the extra juice costs more than the extra points buy against the standard line, and the edge is not strong enough to override that.`,
+    };
   }
 
   return { ok: true, why: "" };
+}
+
+/** Playable-tier candidates can reach the board, but never as a green bet. */
+function capBadge(c: Candidate, badge: Badge): Badge {
+  return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
 }
 
 function pickSource(c: Candidate) {
@@ -536,11 +535,11 @@ EVIDENCE WEIGHTS — weigh everything you have, in this priority:
 LINE MOVEMENT IS NOT A PREREQUISITE. It is a supporting signal only. When no previous snapshot exists there is simply no movement evidence, and that is NOT a reason to pass or to downgrade a bet. Never write "no movement evidence" as a reason. A bet earns green or yellow when the matchup edge is strong, the price is favourable, the trenches / QB / skill / defence / game-script read supports it and the posted number offers value — with or without movement data. Equally, you MUST still return an empty top list when the evidence genuinely does not establish an edge; a market that simply looks efficient is not an edge. Do not pass merely because the spread and moneyline agree or because the matchup is not overwhelming.
 
 PROBABILITY VS PRICE — this decides the ranking:
-- Every candidate carries its implied probability at the posted price, Lock Lab's estimated win probability, the resulting edge, the expected value per $1 and the uncertainty band that estimate has to clear. Read those numbers before you rank anything.
+- Every candidate carries its implied probability at the posted price, Lock Lab's estimated win probability, the resulting edge, the expected value per $1, its uncertainty band and a risk-adjusted score stated in bands of that uncertainty. Read those numbers before you rank anything.
 - A bet is only good when the estimated win probability beats the implied probability by more than the noise in the estimate. A big payout is NEVER a reason. Never write that a larger payout compensates for a tougher cover — that reasoning is rejected in code.
-- A +190 alternate must not outrank a -110 bet unless its estimated probability genuinely clears its implied probability by a wide margin. Long shots need a bigger edge than standard markets because the estimate is less reliable there.
-- Rank the top two by risk-adjusted value (edge relative to uncertainty), not by EV alone and never by payout size.
-- Be conservative with uncertain estimates: if the edge sits inside the band, that is not an edge — badge it red or leave it off.
+- The uncertainty band already widens with price length, alternate distance and weak evidence. So a long price is not banned: it simply has a wider band to clear. Judge it on its risk-adjusted score, not on the fact that it is plus money.
+- Rank the top two by risk-adjusted value (edge relative to uncertainty), never by EV alone and never by payout size. A candidate scoring above one full band outranks a higher-EV candidate scoring below one band.
+- Positive EV alone is NOT green. Green needs a strong matchup case plus an edge clearing the full band. An interesting edge that only clears part of the band is yellow at best. Inside the noise, or negative expectation, is red or left off entirely.
 - Use probability language in reasons ("priced below where this projects to cash", "the number is short of the estimate") but never print a percentage or a decimal.
 
 ALTERNATE LINES — check these on every game:
@@ -897,6 +896,8 @@ function auditEntry(
     ev: g?.ev ?? null,
     uncertainty: g?.uncertainty ?? 0,
     requiredEdge: g?.requiredEdge ?? 0,
+    tier: g?.tier ?? "insufficient",
+    valueScore: g?.valueScore ?? null,
     decision,
     section,
     reason,
@@ -1043,7 +1044,7 @@ export async function runLockLabFormula(
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
-      badge: asBadge(entry.badge),
+      badge: capBadge(c, asBadge(entry.badge)),
       label: c.label,
       market: c.marketLabel,
       selection: c.player ?? c.selection,
@@ -1060,7 +1061,7 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "top",
-      badge: asBadge(entry.badge),
+      badge: capBadge(c, asBadge(entry.badge)),
       reason: clean(entry.reason, "Selected as a top bet."),
     });
     if (topBets.length === 2) break;
@@ -1086,7 +1087,9 @@ export async function runLockLabFormula(
       // The declared opposite is honoured only when it really is the flip side
       // of the flagged bet; otherwise the posted opposing selection is used.
       const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
-      const oppositeBadge = opposite ? asBadge(handicap.badBet.oppositeBadge) : "red";
+      const oppositeBadge = opposite
+        ? capBadge(opposite, asBadge(handicap.badBet.oppositeBadge))
+        : "red";
       // The opposite side is only tailable when it was independently graded
       // as an edge — a bad bet never promotes its own flip side.
       const recommended =
@@ -1095,7 +1098,9 @@ export async function runLockLabFormula(
       // the sharper version of this bet, not merely a longer line.
       const altKey = handicap.badBet.alternateKey;
       const alternate = altKey ? byKey.get(altKey) : undefined;
-      const alternateBadge = asBadge(handicap.badBet.alternateBadge ?? undefined);
+      const alternateBadge = alternate
+        ? capBadge(alternate, asBadge(handicap.badBet.alternateBadge ?? undefined))
+        : asBadge(handicap.badBet.alternateBadge ?? undefined);
       const alternateUsable =
         Boolean(alternate) &&
         alternate!.key !== c.key &&
