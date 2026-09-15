@@ -673,11 +673,12 @@ function clean(text: string | undefined, fallback: string): string {
  * Deterministic fallback when the handicap pass is unavailable: Lock Lab does
  * not guess. It reports the market read and passes on the board.
  */
-function passingBoard(candidates: Candidate[], verdict: string): EngineOutput {
+function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow): EngineOutput {
   const worst = candidates
     .filter((c) => c.group === "core")
     .slice()
     .sort((a, b) => a.price - b.price)[0];
+  const opposite = worst && game ? findOpposite(worst, candidates, game) : undefined;
   return {
     topBets: [],
     badBet: worst
@@ -688,12 +689,17 @@ function passingBoard(candidates: Candidate[], verdict: string): EngineOutput {
           ...pickSource(worst),
           reason:
             "This is the most expensive way to bet the game: you are paying the heaviest price on the board for the least room for error.",
-          oppositeLabel: "No graded opposite side",
-          oppositeOdds: null,
+          oppositeLabel: opposite ? opposite.label : "NO VALID BAD-BET FLIP",
+          oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
+          oppositePoint: opposite?.point ?? null,
+          oppositePrice: opposite?.price ?? null,
+          oppositeBook: opposite?.book ?? null,
+          oppositeCapturedAt: opposite?.capturedAt ?? null,
           oppositeRecommended: false,
           oppositeBadge: "red",
-          oppositeReason:
-            "The opposite side was not independently graded on this run, so Lock Lab is not recommending it.",
+          oppositeReason: opposite
+            ? "The opposite side was not independently graded on this run, so Lock Lab is not recommending it."
+            : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         }
       : null,
     funBets: [],
