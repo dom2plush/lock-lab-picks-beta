@@ -176,6 +176,7 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
           fun_bets: audited.output.fun_bets,
           player_props: audited.output.player_props,
           verdict,
+          candidate_audit: finished.candidateAudit as unknown as never,
         },
         { onConflict: "game_id" },
       )

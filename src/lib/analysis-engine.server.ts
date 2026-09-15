@@ -91,6 +91,43 @@ type Candidate = {
   grade?: ValueGrade;
 };
 
+/** Internal calibration record for one considered selection. Never rendered publicly. */
+export type CandidateAuditEntry = {
+  key: string;
+  label: string;
+  market: string;
+  group: "core" | "alt" | "prop";
+  kind: "standard" | "alternate" | "prop";
+  book: string;
+  line: string | null;
+  price: number;
+  estimatedProb: number | null;
+  impliedProb: number;
+  edge: number | null;
+  ev: number | null;
+  uncertainty: number;
+  requiredEdge: number;
+  decision: "green" | "yellow" | "red" | "pass";
+  section: "top" | "bad-bet" | "opposite" | "better-number" | "fun" | "prop" | null;
+  reason: string;
+  /** Alternate lines only: how this number compares with the standard market. */
+  standardLine: string | null;
+  standardPrice: number | null;
+  alternateConsidered: boolean;
+  alternateBetterThanStandard: boolean | null;
+};
+
+export type CandidateAudit = {
+  generatedAt: string;
+  snapshotBook: string | null;
+  snapshotCapturedAt: string | null;
+  altMarketsSupplied: number;
+  propMarketsSupplied: number;
+  entries: CandidateAuditEntry[];
+  /** Highest-edge candidate that was considered and not published. */
+  strongestRejected: CandidateAuditEntry | null;
+};
+
 export type EngineOutput = {
   topBets: PickBet[];
   badBet: BadBet | null;
@@ -102,6 +139,8 @@ export type EngineOutput = {
     /** Set when Lock Lab is deliberately passing on the board. */
     verdict: string | null;
   };
+  /** Developer-only calibration trail; not part of the public output. */
+  candidateAudit: CandidateAudit;
 };
 
 /** Real provider prices for derivative markets. Empty = market unavailable. */
@@ -822,6 +861,107 @@ function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow):
     funBets: [],
     playerProps: [],
     notes: { propsAvailable: false, altMarketsAvailable: false, verdict },
+    candidateAudit: game
+      ? buildCandidateAudit(game, candidates, { alternates: [], props: [] }, new Map())
+      : {
+          generatedAt: new Date().toISOString(),
+          snapshotBook: null,
+          snapshotCapturedAt: null,
+          altMarketsSupplied: 0,
+          propMarketsSupplied: 0,
+          entries: [],
+          strongestRejected: null,
+        },
+  };
+}
+
+function auditEntry(
+  c: Candidate,
+  decision: CandidateAuditEntry["decision"],
+  section: CandidateAuditEntry["section"],
+  reason: string,
+): CandidateAuditEntry {
+  const g = c.grade;
+  return {
+    key: c.key,
+    label: c.label,
+    market: c.marketLabel,
+    group: c.group,
+    kind: c.group === "prop" ? "prop" : c.group === "alt" ? "alternate" : "standard",
+    book: c.book,
+    line: c.line,
+    price: c.price,
+    estimatedProb: g?.modelProb ?? null,
+    impliedProb: g?.impliedProb ?? impliedProbability(c.price),
+    edge: g?.edge ?? null,
+    ev: g?.ev ?? null,
+    uncertainty: g?.uncertainty ?? 0,
+    requiredEdge: g?.requiredEdge ?? 0,
+    decision,
+    section,
+    reason,
+    standardLine: c.alt ? String(c.alt.standardPoint) : null,
+    standardPrice: c.alt ? c.alt.standardPrice : null,
+    alternateConsidered: Boolean(c.alt),
+    alternateBetterThanStandard: c.alt ? c.alt.worthIt : null,
+  };
+}
+
+/**
+ * Records what the engine actually considered on this board and why each
+ * candidate survived or was rejected. Internal calibration data only: every
+ * number here is the same one the selection logic used, nothing is re-derived
+ * or rounded up for presentation.
+ */
+function buildCandidateAudit(
+  game: GameRow,
+  candidates: Candidate[],
+  extra: ExtraOffers,
+  decisions: Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>,
+): CandidateAudit {
+  const entries: CandidateAuditEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const c of candidates) {
+    const decided = decisions.get(c.key);
+    if (!decided) continue;
+    seen.add(c.key);
+    entries.push(auditEntry(c, decided.badge, decided.section, decided.reason));
+  }
+
+  // Everything else that was on the board, strongest measured edge first, so a
+  // systematically undervalued selection shows up at the top of the trail.
+  const rest = candidates
+    .filter((c) => !seen.has(c.key))
+    .slice()
+    .sort((a, b) => (b.grade?.edge ?? -Infinity) - (a.grade?.edge ?? -Infinity));
+
+  for (const c of rest) {
+    if (entries.length >= 40) break;
+    const gate = eligibleForTop(c);
+    const reason = !gate.ok
+      ? gate.why
+      : c.grade?.modelProb == null
+        ? "No supportable probability estimate for this selection."
+        : c.grade.qualifies
+          ? "Cleared the value gate but the handicap read did not rank it in the top two."
+          : `${c.grade.note}`;
+    entries.push(auditEntry(c, "pass", null, reason));
+  }
+
+  const strongestRejected =
+    entries
+      .filter((e) => e.section == null && e.edge != null)
+      .sort((a, b) => (b.edge ?? -Infinity) - (a.edge ?? -Infinity))[0] ?? null;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    snapshotBook: game.odds.bookmaker ?? null,
+    snapshotCapturedAt: game.odds.capturedAt ?? game.odds_updated_at ?? null,
+    altMarketsSupplied: extra.alternates.length,
+    propMarketsSupplied: extra.props.length,
+    entries,
+    strongestRejected,
   };
 }
 
@@ -859,6 +999,7 @@ export async function runLockLabFormula(
 
   const used = new Set<string>();
 
+  const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
   const topBets: PickBet[] = [];
   const rejected: string[] = [];
   for (const entry of handicap.top ?? []) {
@@ -869,6 +1010,11 @@ export async function runLockLabFormula(
     const eligible = eligibleForTop(c);
     if (!eligible.ok) {
       rejected.push(eligible.why);
+      decisions.set(c.key, {
+        section: null,
+        badge: "red",
+        reason: `Selected by the handicap read but blocked by the value gate. ${eligible.why}`,
+      });
       continue;
     }
     // A second pick in the same market/player as the first is not distinct.
@@ -911,6 +1057,11 @@ export async function runLockLabFormula(
           ? "Lock Lab's win estimate for this selection sits above what the posted price implies, and the matchup read supports it."
           : "Priced below where this matchup projects.",
       ),
+    });
+    decisions.set(c.key, {
+      section: "top",
+      badge: asBadge(entry.badge),
+      reason: clean(entry.reason, "Selected as a top bet."),
     });
     if (topBets.length === 2) break;
   }
@@ -994,8 +1145,23 @@ export async function runLockLabFormula(
           : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         ...alternateFields,
       };
-      if (alternateUsable) used.add(alternate!.key);
+      if (alternateUsable) {
+        used.add(alternate!.key);
+        decisions.set(alternate!.key, {
+          section: "better-number",
+          badge: alternateBadge,
+          reason: "Offered as the sharper number on the same side as the flagged bad bet.",
+        });
+      }
       used.add(c.key);
+      decisions.set(c.key, { section: "bad-bet", badge: "red", reason: badBet.reason });
+      if (opposite) {
+        decisions.set(opposite.key, {
+          section: "opposite",
+          badge: oppositeBadge,
+          reason: badBet.oppositeReason,
+        });
+      }
     }
   }
 
@@ -1012,6 +1178,11 @@ export async function runLockLabFormula(
       odds: fmtOdds(c.price),
       ...pickSource(c),
       reason: clean(entry.reason, "Small-ticket swing with a real matchup reason behind it."),
+    });
+    decisions.set(c.key, {
+      section: "fun",
+      badge: asBadge(entry.badge),
+      reason: clean(entry.reason, "Fun bet."),
     });
     if (funBets.length === 3) break;
   }
@@ -1030,6 +1201,11 @@ export async function runLockLabFormula(
       odds: fmtOdds(c.price),
       ...pickSource(c),
       reason: clean(entry.reason, "Usage and matchup back this number."),
+    });
+    decisions.set(c.key, {
+      section: "prop",
+      badge: asBadge(entry.badge),
+      reason: clean(entry.reason, "Player prop."),
     });
     if (playerProps.length === 4) break;
   }
@@ -1053,6 +1229,7 @@ export async function runLockLabFormula(
       altMarketsAvailable: extra.alternates.length > 0,
       verdict,
     },
+    candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
   };
 }
 
