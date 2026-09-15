@@ -282,7 +282,9 @@ export function enforceAuditIntegrity<T extends AuditInput>(
     return { output, report, dropped: [] };
   }
 
-  const dropped = report.entries.filter((e) => e.problems.length > 0).map((e) => e.label);
+  const dropped = report.entries
+    .filter((e) => e.problems.length > 0)
+    .map((e) => `${e.label}: ${e.problems.join("; ")}`);
 
   const stripStandard = (bet: PickBet): PickBet => {
     if (!failedStandard.has(bet.key)) return bet;
