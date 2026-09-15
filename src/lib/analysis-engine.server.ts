@@ -1064,12 +1064,33 @@ function buildCandidateAudit(
       .filter((e) => e.section == null && e.edge != null)
       .sort((a, b) => (b.edge ?? -Infinity) - (a.edge ?? -Infinity))[0] ?? null;
 
+  // Ladder coverage: how much of the alternate market was actually measured,
+  // and what happened to the single best rung on it.
+  const altCandidates = candidates.filter((c) => c.group === "alt" && c.alt != null);
+  const bestAlt = altCandidates
+    .slice()
+    .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+  const bestAltEntry = bestAlt ? (entries.find((e) => e.key === bestAlt.key) ?? null) : null;
+  const strongestAlternateOutcome = !bestAlt
+    ? "No alternate spread or total was supplied by the sportsbook for this game."
+    : bestAltEntry && bestAltEntry.section != null
+      ? `Selected (${bestAltEntry.section}): ${bestAltEntry.reason}`
+      : `Rejected: ${
+          !bestAlt.alt?.worthIt
+            ? "the extra juice outweighs the protection it buys against the standard line. "
+            : ""
+        }${eligibleForTop(bestAlt).ok ? leadCheck(bestAlt).why || "not the sharpest risk-adjusted bet on the board." : eligibleForTop(bestAlt).why}`;
+
   return {
     generatedAt: new Date().toISOString(),
     snapshotBook: game.odds.bookmaker ?? null,
     snapshotCapturedAt: game.odds.capturedAt ?? game.odds_updated_at ?? null,
     altMarketsSupplied: extra.alternates.length,
     propMarketsSupplied: extra.props.length,
+    standardMarketsEvaluated: candidates.filter((c) => c.group === "core").length,
+    alternateMarketsEvaluated: altCandidates.length,
+    strongestAlternate: bestAltEntry,
+    strongestAlternateOutcome,
     entries,
     strongestRejected,
   };
