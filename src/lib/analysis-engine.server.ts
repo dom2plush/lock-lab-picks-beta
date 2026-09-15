@@ -126,6 +126,9 @@ export type CandidateAuditEntry = {
 
 export type CandidateAudit = {
   generatedAt: string;
+  /** The game this board belongs to — proves the trail is not shared. */
+  gameId: string | null;
+  providerGameId: string | null;
   snapshotBook: string | null;
   snapshotCapturedAt: string | null;
   altMarketsSupplied: number;
@@ -136,6 +139,12 @@ export type CandidateAudit = {
   alternateMarketsReceived: number;
   /** Alternate ladder rungs graded against their standard line on this run. */
   alternateMarketsEvaluated: number;
+  /** Sportsbooks that supplied the alternate rungs actually graded. */
+  alternateBooks: string[];
+  /** Every graded rung, cheapest line first — the ladder the engine really saw. */
+  ladder: { market: string; side: string; line: string | null; price: number; book: string }[];
+  /** The best-graded candidate of any kind on the board. */
+  bestCandidate: CandidateAuditEntry | null;
   /** The single best-graded alternate rung considered. */
   strongestAlternate: CandidateAuditEntry | null;
   /** Why that alternate was selected or rejected. */
@@ -146,6 +155,7 @@ export type CandidateAudit = {
   /** Highest-edge candidate that was considered and not published. */
   strongestRejected: CandidateAuditEntry | null;
 };
+
 
 export type EngineOutput = {
   topBets: PickBet[];
