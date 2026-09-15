@@ -132,12 +132,16 @@ export type CandidateAudit = {
   propMarketsSupplied: number;
   /** Standard spread/total/moneyline selections graded on this run. */
   standardMarketsEvaluated: number;
+  /** Alternate prices received from the sportsbook feed. */
+  alternateMarketsReceived: number;
   /** Alternate ladder rungs graded against their standard line on this run. */
   alternateMarketsEvaluated: number;
   /** The single best-graded alternate rung considered. */
   strongestAlternate: CandidateAuditEntry | null;
   /** Why that alternate was selected or rejected. */
   strongestAlternateOutcome: string;
+  /** Best rung's risk-adjusted score minus its standard line's, or null. */
+  standardVsAlternateEdge: number | null;
   entries: CandidateAuditEntry[];
   /** Highest-edge candidate that was considered and not published. */
   strongestRejected: CandidateAuditEntry | null;
