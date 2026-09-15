@@ -195,7 +195,7 @@ export function AnalysisOutput({
               <p className="mt-1 text-sm text-muted-foreground">
                 {analysis.bad_bet.oppositeReason}
               </p>
-              {analysis.bad_bet.oppositeRecommended ? (
+              {analysis.bad_bet.oppositeRecommended && tailable ? (
                 <Button
                   size="sm"
                   className="mt-3"
