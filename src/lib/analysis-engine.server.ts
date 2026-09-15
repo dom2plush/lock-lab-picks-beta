@@ -304,9 +304,12 @@ function buildCandidates(
     return undefined;
   };
 
+  // Every posted rung is graded. The price window only excludes quotes no one
+  // can sensibly bet (deep buy-outs and lottery numbers); it is not a value
+  // filter — value is decided later, on probability against price.
   type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
   const scored: ScoredAlt[] = extra.alternates
-    .filter((o) => o.point != null && o.price <= 900 && o.price >= -400)
+    .filter((o) => o.point != null && o.price <= 1200 && o.price >= -1000)
     .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
 
   // Both rungs of the ladder matter: the cap is per market AND per side, so a
@@ -323,8 +326,9 @@ function buildCandidates(
   ordered.forEach(({ offer, evaluation }, index) => {
     const ladder = `${offer.market}|${offer.player ?? offer.selection}`;
     const count = perLadder.get(ladder) ?? 0;
-    if (count >= 12) return;
+    if (count >= 24) return;
     perLadder.set(ladder, count + 1);
+
 
     const standardKey = standardKeyFor(offer.market, offer.selection);
     out.push({
