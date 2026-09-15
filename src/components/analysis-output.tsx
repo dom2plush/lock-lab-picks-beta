@@ -38,12 +38,19 @@ export function AnalysisOutput({
   game,
   analysis,
   onTail,
+  status = "pregame",
+  propsVerified = true,
 }: {
   game: GameRow;
   analysis: AnalysisRow;
   onTail: (target: TailTarget) => void;
+  /** Pregame cards are tailable; locked/historical cards are read-only. */
+  status?: "pregame" | "locked" | "historical";
+  /** Whether the live feed returned any prop that passed verification. */
+  propsVerified?: boolean;
 }) {
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
+  const tailable = status === "pregame";
   // Recomputed from the very objects rendered below, so the check covers what
   // the user is actually looking at rather than what the server intended.
   const audit = buildAuditReport(analysis);
