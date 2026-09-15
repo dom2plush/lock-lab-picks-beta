@@ -1177,6 +1177,19 @@ export async function runLockLabFormula(
   // by how reliable the estimate behind it is. Raw EV never sets the order.
   shortlist.sort((a, b) => candidateRank(b.c) - candidateRank(a.c));
 
+  // One selection, one bet: when a standard line and a rung of its own ladder
+  // both survive, only the sharper of the two is posted.
+  const seenSelection = new Set<string>();
+  for (let i = shortlist.length - 1; i >= 0; i -= 1) {
+    const s = shortlist[i]!;
+    const id = `${s.c.player ?? s.c.selection}`;
+    if (seenSelection.has(id)) {
+      shortlist.splice(i, 1);
+    }
+  }
+  shortlist.forEach((s) => seenSelection.add(`${s.c.player ?? s.c.selection}`));
+
+
   // #1 has to be able to carry the board. A partial-band edge at a long price
   // steps aside for a steadier bet, and leads only when nothing steadier exists
   // and it is still clearly the strongest risk-adjusted opportunity.
