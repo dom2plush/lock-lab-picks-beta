@@ -503,6 +503,41 @@ function leadCheck(c: Candidate): { ok: boolean; why: string } {
   return canLeadBoard(c.grade, candidateRobustness(c));
 }
 
+/**
+ * The sharpest posted alternate measured against one standard candidate, or
+ * undefined when none of them beats that number on graded value. Used so the
+ * alternate curve is searched by the formula itself, on both sides of a market,
+ * rather than only when the handicap read happens to nominate one.
+ */
+function bestGradedAlternate(
+  standard: Candidate,
+  candidates: Candidate[],
+  used: Set<string>,
+): Candidate | undefined {
+  return candidates
+    .filter(
+      (x) =>
+        x.group === "alt" &&
+        x.alt != null &&
+        x.alt.worthIt &&
+        x.standardKey === standard.key &&
+        !used.has(x.key) &&
+        eligibleForTop(x).ok,
+    )
+    .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+}
+
+/** One short sentence explaining why this alternate beats its standard line. */
+function altPreferenceReason(c: Candidate): string {
+  const keys = c.alt?.keysCrossed ?? [];
+  const bought = (c.alt?.probGain ?? 0) > 0;
+  const keyText = keys.length ? ` The move crosses ${keys.join(" and ")}.` : "";
+  return bought
+    ? `Lock Lab prefers this number: the extra points buy more winning chance than the extra juice costs.${keyText}`
+    : `Lock Lab prefers this number: the price gain outweighs the protection given up.${keyText}`;
+}
+
+
 function pickSource(c: Candidate) {
   return {
     point: c.point,
@@ -1101,6 +1136,37 @@ export async function runLockLabFormula(
     shortlist.push({ c, entry });
   }
 
+  // Alternate-line sweep. Part of the formula, not a display extra: every
+  // posted alternate spread and total has already been graded against its own
+  // standard line, so when the handicap read leaves a top slot open the sharpest
+  // graded alternate is considered on its own numbers before the board may pass.
+  // It still has to be worth the juice and clear the same uncertainty gates as
+  // anything else, and nothing is added just for having more points.
+  if (shortlist.length < 2) {
+    const sweep = candidates
+      .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
+      .filter((c) => eligibleForTop(c).ok && leadCheck(c).ok)
+      .sort((a, b) => candidateRank(b) - candidateRank(a));
+    for (const c of sweep) {
+      if (shortlist.length >= 2) break;
+      if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) continue;
+      const reason = altPreferenceReason(c);
+      used.add(c.key);
+      shortlist.push({
+        c,
+        entry: {
+          key: c.key,
+          badge: c.grade?.tier === "strong" ? "green" : "yellow",
+          reason,
+          standardKey: c.standardKey ?? null,
+          standardComparison: reason,
+        },
+      });
+    }
+  }
+
+
+
   // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
   // by how reliable the estimate behind it is. Raw EV never sets the order.
   shortlist.sort((a, b) => candidateRank(b.c) - candidateRank(a.c));
@@ -1200,18 +1266,32 @@ export async function runLockLabFormula(
       // as an edge — a bad bet never promotes its own flip side.
       const recommended =
         Boolean(opposite) && !swapped && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
-      // Same side, better number: only offered when the alternate is genuinely
-      // the sharper version of this bet, not merely a longer line.
+      // Better number instead of a flip. The handicap read may nominate one,
+      // but when it does not, the formula sweeps the posted alternate curve on
+      // the flagged side AND on the opposite side before the section can settle
+      // for "no play". Same gates as any other bet: worth the juice, graded, and
+      // never taken merely for having more points.
       const altKey = handicap.badBet.alternateKey;
-      const alternate = altKey ? byKey.get(altKey) : undefined;
-      const alternateBadge = alternate
-        ? capBadge(alternate, asBadge(handicap.badBet.alternateBadge ?? undefined))
+      const declaredAlt = altKey ? byKey.get(altKey) : undefined;
+      const declaredBadge = declaredAlt
+        ? capBadge(declaredAlt, asBadge(handicap.badBet.alternateBadge ?? undefined))
         : asBadge(handicap.badBet.alternateBadge ?? undefined);
-      const alternateUsable =
-        Boolean(alternate) &&
-        alternate!.key !== c.key &&
-        alternateBadge !== "red" &&
-        eligibleForTop(alternate!).ok;
+      const declaredUsable =
+        Boolean(declaredAlt) &&
+        declaredAlt!.key !== c.key &&
+        declaredBadge !== "red" &&
+        eligibleForTop(declaredAlt!).ok;
+      const sweptAlt = declaredUsable
+        ? undefined
+        : (bestGradedAlternate(c, candidates, used) ??
+          (opposite ? bestGradedAlternate(opposite, candidates, used) : undefined));
+      const alternate = declaredUsable ? declaredAlt : sweptAlt;
+      const alternateBadge = declaredUsable
+        ? declaredBadge
+        : alternate
+          ? capBadge(alternate, alternate.grade?.tier === "strong" ? "green" : "yellow")
+          : "red";
+      const alternateUsable = Boolean(alternate) && alternate!.key !== c.key && alternateBadge !== "red";
       const alternateFields = alternateUsable
         ? {
             alternateLabel: alternate!.label,
@@ -1222,12 +1302,15 @@ export async function runLockLabFormula(
             alternateCapturedAt: alternate!.capturedAt,
             alternateBadge,
             alternateRecommended: true,
-            alternateReason: clean(
-              handicap.badBet.alternateReason ?? undefined,
-              alternate!.alt?.note ?? "The same side at a better number is worth the extra price.",
-            ),
+            alternateReason: declaredUsable
+              ? clean(
+                  handicap.badBet.alternateReason ?? undefined,
+                  alternate!.alt?.note ?? "The same side at a better number is worth the extra price.",
+                )
+              : altPreferenceReason(alternate!),
           }
         : {};
+
       badBet = {
         key: "bad1",
         badge: "red",
