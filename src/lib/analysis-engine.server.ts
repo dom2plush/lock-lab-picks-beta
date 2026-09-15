@@ -719,7 +719,12 @@ export async function runLockLabFormula(
   const altNotes = summariseAltValue(
     candidates.map((c) => c.alt).filter((a): a is AltEvaluation => Boolean(a)),
   );
-  const handicap = await runHandicapPass(game, candidates, [...market.notes, ...altNotes]);
+  const handicap = await runHandicapPass(
+    game,
+    candidates,
+    [...market.notes, ...altNotes],
+    coverageNotes(candidates, Boolean(previousOdds)),
+  );
 
   if (!handicap) {
     return passingBoard(
