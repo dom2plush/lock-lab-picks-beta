@@ -172,6 +172,8 @@ export type AnalysisRow = {
   bad_bet: BadBet | null;
   fun_bets: FunBet[];
   player_props: PropBet[];
+  /** Internal calibration record; only the line-shopping counts are read by the UI. */
+  candidate_audit?: { alternateMarketsReceived?: number | null } | null;
   top_pick_result: Result;
   graded_at: string | null;
 };
