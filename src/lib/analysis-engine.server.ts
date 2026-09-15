@@ -1083,15 +1083,24 @@ function buildCandidateAudit(
     .slice()
     .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
   const bestAltEntry = bestAlt ? (entries.find((e) => e.key === bestAlt.key) ?? null) : null;
-  const strongestAlternateOutcome = !bestAlt
-    ? "No alternate spread or total was supplied by the sportsbook for this game."
-    : bestAltEntry && bestAltEntry.section != null
-      ? `Selected (${bestAltEntry.section}): ${bestAltEntry.reason}`
-      : `Rejected: ${
-          !bestAlt.alt?.worthIt
-            ? "the extra juice outweighs the protection it buys against the standard line. "
-            : ""
-        }${eligibleForTop(bestAlt).ok ? leadCheck(bestAlt).why || "not the sharpest risk-adjusted bet on the board." : eligibleForTop(bestAlt).why}`;
+  const strongestAlternateOutcome = !extra.alternates.length
+    ? "ALTERNATE LINES UNAVAILABLE — cannot line-shop this game."
+    : !bestAlt
+      ? "Alternate prices were received but none could be graded against a standard line."
+      : bestAltEntry && bestAltEntry.section != null
+        ? `Selected (${bestAltEntry.section}): ${bestAltEntry.reason}`
+        : `Rejected: ${
+            !bestAlt.alt?.worthIt
+              ? "the extra juice outweighs the protection it buys against the standard line. "
+              : ""
+          }${eligibleForTop(bestAlt).ok ? leadCheck(bestAlt).why || "not the sharpest risk-adjusted bet on the board." : eligibleForTop(bestAlt).why}`;
+  // How much better (or worse) the best rung grades than the standard line it is
+  // measured against, in uncertainty-band terms.
+  const bestAltStandard = bestAlt?.standardKey
+    ? candidates.find((c) => c.key === bestAlt.standardKey)
+    : undefined;
+  const standardVsAlternateEdge =
+    bestAlt && bestAltStandard ? candidateRank(bestAlt) - candidateRank(bestAltStandard) : null;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -1100,9 +1109,12 @@ function buildCandidateAudit(
     altMarketsSupplied: extra.alternates.length,
     propMarketsSupplied: extra.props.length,
     standardMarketsEvaluated: candidates.filter((c) => c.group === "core").length,
+    alternateMarketsReceived: extra.alternates.length,
     alternateMarketsEvaluated: altCandidates.length,
     strongestAlternate: bestAltEntry,
     strongestAlternateOutcome,
+    standardVsAlternateEdge,
+
     entries,
     strongestRejected,
   };
