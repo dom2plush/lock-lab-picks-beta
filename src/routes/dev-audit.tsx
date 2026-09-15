@@ -85,6 +85,8 @@ function DevAuditPage() {
                     "EV",
                     "±",
                     "needs",
+                    "score",
+                    "tier",
                     "decision",
                     "alt vs std",
                     "reason",
@@ -109,6 +111,8 @@ function DevAuditPage() {
                     <td className="p-2">{ev(e.ev)}</td>
                     <td className="p-2">{signedPct(e.uncertainty)}</td>
                     <td className="p-2">{signedPct(e.requiredEdge)}</td>
+                    <td className="p-2">{e.valueScore == null ? "—" : `${e.valueScore.toFixed(2)}x`}</td>
+                    <td className="p-2">{e.tier}</td>
                     <td className="p-2 whitespace-nowrap">
                       {e.decision.toUpperCase()}
                       {e.section ? ` (${e.section})` : ""}
