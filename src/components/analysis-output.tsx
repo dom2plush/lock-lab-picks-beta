@@ -154,14 +154,16 @@ export function AnalysisOutput({
                   {pick.book ? ` · ${pick.book}` : ""}
                   {pick.capturedAt ? ` · ${formatCapturedAt(pick.capturedAt)}` : ""}
                 </span>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    onTail(tailTarget(pick.key, pick.label, pick.odds ?? null, "top_bets"))
-                  }
-                >
-                  Tail
-                </Button>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      onTail(tailTarget(pick.key, pick.label, pick.odds ?? null, "top_bets"))
+                    }
+                  >
+                    Tail
+                  </Button>
+                )}
               </div>
             </article>
           ))}
