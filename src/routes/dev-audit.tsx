@@ -63,19 +63,23 @@ function DevAuditPage() {
             {game.verdict && <div className="mt-1 text-muted-foreground">verdict: {game.verdict}</div>}
             {game.audit && (
               <div className="mt-1 text-muted-foreground">
-                standard markets evaluated: {game.audit.standardMarketsEvaluated ?? "—"} · alternate rungs
-                evaluated: {game.audit.alternateMarketsEvaluated ?? "—"}
+                standard markets evaluated: {game.audit.standardMarketsEvaluated ?? "—"} · alternate markets
+                received: {game.audit.alternateMarketsReceived ?? game.audit.altMarketsSupplied} · alternate
+                rungs evaluated: {game.audit.alternateMarketsEvaluated ?? "—"} · standard vs alternate edge:{" "}
+                {game.audit.standardVsAlternateEdge == null
+                  ? "—"
+                  : `${game.audit.standardVsAlternateEdge >= 0 ? "+" : ""}${game.audit.standardVsAlternateEdge.toFixed(2)} bands`}
               </div>
             )}
             {game.audit?.strongestAlternate && (
               <div className="mt-1">
-                strongest alternate: {game.audit.strongestAlternate.label} (edge{" "}
+                best alternate: {game.audit.strongestAlternate.label} (edge{" "}
                 {signedPct(game.audit.strongestAlternate.edge)}, EV {ev(game.audit.strongestAlternate.ev)}) —{" "}
                 {game.audit.strongestAlternateOutcome}
               </div>
             )}
             {game.audit && !game.audit.strongestAlternate && (
-              <div className="mt-1">strongest alternate: {game.audit.strongestAlternateOutcome}</div>
+              <div className="mt-1">best alternate: {game.audit.strongestAlternateOutcome}</div>
             )}
             {game.audit?.strongestRejected && (
               <div className="mt-1">
