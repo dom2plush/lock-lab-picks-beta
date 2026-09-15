@@ -107,7 +107,7 @@ export function verifyAlternateOffers(offers: MarketOffer[], game: GameRow): Off
   const rejected: OfferRejection[] = [];
 
   for (const offer of offers) {
-    const problems = baseProblems(offer, game);
+    const problems = baseProblems(offer, game, false);
     if (offer.market.startsWith("player_")) problems.push("player market in the game-line feed");
     if (offer.point == null) problems.push("no line recorded");
 
