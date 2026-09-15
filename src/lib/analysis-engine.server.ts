@@ -1266,18 +1266,32 @@ export async function runLockLabFormula(
       // as an edge — a bad bet never promotes its own flip side.
       const recommended =
         Boolean(opposite) && !swapped && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
-      // Same side, better number: only offered when the alternate is genuinely
-      // the sharper version of this bet, not merely a longer line.
+      // Better number instead of a flip. The handicap read may nominate one,
+      // but when it does not, the formula sweeps the posted alternate curve on
+      // the flagged side AND on the opposite side before the section can settle
+      // for "no play". Same gates as any other bet: worth the juice, graded, and
+      // never taken merely for having more points.
       const altKey = handicap.badBet.alternateKey;
-      const alternate = altKey ? byKey.get(altKey) : undefined;
-      const alternateBadge = alternate
-        ? capBadge(alternate, asBadge(handicap.badBet.alternateBadge ?? undefined))
+      const declaredAlt = altKey ? byKey.get(altKey) : undefined;
+      const declaredBadge = declaredAlt
+        ? capBadge(declaredAlt, asBadge(handicap.badBet.alternateBadge ?? undefined))
         : asBadge(handicap.badBet.alternateBadge ?? undefined);
-      const alternateUsable =
-        Boolean(alternate) &&
-        alternate!.key !== c.key &&
-        alternateBadge !== "red" &&
-        eligibleForTop(alternate!).ok;
+      const declaredUsable =
+        Boolean(declaredAlt) &&
+        declaredAlt!.key !== c.key &&
+        declaredBadge !== "red" &&
+        eligibleForTop(declaredAlt!).ok;
+      const sweptAlt = declaredUsable
+        ? undefined
+        : (bestGradedAlternate(c, candidates, used) ??
+          (opposite ? bestGradedAlternate(opposite, candidates, used) : undefined));
+      const alternate = declaredUsable ? declaredAlt : sweptAlt;
+      const alternateBadge = declaredUsable
+        ? declaredBadge
+        : alternate
+          ? capBadge(alternate, alternate.grade?.tier === "strong" ? "green" : "yellow")
+          : "red";
+      const alternateUsable = Boolean(alternate) && alternate!.key !== c.key && alternateBadge !== "red";
       const alternateFields = alternateUsable
         ? {
             alternateLabel: alternate!.label,
@@ -1288,12 +1302,15 @@ export async function runLockLabFormula(
             alternateCapturedAt: alternate!.capturedAt,
             alternateBadge,
             alternateRecommended: true,
-            alternateReason: clean(
-              handicap.badBet.alternateReason ?? undefined,
-              alternate!.alt?.note ?? "The same side at a better number is worth the extra price.",
-            ),
+            alternateReason: declaredUsable
+              ? clean(
+                  handicap.badBet.alternateReason ?? undefined,
+                  alternate!.alt?.note ?? "The same side at a better number is worth the extra price.",
+                )
+              : altPreferenceReason(alternate!),
           }
         : {};
+
       badBet = {
         key: "bad1",
         badge: "red",
