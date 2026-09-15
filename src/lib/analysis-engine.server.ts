@@ -1203,7 +1203,34 @@ export async function runLockLabFormula(
     });
   }
 
-
+  // Side first, then line. Once a selection has an underlying case, shop its own
+  // posted ladder: if a rung on that same side carries better risk-adjusted value
+  // than the number the read named, take that rung instead. The side does not
+  // change here, only the number, and the swap happens solely on graded value —
+  // never on the biggest number, the cheapest price or the standard tag.
+  for (let i = 0; i < shortlist.length; i += 1) {
+    const s = shortlist[i]!;
+    if (s.c.group !== "core") continue;
+    const better = bestGradedAlternate(s.c, candidates, used);
+    if (!better || candidateRank(better) <= candidateRank(s.c)) continue;
+    const reason = altPreferenceReason(better);
+    used.add(better.key);
+    decisions.set(s.c.key, {
+      section: null,
+      badge: "red",
+      reason: `Passed over in favour of the sharper number on the same side: ${better.label}.`,
+    });
+    shortlist[i] = {
+      c: better,
+      entry: {
+        key: better.key,
+        badge: better.grade?.tier === "strong" ? "green" : "yellow",
+        reason: s.entry.reason || reason,
+        standardKey: better.standardKey ?? null,
+        standardComparison: reason,
+      },
+    };
+  }
 
 
   // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
