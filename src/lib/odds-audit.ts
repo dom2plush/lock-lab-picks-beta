@@ -103,7 +103,11 @@ function checkEntry(
   }
   if (expected && !displayedOdds) problems.push("The price is recorded but not shown with the pick.");
 
-  if (snapshot.bookmaker && source.book && !sameBook(source.book, snapshot.bookmaker)) {
+  // Core spread/total/moneyline picks must come from the snapshot's book.
+  // Alternate lines, team totals and props are often posted by a different
+  // book; those are fine because the pick carries and displays its own record.
+  const derivative = /^(alternate_|team_totals|player_)/.test(market);
+  if (!derivative && snapshot.bookmaker && source.book && !sameBook(source.book, snapshot.bookmaker)) {
     problems.push(
       `Priced at ${source.book} but the page is showing a ${snapshot.bookmaker} snapshot.`,
     );
