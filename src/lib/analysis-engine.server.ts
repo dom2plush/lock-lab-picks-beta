@@ -30,8 +30,15 @@ import type {
   PickBet,
   PropBet,
 } from "./lock-lab-types";
-import type { AltEvaluation } from "./market-math.server";
-import { createAltEvaluator, devig, readMarket, summariseAltValue } from "./market-math.server";
+import type { AltEvaluation, ValueGrade } from "./market-math.server";
+import {
+  createAltEvaluator,
+  devig,
+  gradeValue,
+  impliedProbability,
+  readMarket,
+  summariseAltValue,
+} from "./market-math.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -320,7 +327,90 @@ function buildCandidates(
     });
   });
 
+  gradeBoard(out, game);
   return out;
+}
+
+/**
+ * Connects every candidate's price to a probability estimate.
+ *
+ * Core two-way markets are estimated from the vig-free market read; alternates
+ * from the modelled curve at that exact number (key-number mass included); props
+ * from the posted two-way price when the book prices both sides. Nothing is
+ * invented: a selection with no supportable estimate is graded as unrankable and
+ * can never be a top bet on payout alone.
+ */
+function gradeBoard(candidates: Candidate[], game: GameRow) {
+  const pairFair = (a: number, b: number) => devig(a, b);
+
+  for (const c of candidates) {
+    let modelProb: number | null = null;
+    let distance = 0;
+
+    if (c.group === "core") {
+      const opposite = candidates.find((x) => x.key === CORE_OPPOSITE[c.key]);
+      modelProb = opposite ? pairFair(c.price, opposite.price).a : impliedProbability(c.price);
+    } else if (c.alt) {
+      modelProb = c.alt.winProb;
+      distance = Math.abs(c.alt.point - c.alt.standardPoint);
+    } else if (c.group === "prop") {
+      const opposite = findOpposite(c, candidates, game);
+      modelProb = opposite ? pairFair(c.price, opposite.price).a : null;
+    }
+
+    c.grade = gradeValue({ modelProb, price: c.price, group: c.group, distance });
+    c.note = `${c.note} ${c.grade.note}`;
+  }
+}
+
+/**
+ * Ranking gate for the Top 2. A pick has to be priced below Lock Lab's own
+ * estimate of how often it wins — payout size never qualifies a bet. Long
+ * alternates additionally have to beat the standard number they are measured
+ * against, so "+190 because it pays more" can never reach the board.
+ */
+function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
+  const g = c.grade;
+  if (!g) return { ok: true, why: "" };
+
+  if (c.group === "alt") {
+    if (!c.alt) {
+      if (g.modelProb == null || !g.qualifies) {
+        return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
+      }
+    } else if (!c.alt.worthIt) {
+      return {
+        ok: false,
+        why: `${c.label}: the extra juice costs more than the extra points buy against the standard line.`,
+      };
+    }
+    if (g.ev != null && g.ev <= 0) {
+      return { ok: false, why: `${c.label}: negative expected value once the win chance is priced in.` };
+    }
+    if (!g.qualifies) {
+      return {
+        ok: false,
+        why: `${c.label}: the estimated edge sits inside the uncertainty band, which a long alternate must clear.`,
+      };
+    }
+    return { ok: true, why: "" };
+  }
+
+  // Any long shot, in any market, must show a measured edge rather than a payout.
+  if (g.impliedProb < 0.45) {
+    if (!g.qualifies) {
+      return {
+        ok: false,
+        why: `${c.label}: a long price needs the estimated win chance to clear the implied chance by more than the model's own error, and it does not.`,
+      };
+    }
+  }
+
+  if (g.ev != null && g.ev < -0.06) {
+    return { ok: false, why: `${c.label}: expected value is clearly negative at this price.` };
+  }
+
+  return { ok: true, why: "" };
 }
 
 function pickSource(c: Candidate) {
