@@ -128,6 +128,11 @@ export function AnalysisOutput({
             </p>
           </div>
         )}
+        {(analysis.candidate_audit?.alternateMarketsReceived ?? 0) === 0 && (
+          <p className="mb-3 text-xs text-muted-foreground">
+            ALTERNATE LINES UNAVAILABLE — cannot line-shop this game.
+          </p>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
           {analysis.top_bets.map((pick) => (
             <article key={pick.key} className="rounded-lg border border-hairline bg-card p-4">
