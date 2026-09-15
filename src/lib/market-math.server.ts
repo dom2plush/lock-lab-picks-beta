@@ -493,12 +493,12 @@ export function gradeValue(input: {
 }): ValueGrade {
   const implied = impliedProbability(input.price);
   const distance = Math.abs(input.distance ?? 0);
-  const base = input.group === "core" ? 0.03 : input.group === "prop" ? 0.05 : 0.035;
+  const base = input.group === "core" ? 0.025 : input.group === "prop" ? 0.042 : 0.03;
   const evidence = Math.min(1, Math.max(0, input.evidenceStrength ?? 0.5));
   // Weak evidence widens the band by up to 25%, strong evidence narrows it by 25%.
   const evidenceFactor = 1.25 - 0.5 * evidence;
-  const spread = base + (input.group === "alt" ? 0.008 * distance : 0);
-  const uncertainty = Math.min(0.16, spread * tailStretch(implied) * evidenceFactor);
+  const spread = base + (input.group === "alt" ? 0.007 * distance : 0);
+  const uncertainty = Math.min(0.14, spread * tailStretch(implied) * evidenceFactor);
   const requiredEdge = uncertainty;
 
   if (input.modelProb == null) {
@@ -523,7 +523,7 @@ export function gradeValue(input: {
   const tier: ValueTier =
     edge >= requiredEdge && ev > 0
       ? "strong"
-      : edge >= 0.5 * requiredEdge && ev > 0.01
+      : edge >= 0.4 * requiredEdge && ev > 0.005
         ? "playable"
         : "insufficient";
   return {
@@ -608,7 +608,7 @@ export function canLeadBoard(
       why: "the edge clears only part of the uncertainty band at a long price, which needs unusually strong support to lead the board",
     };
   }
-  if (robustness < 0.9) {
+  if (robustness < 0.8) {
     return {
       ok: false,
       why: "the edge clears only part of the uncertainty band and the estimate behind it is not robust enough to lead the board",
