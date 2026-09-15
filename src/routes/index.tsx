@@ -199,12 +199,26 @@ function AnalyzePage() {
       )}
 
       {analysis && (
-        <div className="mt-12">
-          <AnalysisOutput
-            game={analysis.game}
-            analysis={analysis.row}
-            onTail={(target) => setTailTarget(target)}
-          />
+        <div className="mt-12 space-y-6">
+          {analysis.status !== "pregame" && (
+            <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+              <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+                {analysis.status === "historical"
+                  ? "Final — pregame picks only"
+                  : "Game in progress / picks locked"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{analysis.message}</p>
+            </div>
+          )}
+          {analysis.row && (
+            <AnalysisOutput
+              game={analysis.game}
+              analysis={analysis.row}
+              status={analysis.status}
+              propsVerified={analysis.propsVerified}
+              onTail={(target) => setTailTarget(target)}
+            />
+          )}
         </div>
       )}
 
