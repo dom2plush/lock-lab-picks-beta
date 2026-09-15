@@ -1003,6 +1003,7 @@ export async function runLockLabFormula(
   const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
   const topBets: PickBet[] = [];
   const rejected: string[] = [];
+  const shortlist: { c: Candidate; entry: (typeof handicap.top)[number] }[] = [];
   for (const entry of handicap.top ?? []) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key)) continue;
@@ -1019,10 +1020,41 @@ export async function runLockLabFormula(
       continue;
     }
     // A second pick in the same market/player as the first is not distinct.
-    if (topBets.some((b) => b.market === c.marketLabel && b.selection === (c.player ?? c.selection))) {
+    if (shortlist.some((s) => s.c.marketLabel === c.marketLabel && (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) {
       continue;
     }
     used.add(c.key);
+    shortlist.push({ c, entry });
+  }
+
+  // Rank by risk-adjusted value: edge measured in uncertainty bands, discounted
+  // by how reliable the estimate behind it is. Raw EV never sets the order.
+  shortlist.sort((a, b) => candidateRank(b.c) - candidateRank(a.c));
+
+  // #1 has to be able to carry the board. A partial-band edge at a long price
+  // steps aside for a steadier bet, and leads only when nothing steadier exists
+  // and it is still clearly the strongest risk-adjusted opportunity.
+  if (shortlist.length) {
+    const leadIndex = shortlist.findIndex((s) => leadCheck(s.c).ok);
+    if (leadIndex > 0) {
+      const [lead] = shortlist.splice(leadIndex, 1);
+      shortlist.unshift(lead!);
+    } else if (leadIndex === -1) {
+      const head = shortlist[0]!;
+      const check = leadCheck(head.c);
+      if (candidateRank(head.c) < 0.6) {
+        rejected.push(`${head.c.label}: ${check.why}.`);
+        decisions.set(head.c.key, {
+          section: null,
+          badge: "red",
+          reason: `Not posted as the top bet: ${check.why}.`,
+        });
+        shortlist.shift();
+      }
+    }
+  }
+
+  for (const { c, entry } of shortlist.slice(0, 2)) {
     // An alternate line always shows the standard number it beat, quoted from
     // the same snapshot, so the standard-vs-alternate decision is visible.
     const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
@@ -1041,10 +1073,11 @@ export async function runLockLabFormula(
           ),
         }
       : {};
+    const badge = capBadge(c, asBadge(entry.badge));
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
-      badge: capBadge(c, asBadge(entry.badge)),
+      badge,
       label: c.label,
       market: c.marketLabel,
       selection: c.player ?? c.selection,
@@ -1061,10 +1094,9 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "top",
-      badge: capBadge(c, asBadge(entry.badge)),
+      badge,
       reason: clean(entry.reason, "Selected as a top bet."),
     });
-    if (topBets.length === 2) break;
   }
 
   let badBet: BadBet | null = null;
