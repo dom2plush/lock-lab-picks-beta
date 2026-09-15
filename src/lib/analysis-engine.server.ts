@@ -451,6 +451,28 @@ function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
 }
 
+/** How reliable a candidate's probability estimate is (0-1). */
+function candidateRobustness(c: Candidate): number {
+  if (!c.grade) return 0.5;
+  return robustnessScore({
+    grade: c.grade,
+    group: c.group,
+    probGain: c.alt ? c.alt.probGain : null,
+    keysCrossed: c.alt ? c.alt.keysCrossed.length : 0,
+  });
+}
+
+/** Risk-adjusted ranking number: edge in uncertainty bands, discounted by robustness. */
+function candidateRank(c: Candidate): number {
+  if (!c.grade) return 0;
+  return riskAdjustedScore(c.grade, candidateRobustness(c));
+}
+
+function leadCheck(c: Candidate): { ok: boolean; why: string } {
+  if (!c.grade) return { ok: false, why: "no supportable probability estimate" };
+  return canLeadBoard(c.grade, candidateRobustness(c));
+}
+
 function pickSource(c: Candidate) {
   return {
     point: c.point,
