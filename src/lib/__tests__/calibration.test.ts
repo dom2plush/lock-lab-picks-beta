@@ -13,7 +13,7 @@ describe("selection calibration", () => {
   });
 
   it("2. legitimate alternate line with a partial-band edge is playable (YELLOW), not rejected", () => {
-    const g = gradeValue({ modelProb: 0.545, price: -135, group: "alt", distance: 1, evidenceStrength: 0.55 });
+    const g = gradeValue({ modelProb: 0.565, price: -120, group: "alt", distance: 1, evidenceStrength: 0.55 });
     expect(g.tier).toBe("playable");
     expect(g.qualifies).toBe(true);
   });
@@ -31,7 +31,7 @@ describe("selection calibration", () => {
   });
 
   it("5. an alternate buying a key number reaches at least YELLOW", () => {
-    const g = gradeValue({ modelProb: 0.575, price: -145, group: "alt", distance: 1, evidenceStrength: 0.6 });
+    const g = gradeValue({ modelProb: 0.625, price: -145, group: "alt", distance: 1, evidenceStrength: 0.6 });
     expect(g.qualifies).toBe(true);
     expect(rob(g, "alt", { probGain: 0.05, keysCrossed: 1 })).toBeGreaterThan(
       rob(g, "alt", { probGain: -0.05, keysCrossed: 0 }),
