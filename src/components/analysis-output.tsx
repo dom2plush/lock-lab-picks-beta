@@ -235,23 +235,25 @@ export function AnalysisOutput({
                     {analysis.bad_bet.alternateReason}
                   </p>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() =>
-                    onTail(
-                      tailTarget(
-                        `${analysis.bad_bet!.key}-alternate`,
-                        analysis.bad_bet!.alternateLabel!,
-                        analysis.bad_bet!.alternateOdds ?? null,
-                        "bad_bet",
-                      ),
-                    )
-                  }
-                >
-                  Tail the better number
-                </Button>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() =>
+                      onTail(
+                        tailTarget(
+                          `${analysis.bad_bet!.key}-alternate`,
+                          analysis.bad_bet!.alternateLabel!,
+                          analysis.bad_bet!.alternateOdds ?? null,
+                          "bad_bet",
+                        ),
+                      )
+                    }
+                  >
+                    Tail the better number
+                  </Button>
+                )}
               </div>
             )}
 
