@@ -1133,8 +1133,28 @@ function buildCandidateAudit(
   const standardVsAlternateEdge =
     bestAlt && bestAltStandard ? candidateRank(bestAlt) - candidateRank(bestAltStandard) : null;
 
+  const bestCandidate =
+    entries
+      .slice()
+      .sort((a, b) => (b.edge ?? -Infinity) - (a.edge ?? -Infinity))[0] ?? null;
+  const alternateBooks = Array.from(
+    new Set(altCandidates.map((c) => c.book).filter((b): b is string => Boolean(b))),
+  );
+  const ladder = altCandidates.map((c) => ({
+    market: c.market,
+    side: c.selection,
+    line: c.point != null ? String(c.point) : null,
+    price: c.price,
+    book: c.book ?? (game.odds.bookmaker ?? "unknown"),
+  }));
+
   return {
     generatedAt: new Date().toISOString(),
+    gameId: game.id ?? null,
+    providerGameId: game.provider_game_id ?? null,
+    alternateBooks,
+    ladder,
+    bestCandidate,
     snapshotBook: game.odds.bookmaker ?? null,
     snapshotCapturedAt: game.odds.capturedAt ?? game.odds_updated_at ?? null,
     altMarketsSupplied: extra.alternates.length,
