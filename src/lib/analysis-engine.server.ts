@@ -961,7 +961,12 @@ function clean(text: string | undefined, fallback: string): string {
  * Deterministic fallback when the handicap pass is unavailable: Lock Lab does
  * not guess. It reports the market read and passes on the board.
  */
-function passingBoard(candidates: Candidate[], verdict: string, game?: GameRow): EngineOutput {
+function passingBoard(
+  candidates: Candidate[],
+  verdict: string,
+  game?: GameRow,
+  extra: ExtraOffers = { alternates: [], props: [] },
+): EngineOutput {
   const worst = candidates
     .filter((c) => c.group === "core")
     .slice()
