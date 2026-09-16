@@ -45,7 +45,7 @@ export function AnalysisOutput({
   analysis: AnalysisRow;
   onTail: (target: TailTarget) => void;
   /** Pregame cards are tailable; locked/historical cards are read-only. */
-  status?: "pregame" | "locked" | "historical";
+  status?: "pregame" | "locked" | "historical" | "unavailable";
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified?: boolean;
 }) {
