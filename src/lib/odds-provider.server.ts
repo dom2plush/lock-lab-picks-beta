@@ -309,12 +309,12 @@ export async function fetchEventMarkets(
   // Alternate markets are isolated by key. One unavailable derivative must not
   // erase a spread or total ladder that the provider can return independently.
   const [altResults, props] = await Promise.all([
-    Promise.all(ALT_MARKETS.map((market) => load([market]))),
+    Promise.all(
+      ALT_MARKETS.map(async (market) => ({ market, event: await load([market]) })),
+    ),
     load(PROP_MARKETS),
   ]);
-  const alternates = altResults.flatMap((event, index) =>
-    collect(event, [ALT_MARKETS[index] ?? ""]),
-  );
+  const alternates = altResults.flatMap(({ market, event }) => collect(event, [market]));
   return {
     alternates,
     props: collect(props, PROP_MARKETS),

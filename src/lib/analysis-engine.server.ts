@@ -506,6 +506,20 @@ function applyLean(c: Candidate, lean: number | null | undefined, evidence: numb
   });
 }
 
+/** Apply one supported side read to its standard number and every posted rung on that same side. */
+function applySideLean(
+  c: Candidate,
+  candidates: Candidate[],
+  lean: number | null | undefined,
+  evidence: number | null | undefined,
+): void {
+  applyLean(c, lean, evidence);
+  if (c.group !== "core") return;
+  for (const alternate of candidates) {
+    if (alternate.standardKey === c.key) applyLean(alternate, lean, evidence);
+  }
+}
+
 /** Playable-tier candidates can reach the board, but never as a green bet. */
 function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
@@ -1290,7 +1304,7 @@ export async function runLockLabFormula(
     // The market's own vig-free number is the starting point; the handicap read
     // may move it within a bounded range, for a stated reason, before the value
     // gate runs. Without a lean a bet simply matches the market and has no edge.
-    applyLean(c, entry.probabilityLean, entry.evidenceStrength);
+    applySideLean(c, candidates, entry.probabilityLean, entry.evidenceStrength);
     // Price must be beaten by the estimated win probability. A pick that only
     // looks good because it pays more is dropped here, never published.
     const eligible = eligibleForTop(c);
@@ -1472,15 +1486,16 @@ export async function runLockLabFormula(
         : undefined;
     const c = swapped ?? chosen;
     if (c) {
-      applyLean(c, handicap.badBet.probabilityLean, handicap.badBet.evidenceStrength);
+      applySideLean(c, candidates, handicap.badBet.probabilityLean, handicap.badBet.evidenceStrength);
       const declared = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
       const natural = findOpposite(c, candidates, game);
       // The declared opposite is honoured only when it really is the flip side
       // of the flagged bet; otherwise the posted opposing selection is used.
       const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
       if (opposite && !swapped) {
-        applyLean(
+        applySideLean(
           opposite,
+          candidates,
           handicap.badBet.oppositeProbabilityLean,
           handicap.badBet.oppositeEvidenceStrength,
         );
