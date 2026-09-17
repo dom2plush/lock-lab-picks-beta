@@ -140,7 +140,7 @@ describe("alternate market retrieval", () => {
 
     expect(result.alternates).toHaveLength(2);
     expect(result.alternates.every((offer) => offer.market === "alternate_spreads")).toBe(true);
-    expect(result.coverage.received.alternate_spreads).toBe(2);
+    expect(result.coverage.received["alternate_spreads"]).toBe(2);
     expect(result.coverage.missing).toContain("alternate_totals");
   });
 });
