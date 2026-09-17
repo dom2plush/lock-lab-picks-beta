@@ -506,6 +506,20 @@ function applyLean(c: Candidate, lean: number | null | undefined, evidence: numb
   });
 }
 
+/** Apply one supported side read to its standard number and every posted rung on that same side. */
+function applySideLean(
+  c: Candidate,
+  candidates: Candidate[],
+  lean: number | null | undefined,
+  evidence: number | null | undefined,
+): void {
+  applyLean(c, lean, evidence);
+  if (c.group !== "core") return;
+  for (const alternate of candidates) {
+    if (alternate.standardKey === c.key) applyLean(alternate, lean, evidence);
+  }
+}
+
 /** Playable-tier candidates can reach the board, but never as a green bet. */
 function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
@@ -698,10 +712,14 @@ type HandicapResponse = {
   badBet: {
     key: string;
     reason: string;
+    probabilityLean?: number | null;
+    evidenceStrength?: number | null;
     oppositeKey: string | null;
     oppositeBadge: string;
     oppositeReason: string;
     oppositeRecommended: boolean;
+    oppositeProbabilityLean?: number | null;
+    oppositeEvidenceStrength?: number | null;
     alternateKey?: string | null;
     alternateBadge?: string | null;
     alternateReason?: string | null;
@@ -747,10 +765,14 @@ const RESPONSE_SCHEMA = {
       required: [
         "key",
         "reason",
+        "probabilityLean",
+        "evidenceStrength",
         "oppositeKey",
         "oppositeBadge",
         "oppositeReason",
         "oppositeRecommended",
+        "oppositeProbabilityLean",
+        "oppositeEvidenceStrength",
         "alternateKey",
         "alternateBadge",
         "alternateReason",
@@ -758,10 +780,14 @@ const RESPONSE_SCHEMA = {
       properties: {
         key: { type: "string" },
         reason: { type: "string" },
+        probabilityLean: { type: ["number", "null"] },
+        evidenceStrength: { type: ["number", "null"] },
         oppositeKey: { type: ["string", "null"] },
         oppositeBadge: { type: "string", enum: ["green", "yellow", "red"] },
         oppositeReason: { type: "string" },
         oppositeRecommended: { type: "boolean" },
+        oppositeProbabilityLean: { type: ["number", "null"] },
+        oppositeEvidenceStrength: { type: ["number", "null"] },
         alternateKey: { type: ["string", "null"] },
         alternateBadge: { type: ["string", "null"], enum: ["green", "yellow", "red", null] },
         alternateReason: { type: ["string", "null"] },
@@ -972,6 +998,7 @@ function passingBoard(
     .slice()
     .sort((a, b) => a.price - b.price)[0];
   const opposite = worst && game ? findOpposite(worst, candidates, game) : undefined;
+  const oppositeGate = opposite ? eligibleForTop(opposite) : null;
   return {
     topBets: [],
     badBet: worst
@@ -993,13 +1020,19 @@ function passingBoard(
           oppositeRecommended: false,
           oppositeBadge: "red",
           oppositeReason: opposite
-            ? "The opposite side was not independently graded on this run, so Lock Lab is not recommending it."
+            ? oppositeGate?.ok
+              ? "The opposite side was independently priced, but no matchup read supports promoting it — pass on both sides."
+              : `Graded on its own, the opposite side does not clear the betting threshold — pass on both sides. ${oppositeGate?.why ?? ""}`.trim()
             : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
         }
       : null,
     funBets: [],
     playerProps: [],
-    notes: { propsAvailable: false, altMarketsAvailable: false, verdict },
+    notes: {
+      propsAvailable: extra.props.length > 0,
+      altMarketsAvailable: extra.alternates.length > 0,
+      verdict,
+    },
     candidateAudit: game
       ? buildCandidateAudit(game, candidates, extra, new Map())
       : {
@@ -1196,11 +1229,67 @@ export async function runLockLabFormula(
   );
 
   if (!handicap) {
-    return passingBoard(
-      candidates,
-      "Lock Lab could not complete a full read on this game, so it is passing rather than posting a bet it cannot defend.",
-      game,
+    const measurable = candidates
+      .filter((c) => eligibleForTop(c).ok)
+      .sort((a, b) => candidateRank(b) - candidateRank(a));
+    const distinct = measurable.filter(
+      (c, index, all) =>
+        all.findIndex(
+          (other) =>
+            other.marketLabel === c.marketLabel &&
+            (other.player ?? other.selection) === (c.player ?? c.selection),
+        ) === index,
     );
+    if (!distinct.length) {
+      return passingBoard(
+        candidates,
+        "No bet: the available markets were evaluated, but none has a measurable edge at the posted price.",
+        game,
+        extra,
+      );
+    }
+    const topBets = distinct.slice(0, 2).map((c, index): PickBet => {
+      const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
+      return {
+        key: `top${index + 1}`,
+        rank: index + 1,
+        badge: c.grade?.tier === "strong" ? "green" : "yellow",
+        label: c.label,
+        market: c.marketLabel,
+        selection: c.player ?? c.selection,
+        line: c.line,
+        odds: fmtOdds(c.price),
+        ...pickSource(c),
+        ...(standard
+          ? {
+              standardLabel: standard.label,
+              standardPoint: standard.point,
+              standardPrice: standard.price,
+              standardBook: standard.book,
+              standardCapturedAt: standard.capturedAt,
+              standardComparison: altPreferenceReason(c),
+            }
+          : {}),
+        reason: c.alt ? altPreferenceReason(c) : "The posted price carries a measurable edge under the existing market grade.",
+      };
+    });
+    const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
+    topBets.forEach((bet, index) => {
+      const c = distinct[index];
+      if (c) decisions.set(c.key, { section: "top", badge: bet.badge, reason: bet.reason });
+    });
+    return {
+      topBets,
+      badBet: passingBoard(candidates, "", game, extra).badBet,
+      funBets: [],
+      playerProps: [],
+      notes: {
+        propsAvailable: extra.props.length > 0,
+        altMarketsAvailable: extra.alternates.length > 0,
+        verdict: null,
+      },
+      candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
+    };
   }
 
   const used = new Set<string>();
@@ -1215,7 +1304,7 @@ export async function runLockLabFormula(
     // The market's own vig-free number is the starting point; the handicap read
     // may move it within a bounded range, for a stated reason, before the value
     // gate runs. Without a lean a bet simply matches the market and has no edge.
-    applyLean(c, entry.probabilityLean, entry.evidenceStrength);
+    applySideLean(c, candidates, entry.probabilityLean, entry.evidenceStrength);
     // Price must be beaten by the estimated win probability. A pick that only
     // looks good because it pays more is dropped here, never published.
     const eligible = eligibleForTop(c);
@@ -1397,18 +1486,32 @@ export async function runLockLabFormula(
         : undefined;
     const c = swapped ?? chosen;
     if (c) {
+      applySideLean(c, candidates, handicap.badBet.probabilityLean, handicap.badBet.evidenceStrength);
       const declared = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
       const natural = findOpposite(c, candidates, game);
       // The declared opposite is honoured only when it really is the flip side
       // of the flagged bet; otherwise the posted opposing selection is used.
       const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
-      const oppositeBadge = opposite
+      if (opposite && !swapped) {
+        applySideLean(
+          opposite,
+          candidates,
+          handicap.badBet.oppositeProbabilityLean,
+          handicap.badBet.oppositeEvidenceStrength,
+        );
+      }
+      const oppositeGate = opposite ? eligibleForTop(opposite) : null;
+      const oppositeBadge = opposite && oppositeGate?.ok
         ? capBadge(opposite, asBadge(handicap.badBet.oppositeBadge))
         : "red";
       // The opposite side is only tailable when it was independently graded
       // as an edge — a bad bet never promotes its own flip side.
       const recommended =
-        Boolean(opposite) && !swapped && handicap.badBet.oppositeRecommended && oppositeBadge !== "red";
+        Boolean(opposite) &&
+        !swapped &&
+        Boolean(oppositeGate?.ok) &&
+        handicap.badBet.oppositeRecommended &&
+        oppositeBadge !== "red";
       // Better number instead of a flip. The handicap read may nominate one,
       // but when it does not, the formula sweeps the posted alternate curve on
       // the flagged side AND on the opposite side before the section can settle
@@ -1481,6 +1584,8 @@ export async function runLockLabFormula(
         oppositeReason: opposite
           ? swapped
             ? "The posted flip side was not independently graded on this run, so Lock Lab is not recommending it."
+            : !oppositeGate?.ok
+              ? `Graded on its own, the opposite side does not clear the betting threshold — pass on both sides. ${oppositeGate?.why ?? ""}`.trim()
             : clean(
                 handicap.badBet.oppositeReason,
                 "Graded on its own, the flip side does not have an edge either — pass on both.",
