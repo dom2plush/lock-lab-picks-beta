@@ -306,9 +306,17 @@ export async function fetchEventMarkets(
     return offers;
   };
 
-  const [alt, props] = await Promise.all([load(ALT_MARKETS), load(PROP_MARKETS)]);
+  // Alternate markets are isolated by key. One unavailable derivative must not
+  // erase a spread or total ladder that the provider can return independently.
+  const [altResults, props] = await Promise.all([
+    Promise.all(ALT_MARKETS.map((market) => load([market]))),
+    load(PROP_MARKETS),
+  ]);
+  const alternates = altResults.flatMap((event, index) =>
+    collect(event, [ALT_MARKETS[index] ?? ""]),
+  );
   return {
-    alternates: collect(alt, ALT_MARKETS),
+    alternates,
     props: collect(props, PROP_MARKETS),
     capturedAt,
     coverage,
