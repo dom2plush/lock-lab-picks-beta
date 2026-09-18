@@ -110,6 +110,7 @@ export type FunBet = PickSource & {
   key: string;
   badge: Badge;
   label: string;
+  player?: string;
   market: string;
   odds?: string | null;
   /** Formula probability used by the stored 50-run batch. */
