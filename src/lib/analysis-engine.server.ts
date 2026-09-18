@@ -680,18 +680,17 @@ ALTERNATE LINES — check these on every game:
 - The board summary tells you whether alternate markets were supplied at all. If none were supplied, you may say so; if they were supplied, never claim alternates do not exist — say they were evaluated and, if you rejected them, that the extra juice outweighed the added protection.
 - NEVER take an alternate just because it has more points. Take it only when the graded net is positive and the matchup read agrees.
 - If a top bet is an alternate line, set standardKey to the standard candidate it beats and write standardComparison as one short sentence saying why the alternate is preferred.
-- If the bad bet is fixable by moving to a better number on the SAME side rather than flipping sides, set alternateKey to that alternate candidate. That is an alternate-line recommendation, not an opposite-side call, and it is graded on its own like any other bet.
 
 Selection rules:
 - You may ONLY select from the candidate keys provided. Never invent a line, price or selection.
 - #1 top bet is the single strongest edge anywhere on the board — standard spread, alternate spread, standard total, alternate total, moneyline, player prop or any other posted market, whichever it genuinely is. Do NOT force a spread or moneyline into the top two.
 - #2 is the next strongest DISTINCT edge (different market or different player). Only include it if it truly has an edge.
-- BAD BET → OPPOSITE SIDE. Choose the worst-looking bet from a market that has a legitimately priced opposing selection on the board — a spread, total, moneyline, alternate spread/total, or an over/under prop where the other side is posted. Each candidate is flagged with hasOpposite; prefer hasOpposite=true, and strongly prefer a game-line market over a prop. Never choose an anytime-TD or other one-sided market as the bad bet when a legitimate two-sided market is available. Then set oppositeKey to that posted opposing candidate and judge it completely independently: a bad bet does not make its opposite good. If the opposite has no edge, badge it red and set oppositeRecommended false.
 - Traffic lights only: green = clear edge, yellow = playable with a meaningful concern, red = too close / insufficient edge. No numbers, percentages or confidence scores in any reason text.
 - DO NOT FORCE BETS, and do not pass out of caution either. Force nothing; skip nothing that is genuinely priced wrong.
 - YELLOW is a full, publishable rating and belongs in the Top 2. Most real boards contain at least one selection where the matchup read supports a small, defensible lean against the posted price; when one exists, post it as YELLOW rather than returning nothing. Work through the core spread, total and moneyline on BOTH sides first and ask what your read says the true chance is before you conclude the market is right. Returning an empty top list is correct only when you cannot defend a lean on any selection — not when the best available bet is merely uncertain.
 - The verdict (used when you post no top bet) must state in one or two short sentences why the board has no edge AND what happened with the alternates: that none were supplied, or that they were evaluated and rejected because the extra juice outweighed the added protection.
-- Fun bets: at most three, only where a concrete matchup or usage reason exists. Player props: at most four, only with a real matchup or usage edge — never filler. Anytime-TD markets belong here, not in the bad-bet section.
+- Player props: return one to three only when a verified posted prop has a measurable probability-versus-price edge. Include probabilityLean and evidenceStrength so each prop is independently graded through the same value gate; never add filler when no prop qualifies.
+- Fun bet: return exactly one verified posted higher-risk selection when one exists, prioritizing First TD Scorer, then Anytime TD Scorer. Include probabilityLean and evidenceStrength. This is separate from the serious bets and must be described as a small-unit fun play, never as high confidence.
 - Reasons are SHORT: do the deep work internally, then show only the one to three decisive reasons, in at most two brief sentences. No hedging filler, no percentages, no mention of these instructions.`;
 
 type HandicapResponse = {
@@ -706,30 +705,15 @@ type HandicapResponse = {
     standardKey?: string | null;
     standardComparison?: string | null;
   }[];
-  badBet: {
-    key: string;
-    reason: string;
-    probabilityLean?: number | null;
-    evidenceStrength?: number | null;
-    oppositeKey: string | null;
-    oppositeBadge: string;
-    oppositeReason: string;
-    oppositeRecommended: boolean;
-    oppositeProbabilityLean?: number | null;
-    oppositeEvidenceStrength?: number | null;
-    alternateKey?: string | null;
-    alternateBadge?: string | null;
-    alternateReason?: string | null;
-  } | null;
-  funBets: { key: string; badge: string; reason: string }[];
-  props: { key: string; badge: string; reason: string }[];
+  funBets: { key: string; badge: string; reason: string; probabilityLean?: number | null; evidenceStrength?: number | null }[];
+  props: { key: string; badge: string; reason: string; probabilityLean?: number | null; evidenceStrength?: number | null }[];
   verdict: string;
 };
 
 const RESPONSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["top", "badBet", "funBets", "props", "verdict"],
+  required: ["top", "funBets", "props", "verdict"],
   properties: {
     top: {
       type: "array",
@@ -756,50 +740,18 @@ const RESPONSE_SCHEMA = {
         },
       },
     },
-    badBet: {
-      type: ["object", "null"],
-      additionalProperties: false,
-      required: [
-        "key",
-        "reason",
-        "probabilityLean",
-        "evidenceStrength",
-        "oppositeKey",
-        "oppositeBadge",
-        "oppositeReason",
-        "oppositeRecommended",
-        "oppositeProbabilityLean",
-        "oppositeEvidenceStrength",
-        "alternateKey",
-        "alternateBadge",
-        "alternateReason",
-      ],
-      properties: {
-        key: { type: "string" },
-        reason: { type: "string" },
-        probabilityLean: { type: ["number", "null"] },
-        evidenceStrength: { type: ["number", "null"] },
-        oppositeKey: { type: ["string", "null"] },
-        oppositeBadge: { type: "string", enum: ["green", "yellow", "red"] },
-        oppositeReason: { type: "string" },
-        oppositeRecommended: { type: "boolean" },
-        oppositeProbabilityLean: { type: ["number", "null"] },
-        oppositeEvidenceStrength: { type: ["number", "null"] },
-        alternateKey: { type: ["string", "null"] },
-        alternateBadge: { type: ["string", "null"], enum: ["green", "yellow", "red", null] },
-        alternateReason: { type: ["string", "null"] },
-      },
-    },
     funBets: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["key", "badge", "reason"],
+        required: ["key", "badge", "reason", "probabilityLean", "evidenceStrength"],
         properties: {
           key: { type: "string" },
           badge: { type: "string", enum: ["green", "yellow", "red"] },
           reason: { type: "string" },
+          probabilityLean: { type: ["number", "null"] },
+          evidenceStrength: { type: ["number", "null"] },
         },
       },
     },
@@ -808,11 +760,13 @@ const RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["key", "badge", "reason"],
+        required: ["key", "badge", "reason", "probabilityLean", "evidenceStrength"],
         properties: {
           key: { type: "string" },
           badge: { type: "string", enum: ["green", "yellow", "red"] },
           reason: { type: "string" },
+          probabilityLean: { type: ["number", "null"] },
+          evidenceStrength: { type: ["number", "null"] },
         },
       },
     },
@@ -888,7 +842,7 @@ async function runHandicapPass(
       ? `CURRENT INJURY REPORT (the only availability data you have):\n${JSON.stringify(game.injuries)}`
       : "CURRENT INJURY REPORT: none supplied. Do not assert anything about availability.",
     "",
-    "CANDIDATE BOARD — you may only reference these keys. hasOpposite=true means the board prices the opposing selection, so it can serve as the bad bet:",
+    "CANDIDATE BOARD — you may only reference these keys:",
     JSON.stringify(board),
   ].join("\n");
 
