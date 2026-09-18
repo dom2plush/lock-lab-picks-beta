@@ -22,7 +22,10 @@ export type AnalysisResponse = {
   message: string | null;
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified: boolean;
+  /** Stored 50-run simulation summary for this board, when one exists. */
+  simulations?: { runs: number; aggregate: unknown; fresh: boolean } | null;
 };
+
 
 /** Kickoff has passed — no new pregame picks may be generated. */
 export function isPregame(game: Pick<GameRow, "commence_time" | "status">, now = Date.now()) {
