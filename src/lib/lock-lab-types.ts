@@ -106,47 +106,15 @@ export type PickBet = PickSource & {
   standardComparison?: string | null;
 };
 
-export type BadBet = PickSource & {
-  key: string;
-  badge: Badge;
-  label: string;
-  reason: string;
-  /** Market of the flagged bet and of its flip side, used by the odds audit. */
-  market?: string | null;
-  oppositeMarket?: string | null;
-  oppositeLabel: string;
-  oppositeOdds?: string | null;
-  /** Price provenance for the opposite side, so it can be audited too. */
-  oppositePoint?: number | null;
-  oppositePrice?: number | null;
-  oppositeBook?: string | null;
-  oppositeCapturedAt?: string | null;
-  oppositeRecommended: boolean;
-  /** The opposite side is graded on its own merits and can be red. */
-  oppositeBadge?: Badge;
-  oppositeReason: string;
-  /**
-   * Same side, better number: when the flagged bet is fixable by moving to an
-   * alternate line rather than flipping sides.
-   */
-  alternateLabel?: string | null;
-  alternateOdds?: string | null;
-  alternatePoint?: number | null;
-  alternatePrice?: number | null;
-  alternateBook?: string | null;
-  alternateCapturedAt?: string | null;
-  alternateBadge?: Badge;
-  alternateReason?: string | null;
-  alternateRecommended?: boolean;
-};
-
-
 export type FunBet = PickSource & {
   key: string;
   badge: Badge;
   label: string;
+  player?: string;
   market: string;
   odds?: string | null;
+  /** Formula probability used by the stored 50-run batch. */
+  estimatedProbability?: number | null;
   reason: string;
 };
 
@@ -157,6 +125,8 @@ export type PropBet = PickSource & {
   player: string;
   market: string;
   odds?: string | null;
+  /** Formula probability used by the stored 50-run batch. */
+  estimatedProbability?: number | null;
   reason: string;
 };
 
@@ -172,7 +142,8 @@ export type AnalysisRow = {
   /** Set when Lock Lab passed on the board instead of posting a top bet. */
   verdict?: string | null;
   top_bets: PickBet[];
-  bad_bet: BadBet | null;
+  /** Legacy column retained for old saved rows; new analyses always store null. */
+  bad_bet: null;
   fun_bets: FunBet[];
   player_props: PropBet[];
   /** Internal calibration record; only the line-shopping counts are read by the UI. */

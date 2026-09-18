@@ -65,25 +65,10 @@ describe("analysis pipeline fallbacks", () => {
     expect(result.notes.verdict).toBeNull();
   });
 
-  it("forces PASS ON BOTH SIDES when the posted opposite fails its own value gate", async () => {
+  it("returns only the requested result groups from the handicap response", async () => {
     vi.stubEnv("LOVABLE_API_KEY", "test-key");
     const payload = {
       top: [],
-      badBet: {
-        key: "spread-home",
-        reason: "The price is not supported by the matchup.",
-        probabilityLean: -3,
-        evidenceStrength: 0.7,
-        oppositeKey: "spread-away",
-        oppositeBadge: "green",
-        oppositeReason: "Take the mathematical opposite.",
-        oppositeRecommended: true,
-        oppositeProbabilityLean: 0,
-        oppositeEvidenceStrength: 0.7,
-        alternateKey: null,
-        alternateBadge: null,
-        alternateReason: null,
-      },
       funBets: [],
       props: [],
       verdict: "No measurable edge.",
@@ -93,9 +78,9 @@ describe("analysis pipeline fallbacks", () => {
 
     const result = await runLockLabFormula(game, odds);
 
-    expect(result.badBet?.oppositeRecommended).toBe(false);
-    expect(result.badBet?.oppositeBadge).toBe("red");
-    expect(result.badBet?.oppositeReason).toMatch(/pass on both sides/i);
+    expect(result).not.toHaveProperty("badBet");
+    expect(result.funBets).toEqual([]);
+    expect(result.playerProps).toEqual([]);
   });
 });
 

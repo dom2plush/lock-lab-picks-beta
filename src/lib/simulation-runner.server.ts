@@ -23,6 +23,11 @@ import type { MarketOffer } from "./lock-lab-types";
 
 export type BuiltAnalysis = { analysis: AnalysisRow; batch: SimulationBatch };
 
+function impliedProbability(price: number | null | undefined): number | null {
+  if (price == null || !Number.isFinite(price)) return null;
+  return price < 0 ? -price / (-price + 100) : 100 / (price + 100);
+}
+
 /** Verified alternate/prop offers for a game, exactly as the formula sees them. */
 export function verifiedExtras(game: GameRow): ExtraOffers {
   const offers = (game.props ?? []) as MarketOffer[];
@@ -47,13 +52,25 @@ export async function buildAnalysisBatch(
 
   const finished = await runLockLabFormula(game, game.odds, extra, previous?.odds_snapshot ?? null);
 
+  const fingerprint = simulationFingerprint(game, game.odds, extra);
+  const initialBatch = simulateBoard(game, game.odds, finished, fingerprint);
+  const valuablePropKeys = new Set(
+    initialBatch.aggregate.selections
+      .filter((selection) => {
+        if (selection.section !== "prop" || selection.simulatedProb == null) return false;
+        const implied = impliedProbability(selection.price);
+        return implied != null && selection.simulatedProb > implied;
+      })
+      .map((selection) => selection.key),
+  );
+
   const audited = enforceAuditIntegrity(
     {
       odds_snapshot: game.odds,
       top_bets: finished.topBets,
-      bad_bet: finished.badBet,
+      bad_bet: null,
       fun_bets: finished.funBets,
-      player_props: finished.playerProps,
+      player_props: finished.playerProps.filter((prop) => valuablePropKeys.has(prop.key)).slice(0, 3),
     },
     game.odds,
   );
@@ -95,11 +112,15 @@ export async function buildAnalysisBatch(
   const analysis = insert.data as unknown as AnalysisRow;
 
   // 50 deterministic executions of this board, stored in full.
-  const fingerprint = simulationFingerprint(game, game.odds, extra);
   const batch = simulateBoard(
     game,
     game.odds,
-    { ...finished, topBets: audited.output.top_bets, badBet: audited.output.bad_bet },
+    {
+      ...finished,
+      topBets: audited.output.top_bets,
+      funBets: audited.output.fun_bets,
+      playerProps: audited.output.player_props,
+    },
     fingerprint,
   );
   await storeBatch(game, batch, analysis?.id ?? null);

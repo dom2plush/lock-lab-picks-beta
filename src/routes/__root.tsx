@@ -83,7 +83,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Lock Lab runs NFL and college football matchups through one formula: top 2 bets, bad-bet flips, fun bets and props.",
+          "Lock Lab runs NFL and college football matchups through one formula: top 2 bets, simulation-backed props and one fun bet.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

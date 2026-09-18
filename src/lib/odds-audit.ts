@@ -10,7 +10,7 @@
  * Pure and client-safe: the server runs it before writing an analysis, and the
  * UI runs the same code over the exact objects it renders.
  */
-import type { AnalysisRow, BadBet, FunBet, GameOdds, PickBet, PropBet } from "./lock-lab-types";
+import type { AnalysisRow, FunBet, GameOdds, PickBet, PropBet } from "./lock-lab-types";
 
 export function formatAmerican(price: number | null | undefined): string | null {
   if (price == null || !Number.isFinite(price)) return null;
@@ -20,9 +20,6 @@ export function formatAmerican(price: number | null | undefined): string | null 
 export type AuditSection =
   | "Top bet"
   | "Standard line"
-  | "Bad bet"
-  | "Opposite side"
-  | "Better alternative"
   | "Fun bet"
   | "Player prop";
 
@@ -135,7 +132,7 @@ function checkEntry(
 type AuditInput = {
   odds_snapshot: GameOdds;
   top_bets: PickBet[];
-  bad_bet: BadBet | null;
+  bad_bet: null;
   fun_bets: FunBet[];
   player_props: PropBet[];
 };
@@ -181,60 +178,6 @@ export function buildAuditReport(analysis: AuditInput | AnalysisRow): AuditRepor
     }
   }
 
-  const bad = analysis.bad_bet;
-  if (bad) {
-    entries.push(
-      checkEntry(
-        "Bad bet",
-        bad.key,
-        bad.label,
-        bad.market ?? "Flagged",
-        null,
-        formatAmerican(bad.price),
-        bad,
-        snapshot,
-      ),
-    );
-    if (bad.oppositePrice != null || bad.oppositeBook || bad.oppositeCapturedAt) {
-      entries.push(
-        checkEntry(
-          "Opposite side",
-          `${bad.key}-opposite`,
-          bad.oppositeLabel,
-          bad.oppositeMarket ?? "Opposite",
-          null,
-          bad.oppositeOdds ?? null,
-          {
-            point: bad.oppositePoint ?? null,
-            price: bad.oppositePrice ?? null,
-            book: bad.oppositeBook ?? null,
-            capturedAt: bad.oppositeCapturedAt ?? null,
-          },
-          snapshot,
-        ),
-      );
-    }
-    if (bad.alternateLabel && (bad.alternatePrice != null || bad.alternateBook)) {
-      entries.push(
-        checkEntry(
-          "Better alternative",
-          `${bad.key}-alternate`,
-          bad.alternateLabel,
-          "Alternate line",
-          bad.alternatePoint != null ? String(bad.alternatePoint) : null,
-          bad.alternateOdds ?? null,
-          {
-            point: bad.alternatePoint ?? null,
-            price: bad.alternatePrice ?? null,
-            book: bad.alternateBook ?? null,
-            capturedAt: bad.alternateCapturedAt ?? null,
-          },
-          snapshot,
-        ),
-      );
-    }
-  }
-
   for (const bet of analysis.fun_bets ?? []) {
     entries.push(
       checkEntry("Fun bet", bet.key, bet.label, bet.market, null, bet.odds ?? null, bet, snapshot),
@@ -269,7 +212,7 @@ export function enforceAuditIntegrity<T extends AuditInput>(
 ): { output: T; report: AuditReport; dropped: string[] } {
   const withSnapshot = { ...output, odds_snapshot: snapshot };
   const report = buildAuditReport(withSnapshot);
-  const secondary: AuditSection[] = ["Opposite side", "Better alternative", "Standard line"];
+  const secondary: AuditSection[] = ["Standard line"];
   const failed = new Set(
     report.entries
       .filter((e) => e.problems.length > 0 && !secondary.includes(e.section))
@@ -280,14 +223,7 @@ export function enforceAuditIntegrity<T extends AuditInput>(
       .filter((e) => e.section === "Standard line" && e.problems.length > 0)
       .map((e) => e.pickKey.replace(/-standard$/, "")),
   );
-  const oppositeFailed = report.entries.some(
-    (e) => e.section === "Opposite side" && e.problems.length > 0,
-  );
-  const alternateFailed = report.entries.some(
-    (e) => e.section === "Better alternative" && e.problems.length > 0,
-  );
-
-  if (!failed.size && !oppositeFailed && !alternateFailed && !failedStandard.size) {
+  if (!failed.size && !failedStandard.size) {
     return { output, report, dropped: [] };
   }
 
@@ -309,40 +245,12 @@ export function enforceAuditIntegrity<T extends AuditInput>(
     return rest;
   };
 
-  const stripAlternate = (bet: BadBet | null): BadBet | null => {
-    if (!bet || !alternateFailed) return bet;
-    const {
-      alternateLabel: _l,
-      alternateOdds: _o,
-      alternatePoint: _p,
-      alternatePrice: _pr,
-      alternateBook: _b,
-      alternateCapturedAt: _c,
-      alternateBadge: _bd,
-      alternateReason: _r,
-      alternateRecommended: _rec,
-      ...rest
-    } = bet;
-    return rest;
-  };
-
   const cleaned: T = {
     ...output,
     top_bets: output.top_bets.filter((b) => !failed.has(b.key)).map(stripStandard),
     fun_bets: output.fun_bets.filter((b) => !failed.has(b.key)),
     player_props: output.player_props.filter((b) => !failed.has(b.key)),
-    bad_bet:
-      output.bad_bet && failed.has(output.bad_bet.key)
-        ? null
-        : output.bad_bet && oppositeFailed
-          ? stripAlternate({
-              ...output.bad_bet,
-              oppositeRecommended: false,
-              oppositeBadge: "red" as const,
-              oppositeReason:
-                "The opposite side could not be reconciled with the displayed odds snapshot, so Lock Lab is not posting it.",
-            })
-          : stripAlternate(output.bad_bet),
+    bad_bet: null,
   };
 
   return {

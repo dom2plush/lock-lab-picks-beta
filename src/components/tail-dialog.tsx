@@ -24,7 +24,7 @@ export type TailTarget = {
   pickKey: string;
   pickLabel: string;
   pickOdds: string | null;
-  pickSection: "top_bets" | "bad_bet" | "fun_bets" | "player_props";
+  pickSection: "top_bets" | "fun_bets" | "player_props";
 };
 
 export function TailDialog({
