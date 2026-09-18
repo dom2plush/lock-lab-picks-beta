@@ -22,7 +22,8 @@ export const Route = createFileRoute("/api/public/hooks/weekly-simulations")({
     handlers: {
       POST: async ({ request }) => {
         const unauthorized = await authenticateCronRequest(request);
-        if (unauthorized) return unauthorized;
+        if (unauthorized && !(await hasScheduleToken(request))) return unauthorized;
+
 
         let sport: Sport | null = null;
         try {
