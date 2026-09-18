@@ -206,7 +206,7 @@ function AnalyzePage() {
                 {analysis.status === "historical"
                   ? "Final — pregame picks only"
                   : analysis.status === "unavailable"
-                    ? "Data connection required"
+                    ? "Live odds unavailable"
                     : "Game in progress / picks locked"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">{analysis.message}</p>

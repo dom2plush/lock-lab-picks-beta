@@ -111,7 +111,7 @@ export function AnalysisOutput({
         )}
       </div>
 
-      <Section step={1} title="Top 2 bets" subtitle="Best bet on the board, then the next best.">
+      <Section step={1} title="Top 2 bets" subtitle="The two strongest distinct prices on the live board.">
         {analysis.top_bets.length === 0 && (
           <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
             <div className="flex items-center gap-2">

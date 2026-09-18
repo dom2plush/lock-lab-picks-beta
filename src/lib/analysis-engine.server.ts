@@ -14,7 +14,8 @@
  * Hard rules enforced in code, not left to the model:
  *  - Every pick's line, price, book and timestamp are copied from the live
  *    odds snapshot. A selection the model invents is discarded.
- *  - Nothing is forced: zero top bets is a valid, correct output.
+ *  - A priced pregame board is ranked to exactly two distinct top selections;
+ *    low-edge selections are marked red rather than presented as strong bets.
  *  - Same game + same snapshot = same result for every user.
  */
 import type {
@@ -679,11 +680,11 @@ ALTERNATE LINES — check these on every game:
 Selection rules:
 - You may ONLY select from the candidate keys provided. Never invent a line, price or selection.
 - #1 top bet is the single strongest edge anywhere on the board — standard spread, alternate spread, standard total, alternate total, moneyline, player prop or any other posted market, whichever it genuinely is. Do NOT force a spread or moneyline into the top two.
-- #2 is the next strongest DISTINCT edge (different market or different player). Only include it if it truly has an edge.
+ - #2 is the next strongest DISTINCT posted selection (different market or different player). Always return exactly two when at least two valid standard/alternate candidates exist. If a selection does not clear the value threshold, mark it RED and explain the concern rather than manufacturing an edge.
 - Traffic lights only: green = clear edge, yellow = playable with a meaningful concern, red = too close / insufficient edge. No numbers, percentages or confidence scores in any reason text.
-- DO NOT FORCE BETS, and do not pass out of caution either. Force nothing; skip nothing that is genuinely priced wrong.
+ - Never invent a bet or inflate an edge. Rank the real board as it exists; RED explicitly identifies a low-confidence second selection when only one or no candidates clear the normal value threshold.
 - YELLOW is a full, publishable rating and belongs in the Top 2. Most real boards contain at least one selection where the matchup read supports a small, defensible lean against the posted price; when one exists, post it as YELLOW rather than returning nothing. Work through the core spread, total and moneyline on BOTH sides first and ask what your read says the true chance is before you conclude the market is right. Returning an empty top list is correct only when you cannot defend a lean on any selection — not when the best available bet is merely uncertain.
-- The verdict (used when you post no top bet) must state in one or two short sentences why the board has no edge AND what happened with the alternates: that none were supplied, or that they were evaluated and rejected because the extra juice outweighed the added protection.
+ - The verdict must briefly summarize the board and what happened with alternates.
 - Player props: return one to three only when a verified posted prop has a measurable probability-versus-price edge. Include probabilityLean and evidenceStrength so each prop is independently graded through the same value gate; never add filler when no prop qualifies.
 - Fun bet: return exactly one verified posted higher-risk selection when one exists, prioritizing First TD Scorer, then Anytime TD Scorer. Include probabilityLean and evidenceStrength. This is separate from the serious bets and must be described as a small-unit fun play, never as high confidence.
 - Reasons are SHORT: do the deep work internally, then show only the one to three decisive reasons, in at most two brief sentences. No hedging filler, no percentages, no mention of these instructions.`;
@@ -1154,20 +1155,18 @@ export async function runLockLabFormula(
             (other.player ?? other.selection) === (c.player ?? c.selection),
         ) === index,
     );
-    if (!distinct.length) {
-      return passingBoard(
-        candidates,
-        "No bet: the available markets were evaluated, but none has a measurable edge at the posted price.",
-        game,
-        extra,
-      );
-    }
-    const topBets = distinct.slice(0, 2).map((c, index): PickBet => {
+    const ranked = distinct.length
+      ? distinct
+      : candidates
+          .filter((c) => c.group !== "prop")
+          .sort((a, b) => candidateRank(b) - candidateRank(a));
+    const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
+      const eligible = eligibleForTop(c).ok;
       return {
         key: `top${index + 1}`,
         rank: index + 1,
-        badge: c.grade?.tier === "strong" ? "green" : "yellow",
+        badge: eligible ? (c.grade?.tier === "strong" ? "green" : "yellow") : "red",
         label: c.label,
         market: c.marketLabel,
         selection: c.player ?? c.selection,
@@ -1184,7 +1183,11 @@ export async function runLockLabFormula(
               standardComparison: altPreferenceReason(c),
             }
           : {}),
-        reason: c.alt ? altPreferenceReason(c) : "The posted price carries a measurable edge under the existing market grade.",
+        reason: eligible
+          ? c.alt
+            ? altPreferenceReason(c)
+            : "The posted price carries a measurable edge under the existing market grade."
+          : "This is the next-best posted option, but its estimated edge remains inside the model's uncertainty band.",
       };
     });
     const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
@@ -1339,6 +1342,30 @@ export async function runLockLabFormula(
     }
   }
 
+  // The result contract is exactly two real posted bets. If fewer than two
+  // selections clear the value gate, fill from the strongest remaining
+  // standard/alternate candidates and mark them RED. This ranks the live board
+  // without inventing an edge, line, price, book or timestamp.
+  const selectedIds = new Set(shortlist.map(({ c }) => c.key));
+  const selectedMarkets = new Set(shortlist.map(({ c }) => c.marketLabel));
+  const remaining = candidates
+    .filter((c) => c.group !== "prop" && !selectedIds.has(c.key) && !selectedMarkets.has(c.marketLabel))
+    .sort((a, b) => candidateRank(b) - candidateRank(a));
+  for (const c of remaining) {
+    if (shortlist.length >= 2) break;
+    shortlist.push({
+      c,
+      entry: {
+        key: c.key,
+        badge: "red",
+        reason: "This is the next-best posted option, but its estimated edge remains inside the model's uncertainty band.",
+        standardKey: c.standardKey ?? null,
+        standardComparison: c.alt ? altPreferenceReason(c) : null,
+      },
+    });
+    selectedMarkets.add(c.marketLabel);
+  }
+
   for (const { c, entry } of shortlist.slice(0, 2)) {
     // An alternate line always shows the standard number it beat, quoted from
     // the same snapshot, so the standard-vs-alternate decision is visible.
@@ -1358,7 +1385,7 @@ export async function runLockLabFormula(
           ),
         }
       : {};
-    const badge = capBadge(c, asBadge(entry.badge));
+    const badge = eligibleForTop(c).ok ? capBadge(c, asBadge(entry.badge)) : "red";
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
@@ -1440,14 +1467,11 @@ export async function runLockLabFormula(
     if (playerProps.length === 3) break;
   }
 
-  const verdict = topBets.length
+  const verdict = topBets.length === 2
     ? null
     : rejected.length
-      ? `No bet: every candidate considered failed the probability-versus-price test. ${rejected[0]}`
-      : clean(
-          handicap.verdict,
-          "No meaningful edge on this board. Lock Lab is passing rather than forcing a bet.",
-        );
+      ? `The live board did not contain two distinct price records. ${rejected[0]}`
+      : clean(handicap.verdict, "The live board did not contain two distinct price records.");
 
   return {
     topBets,
