@@ -46,7 +46,6 @@ const output = {
       reason: "test",
     },
   ],
-  badBet: null,
   funBets: [],
   playerProps: [],
   notes: { propsAvailable: false, altMarketsAvailable: true, verdict: null },

@@ -2,6 +2,7 @@ import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
+import type { SimAggregate } from "@/lib/simulation.server";
 import { formatCapturedAt, formatKickoff, hasLiveOdds } from "@/lib/lock-lab-types";
 import { buildAuditReport } from "@/lib/odds-audit";
 
@@ -40,6 +41,7 @@ export function AnalysisOutput({
   onTail,
   status = "pregame",
   propsVerified = true,
+  simulations,
 }: {
   game: GameRow;
   analysis: AnalysisRow;
@@ -48,12 +50,17 @@ export function AnalysisOutput({
   status?: "pregame" | "locked" | "historical" | "unavailable";
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified?: boolean;
+  simulations?: { runs: number; aggregate: SimAggregate | null; fresh: boolean } | null;
 }) {
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
   const tailable = status === "pregame";
   // Recomputed from the very objects rendered below, so the check covers what
   // the user is actually looking at rather than what the server intended.
   const audit = buildAuditReport(analysis);
+  const hitRate = (key: string) => {
+    const probability = simulations?.aggregate?.selections.find((selection) => selection.key === key)?.simulatedProb;
+    return probability == null ? null : `${Math.round(probability * 100)}%`;
+  };
 
   const tailTarget = (
     pickKey: string,
@@ -180,102 +187,44 @@ export function AnalysisOutput({
         </div>
       </Section>
 
-      {analysis.bad_bet && (
-        <Section
-          step={2}
-          title="Bad bet → opposite side"
-          subtitle="The worst bet on the board, and whether flipping it actually has an edge."
-        >
-          <div className="rounded-lg border border-hairline bg-card p-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className="eyebrow">Avoid</span>
-              <BadgePill badge={analysis.bad_bet.badge} />
-            </div>
-            <p className="mt-2 font-display text-xl font-semibold">{analysis.bad_bet.label}</p>
-            <p className="mt-2 text-sm text-muted-foreground">{analysis.bad_bet.reason}</p>
-
-            <div className="mt-4 rounded-md border border-hairline bg-surface p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="eyebrow">Opposite side</span>
-                <BadgePill badge={analysis.bad_bet.oppositeBadge ?? "red"} />
-              </div>
-              <p className="mt-1 font-display text-lg font-semibold">
-                {analysis.bad_bet.oppositeLabel}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {analysis.bad_bet.oppositeReason}
-              </p>
-              {analysis.bad_bet.oppositeRecommended ? (
-                tailable && (
-                  <Button
-                    size="sm"
-                    className="mt-3"
-                    onClick={() =>
-                      onTail(
-                        tailTarget(
-                          `${analysis.bad_bet!.key}-opposite`,
-                          analysis.bad_bet!.oppositeLabel,
-                          analysis.bad_bet!.oppositeOdds ?? null,
-                          "bad_bet",
-                        ),
-                      )
-                    }
-                  >
-                    Tail the opposite side
-                  </Button>
-                )
-              ) : (
-                <p className="mt-3 text-xs font-semibold text-stop uppercase">
-                  Not recommended — pass on both sides
-                </p>
-              )}
-            </div>
-
-            {analysis.bad_bet.alternateLabel && (
-              <div className="mt-3 rounded-md border border-hairline bg-surface p-3">
+      <Section step={2} title="Player props" subtitle="One to three simulation-backed props with a verified live price.">
+        {analysis.player_props.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {analysis.player_props.map((prop) => (
+              <article key={prop.key} className="rounded-lg border border-hairline bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="eyebrow">Better alternative — same side</span>
-                  <BadgePill badge={analysis.bad_bet.alternateBadge ?? "yellow"} />
+                  <span className="eyebrow">{prop.market}</span>
+                  <BadgePill badge={prop.badge} />
                 </div>
-                <p className="mt-1 font-display text-lg font-semibold">
-                  {analysis.bad_bet.alternateLabel}
+                <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
+                <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                  50-simulation hit rate: {hitRate(prop.key) ?? "Unavailable"}
                 </p>
-                {analysis.bad_bet.alternateReason && (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {analysis.bad_bet.alternateReason}
-                  </p>
-                )}
+                <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
                 {tailable && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-3"
-                    onClick={() =>
-                      onTail(
-                        tailTarget(
-                          `${analysis.bad_bet!.key}-alternate`,
-                          analysis.bad_bet!.alternateLabel!,
-                          analysis.bad_bet!.alternateOdds ?? null,
-                          "bad_bet",
-                        ),
-                      )
-                    }
-                  >
-                    Tail the better number
+                  <Button size="sm" variant="outline" className="mt-3" onClick={() => onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))}>
+                    Tail
                   </Button>
                 )}
-              </div>
-            )}
-
+              </article>
+            ))}
           </div>
-        </Section>
-      )}
+        ) : propsVerified ? (
+          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
+            No verified prop cleared the model's value threshold across the stored simulations.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+            <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">No verified player props available</p>
+            <p className="mt-1 text-sm text-muted-foreground">The sportsbook feed returned no player prop that could be matched to this exact game and snapshot.</p>
+          </div>
+        )}
+      </Section>
 
-      <Section step={3} title="Fun bets" subtitle="Small-ticket swings: alternate lines and scoring.">
+      <Section step={3} title="Fun bet" subtitle="One higher-risk scoring play for smaller units.">
         {analysis.fun_bets.length === 0 && (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
-            Nothing here worth a ticket: no alternate line or scoring market on this game has a real
-            matchup reason behind it. Lock Lab leaves the section empty rather than filling it.
+            No verified first-touchdown or anytime-touchdown price was available for a legitimate fun play.
           </p>
         )}
         <div className="grid gap-3 md:grid-cols-3">
@@ -302,52 +251,8 @@ export function AnalysisOutput({
         </div>
       </Section>
 
-      <Section step={4} title="Player props" subtitle="Highest-edge props for this matchup.">
-        {analysis.player_props.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {analysis.player_props.map((prop) => (
-              <article key={prop.key} className="rounded-lg border border-hairline bg-card p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="eyebrow">{prop.market}</span>
-                  <BadgePill badge={prop.badge} />
-                </div>
-                <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
-                <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
-                {tailable && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-3"
-                    onClick={() =>
-                      onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))
-                    }
-                  >
-                    Tail
-                  </Button>
-                )}
-              </article>
-            ))}
-          </div>
-        ) : propsVerified ? (
-          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
-            No prop on this board has a real matchup or usage edge, so Lock Lab isn't posting one.
-            Props only appear when the price and the role actually line up.
-          </p>
-        ) : (
-          <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
-            <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
-              No verified player props available
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              The sportsbook feed returned no player prop that could be matched to this exact game
-              and snapshot. Lock Lab leaves the section empty rather than generating one.
-            </p>
-          </div>
-        )}
-      </Section>
-
       <Section
-        step={5}
+        step={4}
         title="Odds audit trail"
         subtitle="The exact price record behind every pick above, checked against the odds shown on this page."
       >
