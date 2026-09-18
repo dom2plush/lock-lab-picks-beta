@@ -17,6 +17,29 @@ const MAX_GAMES_PER_RUN = 40;
 /** Only games kicking off inside this window are simulated. */
 const WINDOW_DAYS = 9;
 
+/**
+ * The weekly schedule authenticates with its own token: only its SHA-256 hash
+ * is stored in the database, and the plaintext lives in the encrypted vault
+ * that the scheduler reads. Nothing else can call this endpoint.
+ */
+async function hasScheduleToken(request: Request): Promise<boolean> {
+  const token = /^Bearer ([^\s,]+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+  if (!token) return false;
+  const { createHash, timingSafeEqual } = await import("node:crypto");
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("hook_tokens")
+    .select("token_sha256")
+    .eq("name", "weekly_simulations")
+    .maybeSingle();
+  const expected = (data as { token_sha256?: string } | null)?.token_sha256;
+  if (!expected) return false;
+  const a = Buffer.from(createHash("sha256").update(token, "utf8").digest("hex"));
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+
 export const Route = createFileRoute("/api/public/hooks/weekly-simulations")({
   server: {
     handlers: {
