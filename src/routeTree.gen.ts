@@ -17,6 +17,7 @@ import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as MyBetsRouteImport } from './routes/my-bets'
 import { Route as RecordRouteImport } from './routes/record'
 import { Route as ApiPublicHooksRefreshSportsDataRouteImport } from './routes/api/public/hooks/refresh-sports-data'
+import { Route as ApiPublicHooksWeeklySimulationsRouteImport } from './routes/api/public/hooks/weekly-simulations'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -59,6 +60,12 @@ const ApiPublicHooksRefreshSportsDataRoute =
     path: '/api/public/hooks/refresh-sports-data',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksWeeklySimulationsRoute =
+  ApiPublicHooksWeeklySimulationsRouteImport.update({
+    id: '/api/public/hooks/weekly-simulations',
+    path: '/api/public/hooks/weekly-simulations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/my-bets': typeof MyBetsRoute
   '/record': typeof RecordRoute
   '/api/public/hooks/refresh-sports-data': typeof ApiPublicHooksRefreshSportsDataRoute
+  '/api/public/hooks/weekly-simulations': typeof ApiPublicHooksWeeklySimulationsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -79,6 +87,7 @@ export interface FileRoutesByTo {
   '/my-bets': typeof MyBetsRoute
   '/record': typeof RecordRoute
   '/api/public/hooks/refresh-sports-data': typeof ApiPublicHooksRefreshSportsDataRoute
+  '/api/public/hooks/weekly-simulations': typeof ApiPublicHooksWeeklySimulationsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -90,6 +99,7 @@ export interface FileRoutesById {
   '/my-bets': typeof MyBetsRoute
   '/record': typeof RecordRoute
   '/api/public/hooks/refresh-sports-data': typeof ApiPublicHooksRefreshSportsDataRoute
+  '/api/public/hooks/weekly-simulations': typeof ApiPublicHooksWeeklySimulationsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -102,6 +112,7 @@ export interface FileRouteTypes {
     | '/my-bets'
     | '/record'
     | '/api/public/hooks/refresh-sports-data'
+    | '/api/public/hooks/weekly-simulations'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -112,6 +123,7 @@ export interface FileRouteTypes {
     | '/my-bets'
     | '/record'
     | '/api/public/hooks/refresh-sports-data'
+    | '/api/public/hooks/weekly-simulations'
   id:
     | '__root__'
     | '/'
@@ -122,6 +134,7 @@ export interface FileRouteTypes {
     | '/my-bets'
     | '/record'
     | '/api/public/hooks/refresh-sports-data'
+    | '/api/public/hooks/weekly-simulations'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -133,6 +146,7 @@ export interface RootRouteChildren {
   MyBetsRoute: typeof MyBetsRoute
   RecordRoute: typeof RecordRoute
   ApiPublicHooksRefreshSportsDataRoute: typeof ApiPublicHooksRefreshSportsDataRoute
+  ApiPublicHooksWeeklySimulationsRoute: typeof ApiPublicHooksWeeklySimulationsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -193,6 +207,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksRefreshSportsDataRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/weekly-simulations': {
+      id: '/api/public/hooks/weekly-simulations'
+      path: '/api/public/hooks/weekly-simulations'
+      fullPath: '/api/public/hooks/weekly-simulations'
+      preLoaderRoute: typeof ApiPublicHooksWeeklySimulationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -205,6 +226,7 @@ const rootRouteChildren: RootRouteChildren = {
   MyBetsRoute: MyBetsRoute,
   RecordRoute: RecordRoute,
   ApiPublicHooksRefreshSportsDataRoute: ApiPublicHooksRefreshSportsDataRoute,
+  ApiPublicHooksWeeklySimulationsRoute: ApiPublicHooksWeeklySimulationsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
