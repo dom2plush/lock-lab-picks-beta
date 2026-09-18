@@ -166,16 +166,29 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       };
     }
 
-    // No current batch for these inputs (first look at this game, or a material
-    // input change such as line movement or injury news): build one now.
-    const { buildAnalysisBatch } = await import("./simulation-runner.server");
-    const built = await buildAnalysisBatch(game, extra, stored);
+    // Analyze is read-only: it never spends an AI credit or builds a batch.
+    // The weekly/change-detection pipeline owns regeneration. Until it finishes,
+    // keep showing the latest internally consistent stored board and its batch.
+    if (stored && batch) {
+      return {
+        status,
+        analysis: stored,
+        message: "Showing the latest stored 50-simulation batch while updated inputs are processed.",
+        propsVerified: stored.player_props.length > 0,
+        simulations: {
+          runs: batch.runs,
+          aggregate: (batch.aggregate as SimAggregate | undefined) ?? null,
+          fresh: false,
+        },
+      };
+    }
+
     return {
-      status,
-      analysis: built.analysis,
-      message: null,
-      propsVerified: extra.props.length > 0,
-      simulations: { runs: built.batch.simulations.length, aggregate: built.batch.aggregate, fresh: true },
+      status: "unavailable",
+      analysis: null,
+      message: "The stored 50-simulation batch is not ready yet. Lock Lab will show results after the scheduled analysis cycle completes.",
+      propsVerified: false,
+      simulations: null,
     };
   });
 
