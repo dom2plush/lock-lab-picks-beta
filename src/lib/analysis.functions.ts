@@ -1,10 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import type { AnalysisRow, GameRow, MarketOffer } from "./lock-lab-types";
-import type { SimAggregate } from "./simulation.server";
+import type { AnalysisRow, GameRow } from "./lock-lab-types";
 import { hasLiveOdds } from "./lock-lab-types";
-import { verifyAlternateOffers, verifyPropOffers } from "./prop-integrity";
 
 const Input = z.object({ gameId: z.string().uuid() });
 
@@ -21,8 +19,6 @@ export type AnalysisResponse = {
   message: string | null;
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified: boolean;
-  /** Stored 50-run simulation summary for this board, when one exists. */
-  simulations?: { runs: number; aggregate: SimAggregate | null; fresh: boolean } | null;
 };
 
 
@@ -68,12 +64,6 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       return (existing.data as unknown as AnalysisRow | null) ?? null;
     };
 
-    const hasVerifiedProps = (row: GameRow) =>
-      verifyPropOffers(
-        ((row.props ?? []) as MarketOffer[]).filter((o) => o.market.startsWith("player_")),
-        row,
-      ).verified.length > 0;
-
     // ---- post-kickoff: read-only, never regenerate ----
     if (!pregame) {
       const stored = await readStored();
@@ -89,21 +79,13 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       };
     }
 
-    // Refresh this game's live odds if the stored snapshot is stale, or if the
-    // alternate/prop board has never been pulled for it. A pull that legitimately
-    // returns nothing stamps props_updated_at, so we do not re-ask every visit.
+    const stored = await readStored();
+
+    // Analyze always asks the provider for the latest standard and derivative
+    // markets before running. If that request fails, the most recently verified
+    // live snapshot remains the latest available board; demo data never does.
     const { hasProviderKey, refreshGameOdds } = await import("./ingest.server");
-    const staleOdds =
-      !game.odds_updated_at || Date.now() - new Date(game.odds_updated_at).getTime() > SNAPSHOT_TTL_MS;
-    const derivativesNeverPulled = !game.props_updated_at;
-    const staleDerivatives =
-      !!game.props_updated_at &&
-      Date.now() - new Date(game.props_updated_at).getTime() > SNAPSHOT_TTL_MS;
-    if (
-      hasProviderKey() &&
-      !game.is_demo &&
-      (staleOdds || derivativesNeverPulled || staleDerivatives)
-    ) {
+    if (hasProviderKey() && !game.is_demo) {
       const refreshed = await refreshGameOdds(game);
       if (refreshed) game = refreshed;
     }
@@ -115,8 +97,7 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
       return {
         status: "unavailable",
         analysis: null,
-        message:
-          "DATA CONNECTION REQUIRED — no live sportsbook odds are connected for this game, so Lock Lab has no real market to analyse.",
+        message: "Live sportsbook odds are unavailable for this matchup. No picks were generated.",
         propsVerified: false,
       };
     }
@@ -125,68 +106,14 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     // Only offers that can be proven to belong to this exact game, sportsbook
     // and snapshot reach the formula. Everything else is discarded, never
     // substituted.
-    const offers = (game.props ?? []) as MarketOffer[];
-    const alternates = verifyAlternateOffers(
-      offers.filter((o) => !o.market.startsWith("player_")),
-      game,
-    );
-    const props = verifyPropOffers(
-      offers.filter((o) => o.market.startsWith("player_")),
-      game,
-    );
-    if (alternates.rejected.length || props.rejected.length) {
-      console.warn("Lock Lab rejected unverifiable market offers", game.id, {
-        alternates: alternates.rejected.slice(0, 5),
-        props: props.rejected.slice(0, 5),
-      });
-    }
-
-    const extra = { alternates: alternates.verified, props: props.verified };
-
-    const stored = await readStored();
-
-    // Clicking Analyze never re-runs the formula. The weekly cycle has already
-    // executed it once for this input state and stored the 50-simulation batch;
-    // as long as the inputs still fingerprint the same, the stored board and
-    // aggregate are returned instantly.
-    const { simulationFingerprint, batchIsCurrent, readStoredBatch } = await import(
-      "./simulation.server"
-    );
-    const fingerprint = simulationFingerprint(game, game.odds, extra);
-    const batch = await readStoredBatch(game.id);
-    if (stored && batchIsCurrent(batch, fingerprint)) {
-      return {
-        status,
-        analysis: stored,
-        message: null,
-        propsVerified: hasVerifiedProps(game),
-        simulations: { runs: batch?.runs ?? 0, aggregate: (batch?.aggregate as SimAggregate | undefined) ?? null, fresh: false },
-      };
-    }
-
-    // Analyze is read-only: it never spends an AI credit or builds a batch.
-    // The weekly/change-detection pipeline owns regeneration. Until it finishes,
-    // keep showing the latest internally consistent stored board and its batch.
-    if (stored && batch) {
-      return {
-        status,
-        analysis: stored,
-        message: "Showing the latest stored 50-simulation batch while updated inputs are processed.",
-        propsVerified: stored.player_props.length > 0,
-        simulations: {
-          runs: batch.runs,
-          aggregate: (batch.aggregate as SimAggregate | undefined) ?? null,
-          fresh: false,
-        },
-      };
-    }
-
+    const { buildLiveAnalysis, verifiedExtras } = await import("./analysis-runner.server");
+    const extra = verifiedExtras(game);
+    const analysis = await buildLiveAnalysis(game, extra, stored);
     return {
-      status: "unavailable",
-      analysis: null,
-      message: "The stored 50-simulation batch is not ready yet. Lock Lab will show results after the scheduled analysis cycle completes.",
-      propsVerified: false,
-      simulations: null,
+      status,
+      analysis,
+      message: null,
+      propsVerified: extra.props.length > 0,
     };
   });
 

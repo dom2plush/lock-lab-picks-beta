@@ -2,9 +2,7 @@ import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
-import type { SimAggregate } from "@/lib/simulation.server";
 import { formatCapturedAt, formatKickoff, hasLiveOdds } from "@/lib/lock-lab-types";
-import { buildAuditReport } from "@/lib/odds-audit";
 
 function Section({
   step,
@@ -41,7 +39,6 @@ export function AnalysisOutput({
   onTail,
   status = "pregame",
   propsVerified = true,
-  simulations,
 }: {
   game: GameRow;
   analysis: AnalysisRow;
@@ -50,17 +47,9 @@ export function AnalysisOutput({
   status?: "pregame" | "locked" | "historical" | "unavailable";
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified?: boolean;
-  simulations?: { runs: number; aggregate: SimAggregate | null; fresh: boolean } | null;
 }) {
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
   const tailable = status === "pregame";
-  // Recomputed from the very objects rendered below, so the check covers what
-  // the user is actually looking at rather than what the server intended.
-  const audit = buildAuditReport(analysis);
-  const hitRate = (key: string) => {
-    const probability = simulations?.aggregate?.selections.find((selection) => selection.key === key)?.simulatedProb;
-    return probability == null ? null : `${Math.round(probability * 100)}%`;
-  };
 
   const tailTarget = (
     pickKey: string,
@@ -187,7 +176,7 @@ export function AnalysisOutput({
         </div>
       </Section>
 
-      <Section step={2} title="Player props" subtitle="One to three simulation-backed props with a verified live price.">
+      <Section step={2} title="Player props" subtitle="One to three model-supported props with a verified live price.">
         {analysis.player_props.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2">
             {analysis.player_props.map((prop) => (
@@ -197,10 +186,12 @@ export function AnalysisOutput({
                   <BadgePill badge={prop.badge} />
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
-                <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                  50-simulation hit rate: {hitRate(prop.key) ?? "Unavailable"}
-                </p>
                 <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Logged {prop.point != null ? `${prop.point} ` : ""}{prop.odds ?? "—"}
+                  {prop.book ? ` · ${prop.book}` : ""}
+                  {prop.capturedAt ? ` · ${formatCapturedAt(prop.capturedAt)}` : ""}
+                </p>
                 {tailable && (
                   <Button size="sm" variant="outline" className="mt-3" onClick={() => onTail(tailTarget(prop.key, prop.label, prop.odds ?? null, "player_props"))}>
                     Tail
@@ -211,7 +202,7 @@ export function AnalysisOutput({
           </div>
         ) : propsVerified ? (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
-            No verified prop cleared the model's value threshold across the stored simulations.
+            No verified player prop cleared the model's value threshold on this live board.
           </p>
         ) : (
           <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
@@ -236,6 +227,11 @@ export function AnalysisOutput({
               </div>
               <p className="mt-2 font-display text-lg leading-tight font-semibold">{bet.label}</p>
               <p className="mt-2 text-sm text-muted-foreground">{bet.reason}</p>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Logged {bet.point != null ? `${bet.point} ` : ""}{bet.odds ?? "—"}
+                {bet.book ? ` · ${bet.book}` : ""}
+                {bet.capturedAt ? ` · ${formatCapturedAt(bet.capturedAt)}` : ""}
+              </p>
               {tailable && (
                 <Button
                   size="sm"
@@ -251,75 +247,6 @@ export function AnalysisOutput({
         </div>
       </Section>
 
-      <Section
-        step={4}
-        title="Odds audit trail"
-        subtitle="The exact price record behind every pick above, checked against the odds shown on this page."
-      >
-        <div className="rounded-lg border border-hairline bg-card">
-          <div
-            className={`flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-3 text-xs font-semibold tracking-wide uppercase ${
-              audit.verified ? "text-go" : "text-stop"
-            }`}
-          >
-            <span>
-              {audit.verified
-                ? "Verified — every pick matches its recorded price record"
-                : "Mismatch detected — do not bet these numbers"}
-            </span>
-            <span className="font-normal text-muted-foreground normal-case">
-              {audit.snapshotBook ?? "No book"} · {formatCapturedAt(audit.snapshotCapturedAt)}
-            </span>
-          </div>
-
-          {audit.entries.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-muted-foreground">
-              No picks were posted for this game, so there is nothing to audit.
-            </p>
-          ) : (
-            <ul className="divide-y divide-hairline">
-              {audit.entries.map((entry) => (
-                <li key={`${entry.section}-${entry.pickKey}`} className="px-4 py-3">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="eyebrow">{entry.section}</span>
-                    <span
-                      className={`text-xs font-semibold tracking-wide uppercase ${
-                        entry.problems.length ? "text-stop" : "text-go"
-                      }`}
-                    >
-                      {entry.problems.length ? "Mismatch" : "Match"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm font-semibold">{entry.label}</p>
-                  <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <div>
-                      <dt className="inline">Sportsbook: </dt>
-                      <dd className="inline">{entry.book ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="inline">Line: </dt>
-                      <dd className="inline">{entry.line ?? (entry.point != null ? entry.point : "—")}</dd>
-                    </div>
-                    <div>
-                      <dt className="inline">Price: </dt>
-                      <dd className="inline">{entry.displayedOdds ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="inline">Captured: </dt>
-                      <dd className="inline">{formatCapturedAt(entry.capturedAt)}</dd>
-                    </div>
-                  </dl>
-                  {entry.problems.map((problem) => (
-                    <p key={problem} className="mt-1 text-xs font-medium text-stop">
-                      {problem}
-                    </p>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Section>
     </div>
   );
 }

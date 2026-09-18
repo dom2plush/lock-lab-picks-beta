@@ -14,7 +14,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { getOddsFeedStatus, getOrCreateAnalysis } from "@/lib/analysis.functions";
 import type { AnalysisRow, GameRow, Sport } from "@/lib/lock-lab-types";
-import type { AnalysisResponse } from "@/lib/analysis.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -23,13 +22,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Review stored NFL and CFB Lock Lab results: top 2 bets, simulation-backed player props and one fun bet with exact lines logged.",
+          "Run the live Lock Lab formula for NFL and college football: top 2 bets, supported player props and one fun bet with exact lines logged.",
       },
       { property: "og:title", content: "Lock Lab — NFL & College Football Betting Analysis" },
       {
         property: "og:description",
         content:
-          "Top 2 bets, simulation-backed player props and one fun bet for NFL and college football matchups.",
+          "Top 2 bets, supported player props and one fun bet for NFL and college football matchups.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -48,7 +47,6 @@ function AnalyzePage() {
     status: "pregame" | "locked" | "historical" | "unavailable";
     message: string | null;
     propsVerified: boolean;
-    simulations?: AnalysisResponse["simulations"];
   } | null>(null);
   const [running, setRunning] = useState(false);
   const [tailTarget, setTailTarget] = useState<TailTarget | null>(null);
@@ -108,7 +106,6 @@ function AnalyzePage() {
         status: result.status,
         message: result.message,
         propsVerified: result.propsVerified,
-        simulations: result.simulations,
       });
       if (result.status !== "pregame") {
         toast.message(
@@ -128,7 +125,7 @@ function AnalyzePage() {
       <h1 className="mt-1 font-display text-4xl font-semibold tracking-tight">Analyze a matchup</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
         Same picks for everyone. Pick a game, run the formula, and get the two best bets on the
-         board, simulation-backed player props and one smaller-unit fun bet — with the exact line logged.
+         board, supported player props and one smaller-unit fun bet — with the exact line logged.
       </p>
 
       {feedQuery.data && !feedQuery.data.providerConnected && (
@@ -222,7 +219,6 @@ function AnalyzePage() {
               analysis={analysis.row}
               status={analysis.status}
               propsVerified={analysis.propsVerified}
-              simulations={analysis.simulations ?? null}
               onTail={(target) => setTailTarget(target)}
             />
           )}
