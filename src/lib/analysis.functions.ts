@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import type { AnalysisRow, GameRow, MarketOffer } from "./lock-lab-types";
+import type { SimAggregate } from "./simulation.server";
 import { hasLiveOdds } from "./lock-lab-types";
 import { runLockLabFormula } from "./analysis-engine.server";
 import { enforceAuditIntegrity } from "./odds-audit";
@@ -23,7 +24,7 @@ export type AnalysisResponse = {
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified: boolean;
   /** Stored 50-run simulation summary for this board, when one exists. */
-  simulations?: { runs: number; aggregate: unknown; fresh: boolean } | null;
+  simulations?: { runs: number; aggregate: SimAggregate | null; fresh: boolean } | null;
 };
 
 
@@ -161,7 +162,7 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
         analysis: stored,
         message: null,
         propsVerified: hasVerifiedProps(game),
-        simulations: { runs: batch?.runs ?? 0, aggregate: batch?.aggregate ?? null, fresh: false },
+        simulations: { runs: batch?.runs ?? 0, aggregate: (batch?.aggregate as SimAggregate | undefined) ?? null, fresh: false },
       };
     }
 
