@@ -13,7 +13,7 @@ const CreateTailInput = z.object({
   pickKey: z.string().min(1).max(40),
   pickLabel: z.string().min(1).max(160),
   pickOdds: z.string().max(20).nullable(),
-  pickSection: z.enum(["top_bets", "bad_bet", "fun_bets", "player_props"]),
+  pickSection: z.enum(["top_bets", "fun_bets", "player_props"]),
   betType: z.enum(["straight", "parlay"]),
   wager: z.number().min(0).max(1000000).nullable(),
   extraLegs: z.array(ExtraLeg).max(8),

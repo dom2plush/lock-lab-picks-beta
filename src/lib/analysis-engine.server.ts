@@ -634,11 +634,6 @@ function findOpposite(c: Candidate, candidates: Candidate[], game: GameRow): Can
   );
 }
 
-/** A bad bet is only useful when the board actually prices its flip side. */
-function hasOpposite(c: Candidate, candidates: Candidate[], game: GameRow) {
-  return Boolean(findOpposite(c, candidates, game));
-}
-
 // ---------------------------------------------------------------------------
 // Handicap pass
 // ---------------------------------------------------------------------------
@@ -823,7 +818,6 @@ async function runHandicapPass(
     price: c.price,
     ...(c.point != null ? { line: c.point } : {}),
     ...(c.player ? { player: c.player } : {}),
-    hasOpposite: hasOpposite(c, candidates, game),
     note: c.note,
   }));
 
@@ -1470,5 +1464,5 @@ export async function runLockLabFormula(
 
 export type StoredAnalysis = Pick<
   AnalysisRow,
-  "top_bets" | "bad_bet" | "fun_bets" | "player_props" | "odds_snapshot"
+  "top_bets" | "fun_bets" | "player_props" | "odds_snapshot"
 >;

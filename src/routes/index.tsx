@@ -222,6 +222,7 @@ function AnalyzePage() {
               analysis={analysis.row}
               status={analysis.status}
               propsVerified={analysis.propsVerified}
+              simulations={analysis.simulations}
               onTail={(target) => setTailTarget(target)}
             />
           )}
