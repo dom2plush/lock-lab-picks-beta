@@ -1374,6 +1374,7 @@ export async function runLockLabFormula(
       selection: c.player ?? c.selection,
       line: c.line,
       odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
       ...pickSource(c),
       ...standardFields,
       reason: clean(
@@ -1408,6 +1409,7 @@ export async function runLockLabFormula(
       label: c.label,
       market: c.marketLabel,
       odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
       ...pickSource(c),
       reason: `${clean(entry.reason, "A posted scoring price with a real matchup reason behind it.")} For fun only — keep it to smaller units.`,
     });

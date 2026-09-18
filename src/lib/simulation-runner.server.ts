@@ -51,7 +51,7 @@ export async function buildAnalysisBatch(
     {
       odds_snapshot: game.odds,
       top_bets: finished.topBets,
-      bad_bet: finished.badBet,
+      bad_bet: null,
       fun_bets: finished.funBets,
       player_props: finished.playerProps,
     },
@@ -99,7 +99,12 @@ export async function buildAnalysisBatch(
   const batch = simulateBoard(
     game,
     game.odds,
-    { ...finished, topBets: audited.output.top_bets, badBet: audited.output.bad_bet },
+    {
+      ...finished,
+      topBets: audited.output.top_bets,
+      funBets: audited.output.fun_bets,
+      playerProps: audited.output.player_props,
+    },
     fingerprint,
   );
   await storeBatch(game, batch, analysis?.id ?? null);

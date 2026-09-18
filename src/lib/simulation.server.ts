@@ -21,7 +21,7 @@ import type { GameOdds, GameRow, PickBet } from "./lock-lab-types";
 import type { EngineOutput, ExtraOffers } from "./analysis-engine.server";
 
 export const SIMULATION_RUNS = 50;
-export const SIMULATION_ENGINE_VERSION = "sim-v1";
+export const SIMULATION_ENGINE_VERSION = "sim-v2";
 
 export type SimOutcome = {
   index: number;
@@ -37,7 +37,7 @@ export type SimSelection = {
   market: string;
   line: string | null;
   price: number | null;
-  section: "top" | "bad-bet" | "opposite" | "better-number" | "fun";
+  section: "top" | "fun" | "prop";
   /** Share of the 50 simulations this selection cashed. Null = not simulatable. */
   simulatedProb: number | null;
   wins: number;
@@ -167,6 +167,8 @@ type Settleable = {
   selection: string;
   point: number | null;
   section: SimSelection["section"];
+  /** Formula-estimated chance for markets that cannot settle from game score. */
+  estimatedProbability?: number | null;
 };
 
 function settle(
@@ -225,42 +227,31 @@ function toSettleable(output: EngineOutput): Settleable[] {
       section: "top",
     });
   }
-  const bad = output.badBet;
-  if (bad) {
+  for (const bet of output.funBets) {
     out.push({
-      key: `${bad.key}-bad`,
-      label: bad.label,
-      market: bad.market ?? "",
-      line: bad.point != null ? String(bad.point) : null,
-      price: bad.price ?? null,
-      selection: sideFromLabel(bad.label),
-      point: bad.point ?? null,
-      section: "bad-bet",
+      key: bet.key,
+      label: bet.label,
+      market: bet.market,
+      line: bet.point != null ? String(bet.point) : null,
+      price: bet.price ?? null,
+      selection: sideFromLabel(bet.label),
+      point: bet.point ?? null,
+      section: "fun",
+      estimatedProbability: bet.estimatedProbability ?? null,
     });
-    if (bad.oppositeLabel && bad.oppositeLabel !== "NO VALID BAD-BET FLIP") {
-      out.push({
-        key: `${bad.key}-opposite`,
-        label: bad.oppositeLabel,
-        market: bad.oppositeMarket ?? bad.market ?? "",
-        line: bad.oppositePoint != null ? String(bad.oppositePoint) : null,
-        price: bad.oppositePrice ?? null,
-        selection: sideFromLabel(bad.oppositeLabel),
-        point: bad.oppositePoint ?? null,
-        section: "opposite",
-      });
-    }
-    if (bad.alternateLabel) {
-      out.push({
-        key: `${bad.key}-alternate`,
-        label: bad.alternateLabel,
-        market: bad.market ?? "",
-        line: bad.alternatePoint != null ? String(bad.alternatePoint) : null,
-        price: bad.alternatePrice ?? null,
-        selection: sideFromLabel(bad.alternateLabel),
-        point: bad.alternatePoint ?? null,
-        section: "better-number",
-      });
-    }
+  }
+  for (const bet of output.playerProps) {
+    out.push({
+      key: bet.key,
+      label: bet.label,
+      market: bet.market,
+      line: bet.point != null ? String(bet.point) : null,
+      price: bet.price ?? null,
+      selection: sideFromLabel(bet.label),
+      point: bet.point ?? null,
+      section: "prop",
+      estimatedProbability: bet.estimatedProbability ?? null,
+    });
   }
   return out;
 }
@@ -336,7 +327,9 @@ export function simulateBoard(
     let pushes = 0;
     let simulatable = false;
     for (const sim of simulations) {
-      const result = settle(bet, game, sim);
+      const result = bet.estimatedProbability != null
+        ? rand() < bet.estimatedProbability ? "win" : "loss"
+        : settle(bet, game, sim);
       if (result == null) continue;
       simulatable = true;
       if (result === "win") wins += 1;
