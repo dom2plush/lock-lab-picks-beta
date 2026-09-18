@@ -1155,11 +1155,19 @@ export async function runLockLabFormula(
             (other.player ?? other.selection) === (c.player ?? c.selection),
         ) === index,
     );
-    const ranked = distinct.length
-      ? distinct
-      : candidates
-          .filter((c) => c.group !== "prop")
-          .sort((a, b) => candidateRank(b) - candidateRank(a));
+    const included = new Set(distinct.map((c) => c.key));
+    const includedMarkets = new Set(distinct.map((c) => c.marketLabel));
+    const ranked = [
+      ...distinct,
+      ...candidates
+        .filter(
+          (c) =>
+            c.group !== "prop" &&
+            !included.has(c.key) &&
+            !includedMarkets.has(c.marketLabel),
+        )
+        .sort((a, b) => candidateRank(b) - candidateRank(a)),
+    ];
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
@@ -1192,7 +1200,7 @@ export async function runLockLabFormula(
     });
     const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
     topBets.forEach((bet, index) => {
-      const c = distinct[index];
+      const c = ranked[index];
       if (c) decisions.set(c.key, { section: "top", badge: bet.badge, reason: bet.reason });
     });
     return {
