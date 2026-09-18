@@ -95,4 +95,53 @@ describe("simulation batches", () => {
     );
     expect(injured).not.toBe(base);
   });
+
+  it("records stored-formula hit rates for prop and fun selections", () => {
+    const withProps = {
+      ...output,
+      funBets: [
+        {
+          key: "fun-1",
+          badge: "yellow",
+          label: "Player A Anytime TD (+175)",
+          market: "Anytime TD",
+          player: "Player A",
+          price: 175,
+          point: null,
+          odds: "+175",
+          book: "DraftKings",
+          capturedAt: "2026-09-18T12:00:00Z",
+          estimatedProbability: 0.4,
+          reason: "For fun only — keep it to smaller units.",
+        },
+      ],
+      playerProps: [
+        {
+          key: "prop-1",
+          badge: "yellow",
+          label: "Player B Over 68.5 (-110)",
+          player: "Player B",
+          market: "Rushing yards",
+          price: -110,
+          point: 68.5,
+          odds: "-110",
+          book: "DraftKings",
+          capturedAt: "2026-09-18T12:00:00Z",
+          estimatedProbability: 0.56,
+          reason: "test",
+        },
+      ],
+    } satisfies EngineOutput;
+
+    const batch = simulateBoard(game, game.odds, withProps, "prop-hit-rate");
+    const prop = batch.aggregate.selections.find((selection) => selection.key === "prop-1");
+    const fun = batch.aggregate.selections.find((selection) => selection.key === "fun-1");
+
+    expect(prop?.section).toBe("prop");
+    expect(fun?.section).toBe("fun");
+    expect(prop?.wins + prop?.losses).toBe(50);
+    expect(fun?.wins + fun?.losses).toBe(50);
+    expect(prop?.simulatedProb).not.toBeNull();
+    expect(fun?.simulatedProb).not.toBeNull();
+  });
 });
