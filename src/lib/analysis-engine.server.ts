@@ -944,39 +944,8 @@ function passingBoard(
   game?: GameRow,
   extra: ExtraOffers = { alternates: [], props: [] },
 ): EngineOutput {
-  const worst = candidates
-    .filter((c) => c.group === "core")
-    .slice()
-    .sort((a, b) => a.price - b.price)[0];
-  const opposite = worst && game ? findOpposite(worst, candidates, game) : undefined;
-  const oppositeGate = opposite ? eligibleForTop(opposite) : null;
   return {
     topBets: [],
-    badBet: worst
-      ? {
-          key: worst.key,
-          badge: "red",
-          label: worst.label,
-          market: worst.marketLabel,
-          oppositeMarket: opposite?.marketLabel ?? null,
-          ...pickSource(worst),
-          reason:
-            "This is the most expensive way to bet the game: you are paying the heaviest price on the board for the least room for error.",
-          oppositeLabel: opposite ? opposite.label : "NO VALID BAD-BET FLIP",
-          oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
-          oppositePoint: opposite?.point ?? null,
-          oppositePrice: opposite?.price ?? null,
-          oppositeBook: opposite?.book ?? null,
-          oppositeCapturedAt: opposite?.capturedAt ?? null,
-          oppositeRecommended: false,
-          oppositeBadge: "red",
-          oppositeReason: opposite
-            ? oppositeGate?.ok
-              ? "The opposite side was independently priced, but no matchup read supports promoting it — pass on both sides."
-              : `Graded on its own, the opposite side does not clear the betting threshold — pass on both sides. ${oppositeGate?.why ?? ""}`.trim()
-            : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
-        }
-      : null,
     funBets: [],
     playerProps: [],
     notes: {
@@ -1231,7 +1200,6 @@ export async function runLockLabFormula(
     });
     return {
       topBets,
-      badBet: passingBoard(candidates, "", game, extra).badBet,
       funBets: [],
       playerProps: [],
       notes: {
@@ -1422,152 +1390,17 @@ export async function runLockLabFormula(
     });
   }
 
-  let badBet: BadBet | null = null;
-  if (handicap.badBet) {
-    const chosen = byKey.get(handicap.badBet.key);
-    // A bad bet is only useful when the flip side is actually priced. If the
-    // model flagged a one-sided market (anytime TD and the like) while a
-    // two-sided market was available, fall back to the worst-priced game line.
-    const swapped =
-      chosen && !hasOpposite(chosen, candidates, game)
-        ? candidates
-            .filter((x) => x.group === "core" && hasOpposite(x, candidates, game))
-            .slice()
-            .sort((a, b) => a.price - b.price)[0]
-        : undefined;
-    const c = swapped ?? chosen;
-    if (c) {
-      applySideLean(c, candidates, handicap.badBet.probabilityLean, handicap.badBet.evidenceStrength);
-      const declared = handicap.badBet.oppositeKey ? byKey.get(handicap.badBet.oppositeKey) : undefined;
-      const natural = findOpposite(c, candidates, game);
-      // The declared opposite is honoured only when it really is the flip side
-      // of the flagged bet; otherwise the posted opposing selection is used.
-      const opposite = !swapped && declared && declared.key === natural?.key ? declared : natural;
-      if (opposite && !swapped) {
-        applySideLean(
-          opposite,
-          candidates,
-          handicap.badBet.oppositeProbabilityLean,
-          handicap.badBet.oppositeEvidenceStrength,
-        );
-      }
-      const oppositeGate = opposite ? eligibleForTop(opposite) : null;
-      const oppositeBadge = opposite && oppositeGate?.ok
-        ? capBadge(opposite, asBadge(handicap.badBet.oppositeBadge))
-        : "red";
-      // The opposite side is only tailable when it was independently graded
-      // as an edge — a bad bet never promotes its own flip side.
-      const recommended =
-        Boolean(opposite) &&
-        !swapped &&
-        Boolean(oppositeGate?.ok) &&
-        handicap.badBet.oppositeRecommended &&
-        oppositeBadge !== "red";
-      // Better number instead of a flip. The handicap read may nominate one,
-      // but when it does not, the formula sweeps the posted alternate curve on
-      // the flagged side AND on the opposite side before the section can settle
-      // for "no play". Same gates as any other bet: worth the juice, graded, and
-      // never taken merely for having more points.
-      const altKey = handicap.badBet.alternateKey;
-      const declaredAlt = altKey ? byKey.get(altKey) : undefined;
-      const declaredBadge = declaredAlt
-        ? capBadge(declaredAlt, asBadge(handicap.badBet.alternateBadge ?? undefined))
-        : asBadge(handicap.badBet.alternateBadge ?? undefined);
-      const declaredUsable =
-        Boolean(declaredAlt) &&
-        declaredAlt!.key !== c.key &&
-        declaredBadge !== "red" &&
-        eligibleForTop(declaredAlt!).ok;
-      // Both ladders are shopped — the flagged side's own better number and the
-      // opposite side's rungs — and whichever carries the stronger independently
-      // graded value is offered. The flip side is never forced by the bad bet.
-      const sameSideAlt = declaredUsable ? undefined : bestGradedAlternate(c, candidates, used);
-      const oppositeSideAlt =
-        declaredUsable || !opposite ? undefined : bestGradedAlternate(opposite, candidates, used);
-      const sweptAlt = [sameSideAlt, oppositeSideAlt]
-        .filter((x): x is Candidate => Boolean(x))
-        .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
-
-      const alternate = declaredUsable ? declaredAlt : sweptAlt;
-      const alternateBadge = declaredUsable
-        ? declaredBadge
-        : alternate
-          ? capBadge(alternate, alternate.grade?.tier === "strong" ? "green" : "yellow")
-          : "red";
-      const alternateUsable = Boolean(alternate) && alternate!.key !== c.key && alternateBadge !== "red";
-      const alternateFields = alternateUsable
-        ? {
-            alternateLabel: alternate!.label,
-            alternateOdds: fmtOdds(alternate!.price),
-            alternatePoint: alternate!.point,
-            alternatePrice: alternate!.price,
-            alternateBook: alternate!.book,
-            alternateCapturedAt: alternate!.capturedAt,
-            alternateBadge,
-            alternateRecommended: true,
-            alternateReason: declaredUsable
-              ? clean(
-                  handicap.badBet.alternateReason ?? undefined,
-                  alternate!.alt?.note ?? "The same side at a better number is worth the extra price.",
-                )
-              : altPreferenceReason(alternate!),
-          }
-        : {};
-
-      badBet = {
-        key: "bad1",
-        badge: "red",
-        label: c.label,
-        market: c.marketLabel,
-        oppositeMarket: opposite?.marketLabel ?? null,
-        ...pickSource(c),
-        reason: swapped
-          ? "This is the most expensive way to bet the game: the heaviest price on the board for the least room for error."
-          : clean(handicap.badBet.reason, "The price does not match what this matchup projects."),
-        oppositeLabel: opposite ? opposite.label : "NO VALID BAD-BET FLIP",
-        oppositeOdds: opposite ? fmtOdds(opposite.price) : null,
-        oppositePoint: opposite?.point ?? null,
-        oppositePrice: opposite?.price ?? null,
-        oppositeBook: opposite?.book ?? null,
-        oppositeCapturedAt: opposite?.capturedAt ?? null,
-        oppositeRecommended: recommended,
-        oppositeBadge,
-        oppositeReason: opposite
-          ? swapped
-            ? "The posted flip side was not independently graded on this run, so Lock Lab is not recommending it."
-            : !oppositeGate?.ok
-              ? `Graded on its own, the opposite side does not clear the betting threshold — pass on both sides. ${oppositeGate?.why ?? ""}`.trim()
-            : clean(
-                handicap.badBet.oppositeReason,
-                "Graded on its own, the flip side does not have an edge either — pass on both.",
-              )
-          : "The sportsbook posts no opposing priced selection for this market, so there is nothing to flip to.",
-        ...alternateFields,
-      };
-      if (alternateUsable) {
-        used.add(alternate!.key);
-        decisions.set(alternate!.key, {
-          section: "better-number",
-          badge: alternateBadge,
-          reason: "Offered as the sharper number on the same side as the flagged bad bet.",
-        });
-      }
-      used.add(c.key);
-      decisions.set(c.key, { section: "bad-bet", badge: "red", reason: badBet.reason });
-      if (opposite) {
-        decisions.set(opposite.key, {
-          section: "opposite",
-          badge: oppositeBadge,
-          reason: badBet.oppositeReason,
-        });
-      }
-    }
-  }
-
   const funBets: FunBet[] = [];
-  for (const entry of handicap.funBets ?? []) {
+  const funEntries = [...(handicap.funBets ?? [])].sort((a, b) => {
+    const marketA = byKey.get(a.key)?.market ?? "";
+    const marketB = byKey.get(b.key)?.market ?? "";
+    const priority = (marketName: string) => marketName === "player_first_td" ? 0 : marketName === "player_anytime_td" ? 1 : 2;
+    return priority(marketA) - priority(marketB);
+  });
+  for (const entry of funEntries) {
     const c = byKey.get(entry.key);
-    if (!c || used.has(c.key)) continue;
+    if (!c || used.has(c.key) || c.group !== "prop") continue;
+    applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     used.add(c.key);
     funBets.push({
       key: `fun-${funBets.length + 1}`,
@@ -1576,20 +1409,22 @@ export async function runLockLabFormula(
       market: c.marketLabel,
       odds: fmtOdds(c.price),
       ...pickSource(c),
-      reason: clean(entry.reason, "Small-ticket swing with a real matchup reason behind it."),
+      reason: `${clean(entry.reason, "A posted scoring price with a real matchup reason behind it.")} For fun only — keep it to smaller units.`,
     });
     decisions.set(c.key, {
       section: "fun",
       badge: asBadge(entry.badge),
       reason: clean(entry.reason, "Fun bet."),
     });
-    if (funBets.length === 3) break;
+    break;
   }
 
   const playerProps: PropBet[] = [];
   for (const entry of handicap.props ?? []) {
     const c = byKey.get(entry.key);
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
+    applyLean(c, entry.probabilityLean, entry.evidenceStrength);
+    if (!eligibleForTop(c).ok) continue;
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
@@ -1606,7 +1441,7 @@ export async function runLockLabFormula(
       badge: asBadge(entry.badge),
       reason: clean(entry.reason, "Player prop."),
     });
-    if (playerProps.length === 4) break;
+    if (playerProps.length === 3) break;
   }
 
   const verdict = topBets.length
@@ -1620,7 +1455,6 @@ export async function runLockLabFormula(
 
   return {
     topBets,
-    badBet,
     funBets,
     playerProps,
     notes: {
