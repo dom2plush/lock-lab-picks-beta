@@ -222,7 +222,7 @@ function AnalyzePage() {
               analysis={analysis.row}
               status={analysis.status}
               propsVerified={analysis.propsVerified}
-              simulations={analysis.simulations}
+              simulations={analysis.simulations ?? null}
               onTail={(target) => setTailTarget(target)}
             />
           )}

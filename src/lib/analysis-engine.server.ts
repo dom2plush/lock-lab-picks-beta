@@ -1368,7 +1368,6 @@ export async function runLockLabFormula(
       selection: c.player ?? c.selection,
       line: c.line,
       odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
       ...pickSource(c),
       ...standardFields,
       reason: clean(
@@ -1429,6 +1428,7 @@ export async function runLockLabFormula(
       player: c.player ?? "",
       market: c.marketLabel,
       odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
       ...pickSource(c),
       reason: clean(entry.reason, "Usage and matchup back this number."),
     });

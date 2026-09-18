@@ -139,8 +139,8 @@ describe("simulation batches", () => {
 
     expect(prop?.section).toBe("prop");
     expect(fun?.section).toBe("fun");
-    expect(prop?.wins + prop?.losses).toBe(50);
-    expect(fun?.wins + fun?.losses).toBe(50);
+    expect((prop?.wins ?? 0) + (prop?.losses ?? 0)).toBe(50);
+    expect((fun?.wins ?? 0) + (fun?.losses ?? 0)).toBe(50);
     expect(prop?.simulatedProb).not.toBeNull();
     expect(fun?.simulatedProb).not.toBeNull();
   });
