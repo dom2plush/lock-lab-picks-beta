@@ -14,14 +14,11 @@
  * Hard rules enforced in code, not left to the model:
  *  - Every pick's line, price, book and timestamp are copied from the live
  *    odds snapshot. A selection the model invents is discarded.
- *  - A bad bet never auto-promotes its opposite side; the opposite is graded
- *    on its own and can be RED.
  *  - Nothing is forced: zero top bets is a valid, correct output.
  *  - Same game + same snapshot = same result for every user.
  */
 import type {
   AnalysisRow,
-  BadBet,
   Badge,
   FunBet,
   GameOdds,
@@ -60,6 +57,7 @@ const PROP_MARKET_LABEL: Record<string, string> = {
   player_rush_yds: "Rushing yards",
   player_reception_yds: "Receiving yards",
   player_receptions: "Receptions",
+  player_first_td: "First TD scorer",
   player_anytime_td: "Anytime TD",
 };
 
@@ -115,7 +113,7 @@ export type CandidateAuditEntry = {
   /** Edge measured in uncertainty bands (risk-adjusted ranking number). */
   valueScore: number | null;
   decision: "green" | "yellow" | "red" | "pass";
-  section: "top" | "bad-bet" | "opposite" | "better-number" | "fun" | "prop" | null;
+  section: "top" | "fun" | "prop" | null;
   reason: string;
   /** Alternate lines only: how this number compares with the standard market. */
   standardLine: string | null;
@@ -159,7 +157,6 @@ export type CandidateAudit = {
 
 export type EngineOutput = {
   topBets: PickBet[];
-  badBet: BadBet | null;
   funBets: FunBet[];
   playerProps: PropBet[];
   notes: {
@@ -367,7 +364,7 @@ function buildCandidates(
     });
   });
 
-  // Player props: both sides, so a bad prop always has a real opposite to grade.
+  // Player props: only real, verified sides from the posted board.
   const seen = new Set<string>();
   let propCount = 0;
   extra.props.forEach((offer, index) => {

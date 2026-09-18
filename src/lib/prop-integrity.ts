@@ -15,6 +15,7 @@ export const VERIFIED_PROP_MARKETS = [
   "player_rush_yds",
   "player_reception_yds",
   "player_receptions",
+  "player_first_td",
   "player_anytime_td",
 ] as const;
 
