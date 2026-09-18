@@ -31,7 +31,10 @@ export async function refreshGameOdds(game: GameRow): Promise<GameRow | null> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   try {
-    const board = await fetchUpcomingGames(game.sport);
+    const [board, injuriesByTeam] = await Promise.all([
+      fetchUpcomingGames(game.sport),
+      fetchInjuries(game.sport),
+    ]);
     const match = board.find((g) => g.provider_game_id === game.provider_game_id);
     if (!match) return null;
 
@@ -56,6 +59,10 @@ export async function refreshGameOdds(game: GameRow): Promise<GameRow | null> {
       odds_book: match.odds_book,
       odds_book_key: match.odds_book_key,
       odds_updated_at: match.odds_updated_at,
+      injuries: [
+        ...(injuriesByTeam.get(game.home_team) ?? []),
+        ...(injuriesByTeam.get(game.away_team) ?? []),
+      ],
       ...(propsUpdatedAt ? { props, props_updated_at: propsUpdatedAt } : {}),
       updated_at: new Date().toISOString(),
     };

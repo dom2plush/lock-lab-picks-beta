@@ -113,7 +113,7 @@ export type FunBet = PickSource & {
   player?: string;
   market: string;
   odds?: string | null;
-  /** Formula probability used by the stored 50-run batch. */
+  /** Formula-estimated probability used to validate the posted price. */
   estimatedProbability?: number | null;
   reason: string;
 };
@@ -125,7 +125,7 @@ export type PropBet = PickSource & {
   player: string;
   market: string;
   odds?: string | null;
-  /** Formula probability used by the stored 50-run batch. */
+  /** Formula-estimated probability used to validate the posted price. */
   estimatedProbability?: number | null;
   reason: string;
 };

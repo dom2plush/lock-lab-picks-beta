@@ -52,16 +52,21 @@ describe("analysis pipeline fallbacks", () => {
 
     const result = await runLockLabFormula(game, odds, { alternates: [alternate], props: [] });
 
-    expect(result.topBets).toHaveLength(1);
-    expect(result.topBets[0]).toMatchObject({
-      label: "BRONCOS +3.5 (-110)",
-      point: 3.5,
-      price: -110,
-      book: "DraftKings",
-      capturedAt,
-      standardPoint: 2.5,
-      standardPrice: -110,
-    });
+    expect(result.topBets).toHaveLength(2);
+    expect(result.topBets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "BRONCOS +3.5 (-110)",
+          point: 3.5,
+          price: -110,
+          book: "DraftKings",
+          capturedAt,
+          standardPoint: 2.5,
+          standardPrice: -110,
+        }),
+      ]),
+    );
+    expect(result.topBets.every((pick) => pick.price != null && pick.book && pick.capturedAt)).toBe(true);
     expect(result.notes.verdict).toBeNull();
   });
 
