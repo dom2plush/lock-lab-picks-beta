@@ -129,6 +129,60 @@ export type Database = {
           },
         ]
       }
+      game_simulations: {
+        Row: {
+          aggregate: Json
+          analysis_id: string | null
+          engine_version: string
+          game_id: string
+          generated_at: string
+          id: string
+          input_fingerprint: string
+          runs: number
+          simulations: Json
+          sport: string
+        }
+        Insert: {
+          aggregate?: Json
+          analysis_id?: string | null
+          engine_version?: string
+          game_id: string
+          generated_at?: string
+          id?: string
+          input_fingerprint: string
+          runs?: number
+          simulations?: Json
+          sport: string
+        }
+        Update: {
+          aggregate?: Json
+          analysis_id?: string | null
+          engine_version?: string
+          game_id?: string
+          generated_at?: string
+          id?: string
+          input_fingerprint?: string
+          runs?: number
+          simulations?: Json
+          sport?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_simulations_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "game_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_simulations_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       games: {
         Row: {
           away_score: number | null

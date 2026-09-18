@@ -120,19 +120,6 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     }
 
 
-    const stored = await readStored();
-    const storedCapture = stored?.odds_captured_at ?? null;
-    const currentCapture = game.odds.capturedAt ?? game.odds_updated_at ?? null;
-    const upToDate = stored && (!currentCapture || storedCapture === currentCapture);
-    if (stored && upToDate) {
-      return {
-        status,
-        analysis: stored,
-        message: null,
-        propsVerified: hasVerifiedProps(game),
-      };
-    }
-
     // Only offers that can be proven to belong to this exact game, sportsbook
     // and snapshot reach the formula. Everything else is discarded, never
     // substituted.
@@ -154,66 +141,40 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
 
     const extra = { alternates: alternates.verified, props: props.verified };
 
-    // The previously stored snapshot is what line movement is measured against.
-    const finished = await runLockLabFormula(game, game.odds, extra, stored?.odds_snapshot ?? null);
+    const stored = await readStored();
 
-    // Hard audit gate: a pick is only published when its recorded book, line,
-    // price and capture time reconcile with the snapshot the UI will display.
-    const audited = enforceAuditIntegrity(
-      {
-        odds_snapshot: game.odds,
-        top_bets: finished.topBets,
-        bad_bet: finished.badBet,
-        fun_bets: finished.funBets,
-        player_props: finished.playerProps,
-      },
-      game.odds,
+    // Clicking Analyze never re-runs the formula. The weekly cycle has already
+    // executed it once for this input state and stored the 50-simulation batch;
+    // as long as the inputs still fingerprint the same, the stored board and
+    // aggregate are returned instantly.
+    const { simulationFingerprint, batchIsCurrent, readStoredBatch } = await import(
+      "./simulation.server"
     );
-    if (audited.dropped.length) {
-      console.warn(
-        "Lock Lab audit dropped unverifiable picks",
-        game.id,
-        audited.dropped,
-        audited.report.problems,
-      );
+    const fingerprint = simulationFingerprint(game, game.odds, extra);
+    const batch = await readStoredBatch(game.id);
+    if (stored && batchIsCurrent(batch, fingerprint)) {
+      return {
+        status,
+        analysis: stored,
+        message: null,
+        propsVerified: hasVerifiedProps(game),
+        simulations: { runs: batch?.runs ?? 0, aggregate: batch?.aggregate ?? null, fresh: false },
+      };
     }
-    const verdict =
-      finished.notes.verdict ??
-      (audited.output.top_bets.length
-        ? null
-        : "No pick on this board could be reconciled with the displayed odds snapshot, so Lock Lab is passing.");
 
-    const insert = await supabaseAdmin
-      .from("game_analyses")
-      .upsert(
-        {
-          game_id: game.id,
-          sport: game.sport,
-          odds_snapshot: game.odds,
-          odds_captured_at: currentCapture,
-          odds_book: game.odds.bookmaker ?? null,
-          is_live_odds: hasLiveOdds(game.odds) && !game.is_demo,
-          generated_at: new Date().toISOString(),
-          top_bets: audited.output.top_bets,
-          bad_bet: audited.output.bad_bet,
-          fun_bets: audited.output.fun_bets,
-          player_props: audited.output.player_props,
-          verdict,
-          candidate_audit: finished.candidateAudit as unknown as never,
-        },
-        { onConflict: "game_id" },
-      )
-      .select("*")
-      .maybeSingle();
-
-    if (insert.error) throw new Error(insert.error.message);
+    // No current batch for these inputs (first look at this game, or a material
+    // input change such as line movement or injury news): build one now.
+    const { buildAnalysisBatch } = await import("./simulation-runner.server");
+    const built = await buildAnalysisBatch(game, extra, stored);
     return {
       status,
-      analysis: insert.data as unknown as AnalysisRow,
+      analysis: built.analysis,
       message: null,
       propsVerified: extra.props.length > 0,
+      simulations: { runs: built.batch.simulations.length, aggregate: built.batch.aggregate, fresh: true },
     };
   });
+
 
 /** Whether the live odds feed is configured — drives the LIVE ODDS UNAVAILABLE banner. */
 export const getOddsFeedStatus = createServerFn({ method: "GET" }).handler(async () => {
