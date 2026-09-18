@@ -281,7 +281,7 @@ function projection(game: GameRow, odds: GameOdds, output: EngineOutput) {
   const totalSd = TOTAL_SD[sport];
   const entries = output.candidateAudit?.entries ?? [];
 
-  const spreadPoint = odds.spread?.homePoint ?? null;
+  const spreadPoint = odds.spread?.home ?? null;
   let homeMargin = spreadPoint != null ? -spreadPoint : 0;
   const spreadHome = entries.find((e) => e.key === "spread-home");
   if (spreadPoint != null && spreadHome?.estimatedProb != null) {
@@ -292,7 +292,7 @@ function projection(game: GameRow, odds: GameOdds, output: EngineOutput) {
     homeMargin += shift;
   }
 
-  const totalPoint = odds.total?.point ?? null;
+  const totalPoint = odds.total?.points ?? null;
   let total = totalPoint ?? 44;
   const over = entries.find((e) => e.key === "total-over");
   if (totalPoint != null && over?.estimatedProb != null) {
