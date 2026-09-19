@@ -9,18 +9,37 @@ export function useSession() {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setSession(data.session);
+    let unsubscribe: (() => void) | undefined;
+
+    try {
+      void supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (!active) return;
+          setSession(data.session);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (!active) return;
+          setSession(null);
+          setLoading(false);
+        });
+
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+        if (!active) return;
+        setSession(next);
+        setLoading(false);
+      });
+      unsubscribe = () => sub.subscription.unsubscribe();
+    } catch {
+      // A temporarily stale preview binding must not take down public pages.
+      setSession(null);
       setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
-      setLoading(false);
-    });
+    }
+
     return () => {
       active = false;
-      sub.subscription.unsubscribe();
+      unsubscribe?.();
     };
   }, []);
 
