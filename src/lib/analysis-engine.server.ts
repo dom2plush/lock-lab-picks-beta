@@ -1657,17 +1657,23 @@ export async function runLockLabFormula(
     const fallbackFun: FunBet[] = [];
     fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
     fillFunBet(candidates, usedFallback, fallbackFun, decisions);
-    return {
-      topBets,
-      funBets: fallbackFun,
-      playerProps: fallbackProps,
-      notes: {
-        propsAvailable: extra.props.length > 0,
-        altMarketsAvailable: extra.alternates.length > 0,
-        verdict: null,
+    return attachSimulatedOutcomes(
+      {
+        topBets,
+        funBets: fallbackFun,
+        playerProps: fallbackProps,
+        notes: {
+          propsAvailable: extra.props.length > 0,
+          altMarketsAvailable: extra.alternates.length > 0,
+          verdict: null,
+        },
+        candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
       },
-      candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
-    };
+      candidates,
+      game,
+      projection,
+      players,
+    );
   }
 
   const used = new Set<string>();
