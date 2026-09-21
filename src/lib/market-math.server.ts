@@ -520,10 +520,13 @@ export function gradeValue(input: {
   const edge = modelProb - implied;
   const ev = expectedValue(modelProb, input.price);
   const valueScore = edge / uncertainty;
+  // A clear 2-3% edge is playable on its own, even when the candidate's own
+  // uncertainty band happens to be wider than that.
+  const playableEdge = Math.min(0.4 * requiredEdge, 0.02);
   const tier: ValueTier =
-    edge >= requiredEdge && ev > 0
+    (edge >= requiredEdge || edge >= 0.05) && ev > 0
       ? "strong"
-      : edge >= 0.4 * requiredEdge && ev > 0.005
+      : edge >= playableEdge && ev > 0.002
         ? "playable"
         : "insufficient";
   return {
