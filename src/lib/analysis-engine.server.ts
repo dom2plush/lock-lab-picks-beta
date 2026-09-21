@@ -540,6 +540,81 @@ function propMarketPriority(market: string): number {
   return market === "player_first_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
 }
 
+type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
+
+/**
+ * Tops the prop section up to the requested minimum from real posted prices the
+ * board actually ranks. Nothing is invented: when the sportsbook supplied no
+ * further verified prop, the section simply stays short.
+ */
+function fillPlayerProps(
+  candidates: Candidate[],
+  used: Set<string>,
+  playerProps: PropBet[],
+  decisions: DecisionMap,
+  minimum = 2,
+): void {
+  const pool = candidates
+    .filter((c) => c.group === "prop" && !used.has(c.key))
+    .sort(
+      (a, b) =>
+        propMarketPriority(a.market) - propMarketPriority(b.market) === 0
+          ? candidateRank(b) - candidateRank(a)
+          : propMarketPriority(b.market) - propMarketPriority(a.market),
+    );
+  for (const c of pool) {
+    if (playerProps.length >= minimum) break;
+    if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+    const badge = softBadge(c);
+    used.add(c.key);
+    playerProps.push({
+      key: `prop-${playerProps.length + 1}`,
+      badge,
+      label: c.label,
+      player: c.player ?? "",
+      market: c.marketLabel,
+      odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
+      ...pickSource(c),
+      reason: "The strongest remaining posted prop on this board under the model's usage and matchup read.",
+    });
+    decisions.set(c.key, { section: "prop", badge, reason: "Player prop from the ranked board." });
+  }
+}
+
+/** Exactly one higher-variance scoring play, First TD first, then Anytime TD. */
+function fillFunBet(
+  candidates: Candidate[],
+  used: Set<string>,
+  funBets: FunBet[],
+  decisions: DecisionMap,
+): void {
+  if (funBets.length) return;
+  const pool = candidates
+    .filter((c) => c.group === "prop" && !used.has(c.key))
+    .sort(
+      (a, b) =>
+        propMarketPriority(a.market) - propMarketPriority(b.market) ||
+        candidateRank(b) - candidateRank(a),
+    );
+  const c = pool[0];
+  if (!c) return;
+  const badge = softBadge(c);
+  used.add(c.key);
+  funBets.push({
+    key: "fun-1",
+    badge,
+    label: c.label,
+    market: c.marketLabel,
+    odds: fmtOdds(c.price),
+    estimatedProbability: c.grade?.modelProb ?? null,
+    ...pickSource(c),
+    reason:
+      "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units.",
+  });
+  decisions.set(c.key, { section: "fun", badge, reason: "Fun bet from the ranked board." });
+}
+
 /** How reliable a candidate's probability estimate is (0-1). */
 function candidateRobustness(c: Candidate): number {
   if (!c.grade) return 0.5;
