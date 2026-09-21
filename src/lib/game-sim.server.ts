@@ -152,6 +152,26 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
     return spreadProb(team, 0);
   }
 
+  /**
+   * Settlement vectors. The published hit count for a game pick is the number
+   * of these same 50 simulated finals it won — a push counts as a loss rather
+   * than being quietly removed from the denominator.
+   */
+  function spreadOutcomes(team: "home" | "away", point: number): boolean[] | null {
+    if (!scores.length) return null;
+    return scores.map((score) => (team === "home" ? score.margin : -score.margin) + point > 0);
+  }
+
+  function totalOutcomes(side: "Over" | "Under", point: number): boolean[] | null {
+    if (!scores.length) return null;
+    return scores.map((score) => (side === "Over" ? score.total > point : score.total < point));
+  }
+
+  function moneylineOutcomes(team: "home" | "away"): boolean[] | null {
+    return spreadOutcomes(team, 0);
+  }
+
+
   const homeWinProb = moneylineProb("home");
   const notes = [...fair.notes];
   if (scores.length) {
@@ -177,5 +197,8 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
     spreadProb,
     totalProb,
     moneylineProb,
+    spreadOutcomes,
+    totalOutcomes,
+    moneylineOutcomes,
   };
 }
