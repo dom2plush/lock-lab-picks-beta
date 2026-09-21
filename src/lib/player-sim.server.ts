@@ -232,7 +232,9 @@ export function simulatePlayers(
         } else {
           const cv = YARD_CV[market] ?? 0.4;
           const sigma = Math.sqrt(Math.log(1 + cv * cv));
-          value.set(market, Math.max(0, mean * Math.exp(sigma * z - (sigma * sigma) / 2)));
+          // The posted rung is treated as the player's median outcome, so the
+          // skew of the yardage distribution cannot bias every prop to the under.
+          value.set(market, Math.max(0, mean * Math.exp(sigma * z)));
         }
       }
 
