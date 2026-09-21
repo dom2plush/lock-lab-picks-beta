@@ -640,30 +640,33 @@ function propMarketPriority(market: string): number {
 type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
 
 /**
- * Tops the prop section up to the requested minimum from real posted prices the
- * board actually ranks. Nothing is invented: when the sportsbook supplied no
- * further verified prop, the section simply stays short.
+ * Adds further props ONLY where the board's own probability beats the posted
+ * price. Nothing is invented and nothing is padded: a game whose posted props
+ * carry no measurable value shows fewer props, or none at all.
  */
 function fillPlayerProps(
   candidates: Candidate[],
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  minimum = 2,
+  maximum = 3,
 ): void {
-  const rankProps = (list: Candidate[]) =>
-    [...list].sort(
+  const pool = candidates
+    .filter(
+      (c) =>
+        c.group === "prop" &&
+        !used.has(c.key) &&
+        propBadge(c) !== "red" &&
+        (c.grade?.edge ?? 0) > 0,
+    )
+    .sort(
       (a, b) =>
         // Touchdown markets are held back for the fun bet where possible.
         (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
         candidateRank(b) - candidateRank(a),
     );
-  const available = candidates.filter((c) => c.group === "prop" && !used.has(c.key));
-  // Props the model actually expects to hit come first; weaker ones only fill in.
-  const confident = rankProps(available.filter((c) => propBadge(c) !== "red"));
-  const pool = [...confident, ...rankProps(available.filter((c) => propBadge(c) === "red"))];
   for (const c of pool) {
-    if (playerProps.length >= minimum) break;
+    if (playerProps.length >= maximum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
     const badge = propBadge(c);
     used.add(c.key);
