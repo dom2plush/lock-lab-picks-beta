@@ -557,6 +557,18 @@ function betIdeaKey(c: Candidate): string {
   return `${market.replace("alternate_", "")}:${side}`;
 }
 
+/**
+ * Props and the fun bet are graded on their own scale: they are not held to the
+ * Top 2 threshold. Green is a strong read, yellow is any posted price the model
+ * estimates it beats, red only when the model is genuinely behind the number.
+ */
+function sideBadge(c: Candidate): Badge {
+  const g = c.grade;
+  if (!g) return "red";
+  if (g.tier === "strong") return "green";
+  return g.edge != null && g.edge > 0 ? "yellow" : "red";
+}
+
 function propMarketPriority(market: string): number {
   return market === "player_1st_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
 }
