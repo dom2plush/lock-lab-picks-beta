@@ -1357,7 +1357,7 @@ export async function runLockLabFormula(
       continue;
     }
     // A second pick in the same market/player as the first is not distinct.
-    if (shortlist.some((s) => s.c.marketLabel === c.marketLabel && (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) {
+    if (shortlist.some((s) => betIdeaKey(s.c) === betIdeaKey(c))) {
       continue;
     }
     used.add(c.key);
@@ -1377,7 +1377,7 @@ export async function runLockLabFormula(
     .filter((c) => eligibleForTop(c).ok)
     .sort((a, b) => candidateRank(b) - candidateRank(a));
   for (const c of sweptAlternates.slice(0, 2)) {
-    if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection) && candidateRank(s.c) >= candidateRank(c))) {
+    if (shortlist.some((s) => betIdeaKey(s.c) === betIdeaKey(c) && candidateRank(s.c) >= candidateRank(c))) {
       continue;
     }
     const reason = altPreferenceReason(c);
@@ -1432,7 +1432,7 @@ export async function runLockLabFormula(
   // both survive, only the sharper of the two is posted.
   const seenSelection = new Set<string>();
   for (let i = 0; i < shortlist.length; i += 1) {
-    const id = String(shortlist[i]!.c.player ?? shortlist[i]!.c.selection);
+    const id = betIdeaKey(shortlist[i]!.c);
     if (seenSelection.has(id)) {
       shortlist.splice(i, 1);
       i -= 1;
@@ -1470,10 +1470,16 @@ export async function runLockLabFormula(
   // standard/alternate candidates and mark them RED. This ranks the live board
   // without inventing an edge, line, price, book or timestamp.
   const selectedIds = new Set(shortlist.map(({ c }) => c.key));
-  const selectedMarkets = new Set(shortlist.map(({ c }) => c.marketLabel));
+  const selectedIdeas = new Set(shortlist.map(({ c }) => betIdeaKey(c)));
   const remaining = candidates
-    .filter((c) => c.group !== "prop" && !selectedIds.has(c.key) && !selectedMarkets.has(c.marketLabel))
-    .sort((a, b) => candidateRank(b) - candidateRank(a));
+    .filter((c) => c.group !== "prop" && !selectedIds.has(c.key) && !selectedIdeas.has(betIdeaKey(c)))
+    .sort((a, b) => candidateRank(b) - candidateRank(a))
+    .filter((c) => {
+      const idea = betIdeaKey(c);
+      if (selectedIdeas.has(idea)) return false;
+      selectedIdeas.add(idea);
+      return true;
+    });
   for (const c of remaining) {
     if (shortlist.length >= 2) break;
     shortlist.push({
