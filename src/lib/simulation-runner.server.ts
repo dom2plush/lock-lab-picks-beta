@@ -162,7 +162,7 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
     ...analysis,
     top_bets: topBets,
     player_props: props,
-    fun_bets: (analysis.fun_bets ?? []).map(describe),
+    fun_bets: (analysis.fun_bets ?? []).map((bet) => describe(bet, { fun: true })),
   };
 }
 
