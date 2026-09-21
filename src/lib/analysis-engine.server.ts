@@ -603,14 +603,17 @@ function fillPlayerProps(
   decisions: DecisionMap,
   minimum = 2,
 ): void {
-  const pool = candidates
-    .filter((c) => c.group === "prop" && !used.has(c.key))
-    // Touchdown markets are held back for the fun bet where possible.
-    .sort(
+  const rankProps = (list: Candidate[]) =>
+    [...list].sort(
       (a, b) =>
+        // Touchdown markets are held back for the fun bet where possible.
         (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
         candidateRank(b) - candidateRank(a),
     );
+  const available = candidates.filter((c) => c.group === "prop" && !used.has(c.key));
+  // Props the model actually expects to hit come first; weaker ones only fill in.
+  const confident = rankProps(available.filter((c) => propBadge(c) !== "red"));
+  const pool = [...confident, ...rankProps(available.filter((c) => propBadge(c) === "red"))];
   for (const c of pool) {
     if (playerProps.length >= minimum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
