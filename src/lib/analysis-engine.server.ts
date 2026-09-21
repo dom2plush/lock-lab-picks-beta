@@ -1255,26 +1255,25 @@ export async function runLockLabFormula(
     const measurable = candidates
       .filter((c) => eligibleForTop(c).ok)
       .sort((a, b) => candidateRank(b) - candidateRank(a));
-    const distinct = measurable.filter(
-      (c, index, all) =>
-        all.findIndex(
-          (other) =>
-            other.marketLabel === c.marketLabel &&
-            (other.player ?? other.selection) === (c.player ?? c.selection),
-        ) === index,
-    );
+    const seenIdeas = new Set<string>();
+    const distinct = measurable.filter((c) => {
+      const idea = betIdeaKey(c);
+      if (seenIdeas.has(idea)) return false;
+      seenIdeas.add(idea);
+      return true;
+    });
     const included = new Set(distinct.map((c) => c.key));
-    const includedMarkets = new Set(distinct.map((c) => c.marketLabel));
     const ranked = [
       ...distinct,
       ...candidates
-        .filter(
-          (c) =>
-            c.group !== "prop" &&
-            !included.has(c.key) &&
-            !includedMarkets.has(c.marketLabel),
-        )
-        .sort((a, b) => candidateRank(b) - candidateRank(a)),
+        .filter((c) => c.group !== "prop" && !included.has(c.key))
+        .sort((a, b) => candidateRank(b) - candidateRank(a))
+        .filter((c) => {
+          const idea = betIdeaKey(c);
+          if (seenIdeas.has(idea)) return false;
+          seenIdeas.add(idea);
+          return true;
+        }),
     ];
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
