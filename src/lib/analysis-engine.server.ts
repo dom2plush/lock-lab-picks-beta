@@ -1386,10 +1386,11 @@ export async function runLockLabFormula(
   const altNotes = summariseAltValue(
     candidates.map((c) => c.alt).filter((a): a is AltEvaluation => Boolean(a)),
   );
+  const context = await readMarketContext(game, market.marketMargin);
   const handicap = await runHandicapPass(
     game,
     candidates,
-    [...market.notes, ...altNotes],
+    [...market.notes, ...context.notes, ...altNotes],
     coverageNotes(candidates, Boolean(previousOdds)),
   );
 
