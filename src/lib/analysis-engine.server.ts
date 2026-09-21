@@ -1586,6 +1586,8 @@ export async function runLockLabFormula(
   for (const entry of handicap.top ?? []) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key)) continue;
+    // Separate pools: a player prop never fills a game-pick slot.
+    if (c.group === "prop") continue;
     // The market's own vig-free number is the starting point; the handicap read
     // may move it within a bounded range, for a stated reason, before the value
     // gate runs. Without a lean a bet simply matches the market and has no edge.
