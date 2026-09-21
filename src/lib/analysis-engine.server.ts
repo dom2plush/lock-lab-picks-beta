@@ -1291,14 +1291,22 @@ export async function runLockLabFormula(
       };
     });
     const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
+    const usedFallback = new Set<string>();
     topBets.forEach((bet, index) => {
       const c = ranked[index];
-      if (c) decisions.set(c.key, { section: "top", badge: bet.badge, reason: bet.reason });
+      if (c) {
+        usedFallback.add(c.key);
+        decisions.set(c.key, { section: "top", badge: bet.badge, reason: bet.reason });
+      }
     });
+    const fallbackProps: PropBet[] = [];
+    const fallbackFun: FunBet[] = [];
+    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
+    fillFunBet(candidates, usedFallback, fallbackFun, decisions);
     return {
       topBets,
-      funBets: [],
-      playerProps: [],
+      funBets: fallbackFun,
+      playerProps: fallbackProps,
       notes: {
         propsAvailable: extra.props.length > 0,
         altMarketsAvailable: extra.alternates.length > 0,
