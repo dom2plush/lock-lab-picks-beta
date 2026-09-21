@@ -228,6 +228,7 @@ function buildCandidates(
   game: GameRow,
   odds: GameOdds,
   extra: ExtraOffers,
+  projection: GameProjection,
 ): Candidate[] {
   const out: Candidate[] = [];
   const book = odds.bookmaker ?? "consensus";
