@@ -1552,7 +1552,10 @@ export async function runLockLabFormula(
   const fair = await buildFairModel(game, odds);
   const projection = simulateGame(game, fair);
 
-  const candidates = buildCandidates(game, odds, extra, projection);
+  // Player stat lines are drawn inside those same 50 simulated games, so a
+  // prop's probability is a count of simulated games, not a coin flip.
+  const players = simulatePlayers(game, projection, extra.props);
+  const candidates = buildCandidates(game, odds, extra, projection, players);
   const byKey = new Map(candidates.map((c) => [c.key, c]));
 
   if (!candidates.length) {
@@ -1571,6 +1574,7 @@ export async function runLockLabFormula(
     [
       "LOCK LAB FAIR LINE (built before any line shopping — this is the model, everything below is reference):",
       ...projection.notes,
+      ...players.notes,
       "",
       "MARKET READ (reference only):",
       ...market.notes,
