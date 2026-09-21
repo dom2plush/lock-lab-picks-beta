@@ -368,12 +368,17 @@ function buildCandidates(
   // Player props: only real, verified sides from the posted board.
   const seen = new Set<string>();
   let propCount = 0;
-  extra.props.forEach((offer, index) => {
+  // Touchdown-scorer markets are read first so the per-game prop budget can
+  // never cut them off before the fun bet gets a look at them.
+  const propOffers = [...extra.props].sort(
+    (a, b) => propMarketPriority(a.market) - propMarketPriority(b.market),
+  );
+  propOffers.forEach((offer, index) => {
     const side = offer.selection.toLowerCase();
     if (!["over", "under", "yes", "no"].includes(side)) return;
     if (!offer.player) return;
     const id = `${offer.market}:${offer.player}:${side}`;
-    if (seen.has(id) || propCount >= 60) return;
+    if (seen.has(id) || propCount >= 90) return;
     seen.add(id);
     propCount += 1;
     const marketLabel = PROP_MARKET_LABEL[offer.market] ?? offer.market;
@@ -552,6 +557,18 @@ function betIdeaKey(c: Candidate): string {
   return `${market.replace("alternate_", "")}:${side}`;
 }
 
+/**
+ * Props and the fun bet are graded on their own scale: they are not held to the
+ * Top 2 threshold. Green is a strong read, yellow is any posted price the model
+ * estimates it beats, red only when the model is genuinely behind the number.
+ */
+function sideBadge(c: Candidate): Badge {
+  const g = c.grade;
+  if (!g) return "red";
+  if (g.tier === "strong") return "green";
+  return g.edge != null && g.edge > 0 ? "yellow" : "red";
+}
+
 function propMarketPriority(market: string): number {
   return market === "player_1st_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
 }
@@ -581,7 +598,7 @@ function fillPlayerProps(
   for (const c of pool) {
     if (playerProps.length >= minimum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
-    const badge = softBadge(c);
+    const badge = sideBadge(c);
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
@@ -615,7 +632,7 @@ function fillFunBet(
     );
   const c = pool[0];
   if (!c) return;
-  const badge = softBadge(c);
+  const badge = sideBadge(c);
   used.add(c.key);
   funBets.push({
     key: "fun-1",

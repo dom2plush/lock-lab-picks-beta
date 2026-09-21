@@ -96,9 +96,14 @@ export async function generateBatch(
   previous: AnalysisRow | null,
 ): Promise<SimulationBatch> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const analysis = await buildLiveAnalysis(game, verifiedExtras(game), previous);
+  // A batch is only generated when inputs moved, so pull the current board
+  // (standard lines, alternate ladders, player props, injuries) first.
+  const { refreshGameOdds } = await import("./ingest.server");
+  const current = (await refreshGameOdds(game)) ?? game;
+  const currentFingerprint = inputFingerprint(current);
+  const analysis = await buildLiveAnalysis(current, verifiedExtras(current), previous);
   const { simulations, aggregate } = runSimulations(
-    fingerprint,
+    currentFingerprint,
     picksToSimulate(analysis),
     SIMULATION_RUNS,
   );
@@ -107,10 +112,10 @@ export async function generateBatch(
     .from("game_simulations")
     .upsert(
       {
-        game_id: game.id,
+        game_id: current.id,
         analysis_id: analysis.id,
         sport: game.sport,
-        input_fingerprint: fingerprint,
+        input_fingerprint: currentFingerprint,
         engine_version: SIMULATION_ENGINE_VERSION,
         runs: SIMULATION_RUNS,
         generated_at: new Date().toISOString(),
@@ -124,7 +129,7 @@ export async function generateBatch(
 
   if (saved.error) console.error("simulation batch save failed", game.id, saved.error.message);
 
-  return { analysis, aggregate, fingerprint, fromCache: false };
+  return { analysis, aggregate, fingerprint: currentFingerprint, fromCache: false };
 }
 
 /**
