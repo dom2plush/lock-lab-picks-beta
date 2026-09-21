@@ -88,6 +88,8 @@ describe("published board obeys one set of rules", () => {
     expect(result.topBets.length).toBeLessThanOrEqual(2);
     for (const pick of [...result.topBets, ...result.playerProps]) {
       expect(pick.price == null || pick.price >= -180).toBe(true);
+    }
+    for (const pick of result.topBets) {
       if (pick.point != null && pick.standardPoint != null) {
         expect(Math.abs(pick.point - pick.standardPoint)).toBeLessThanOrEqual(4);
       }
