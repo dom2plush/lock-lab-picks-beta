@@ -415,7 +415,7 @@ function buildCandidates(
   let propCount = 0;
   // Touchdown-scorer markets are read first so the per-game prop budget can
   // never cut them off before the fun bet gets a look at them.
-  const propOffers = [...extra.props].sort(
+  const propOffers = limitPropBumps(extra.props).sort(
     (a, b) => propMarketPriority(a.market) - propMarketPriority(b.market),
   );
   propOffers.forEach((offer, index) => {
