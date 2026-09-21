@@ -1389,7 +1389,7 @@ export async function runLockLabFormula(
     const ranked = [
       ...distinct,
       ...candidates
-        .filter((c) => c.group !== "prop" && !included.has(c.key))
+        .filter((c) => c.group !== "prop" && c.price >= MIN_RECOMMENDED_PRICE && !included.has(c.key))
         .sort((a, b) => candidateRank(b) - candidateRank(a))
         .filter((c) => {
           const idea = betIdeaKey(c);
@@ -1595,7 +1595,14 @@ export async function runLockLabFormula(
   const selectedIds = new Set(shortlist.map(({ c }) => c.key));
   const selectedIdeas = new Set(shortlist.map(({ c }) => betIdeaKey(c)));
   const remaining = candidates
-    .filter((c) => c.group !== "prop" && !selectedIds.has(c.key) && !selectedIdeas.has(betIdeaKey(c)))
+    .filter(
+      (c) =>
+        c.group !== "prop" &&
+        // Never fill a slot with a price we would not recommend.
+        c.price >= MIN_RECOMMENDED_PRICE &&
+        !selectedIds.has(c.key) &&
+        !selectedIdeas.has(betIdeaKey(c)),
+    )
     .sort((a, b) => candidateRank(b) - candidateRank(a))
     .filter((c) => {
       const idea = betIdeaKey(c);
