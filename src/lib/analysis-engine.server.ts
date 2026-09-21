@@ -1587,7 +1587,7 @@ export async function runLockLabFormula(
     used.add(c.key);
     funBets.push({
       key: `fun-${funBets.length + 1}`,
-      badge: asBadge(entry.badge),
+      badge: funBadge(c),
       label: c.label,
       market: c.marketLabel,
       odds: fmtOdds(c.price),
@@ -1597,7 +1597,7 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "fun",
-      badge: asBadge(entry.badge),
+      badge: funBadge(c),
       reason: clean(entry.reason, "Fun bet."),
     });
     break;
@@ -1612,7 +1612,7 @@ export async function runLockLabFormula(
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
-      badge: asBadge(entry.badge),
+      badge: propBadge(c),
       label: c.label,
       player: c.player ?? "",
       market: c.marketLabel,
@@ -1623,7 +1623,7 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "prop",
-      badge: asBadge(entry.badge),
+      badge: propBadge(c),
       reason: clean(entry.reason, "Player prop."),
     });
     if (playerProps.length === 3) break;
