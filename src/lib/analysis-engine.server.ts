@@ -500,6 +500,12 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
 }
 
 /**
+ * Worst price Lock Lab will ever recommend on a Top 2 bet or a player prop.
+ * Heavier juice than this is not playable, so it is dropped regardless of edge.
+ */
+const MIN_RECOMMENDED_PRICE = -180;
+
+/**
  * Ranking gate for the Top 2. A pick has to be priced below Lock Lab's own
  * estimate of how often it wins — payout size never qualifies a bet. The bar is
  * the candidate's own uncertainty band, which widens gradually with price length
@@ -508,6 +514,15 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
 function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
   const g = c.grade;
   if (!g) return { ok: true, why: "" };
+
+  // Playability floor: nothing worse than -180 is ever recommended as a Top 2
+  // bet or a player prop, however large the modelled edge looks.
+  if (c.price < MIN_RECOMMENDED_PRICE) {
+    return {
+      ok: false,
+      why: `${c.label}: priced worse than ${MIN_RECOMMENDED_PRICE} — too heavily juiced to recommend.`,
+    };
+  }
 
   if (g.modelProb == null) {
     return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
@@ -661,11 +676,12 @@ function fillPlayerProps(
       (c) =>
         c.group === "prop" &&
         !used.has(c.key) &&
+        c.price >= MIN_RECOMMENDED_PRICE &&
         propBadge(c) !== "red" &&
         // Real value only: the price is beaten outright, or the simulated hit
         // rate is strong enough to be worth posting at a fair price.
         ((c.grade?.edge ?? 0) > 0 ||
-          ((c.grade?.modelProb ?? 0) >= 0.65 && (c.grade?.edge ?? -1) >= 0)),
+          ((c.grade?.modelProb ?? 0) >= 0.6 && (c.grade?.edge ?? -1) >= -0.005)),
     )
     .sort(
       (a, b) =>
@@ -738,10 +754,21 @@ function candidateRobustness(c: Candidate): number {
   });
 }
 
+/**
+ * Mild ranking preference for playable prices: a standard or lightly juiced
+ * number is preferred over a heavily juiced one when the edges are close.
+ */
+function pricePreference(price: number): number {
+  if (price <= -160) return 0.9;
+  if (price <= -135) return 0.96;
+  if (price >= 400) return 0.94;
+  return 1;
+}
+
 /** Risk-adjusted ranking number: edge in uncertainty bands, discounted by robustness. */
 function candidateRank(c: Candidate): number {
   if (!c.grade) return 0;
-  return riskAdjustedScore(c.grade, candidateRobustness(c));
+  return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price);
 }
 
 function leadCheck(c: Candidate): { ok: boolean; why: string } {
