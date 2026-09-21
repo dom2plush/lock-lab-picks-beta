@@ -505,6 +505,21 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
  */
 const MIN_RECOMMENDED_PRICE = -180;
 
+/** Edge size Lock Lab treats as a properly playable number rather than a sliver. */
+const PREFERRED_EDGE = 0.02;
+
+/**
+ * Hard value floor. A selection may only reach the board when Lock Lab's own
+ * estimate beats the probability the posted price implies. Negative-edge
+ * selections are never published, on any path, at any price.
+ */
+function hasPositiveEdge(c: Candidate): boolean {
+  const g = c.grade;
+  if (!g || g.modelProb == null || g.edge == null) return false;
+  if (g.ev != null && g.ev <= 0) return false;
+  return g.edge > 0;
+}
+
 /**
  * Ranking gate for the Top 2. A pick has to be priced below Lock Lab's own
  * estimate of how often it wins — payout size never qualifies a bet. The bar is
@@ -528,8 +543,11 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
     return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
   }
 
-  if (g.ev != null && g.ev <= 0) {
-    return { ok: false, why: `${c.label}: negative expected value once the estimated win chance is priced in.` };
+  if (!hasPositiveEdge(c)) {
+    return {
+      ok: false,
+      why: `${c.label}: the estimated win chance does not beat the probability the posted price implies — negative edge, never recommended.`,
+    };
   }
 
   if (g.tier === "insufficient") {
@@ -678,10 +696,8 @@ function fillPlayerProps(
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
         propBadge(c) !== "red" &&
-        // Real value only: the price is beaten outright, or the simulated hit
-        // rate is strong enough to be worth posting at a fair price.
-        ((c.grade?.edge ?? 0) > 0 ||
-          ((c.grade?.modelProb ?? 0) >= 0.6 && (c.grade?.edge ?? -1) >= -0.005)),
+        // Real value only: the estimate must beat the posted price outright.
+        hasPositiveEdge(c),
     )
     .sort(
       (a, b) =>
@@ -768,7 +784,10 @@ function pricePreference(price: number): number {
 /** Risk-adjusted ranking number: edge in uncertainty bands, discounted by robustness. */
 function candidateRank(c: Candidate): number {
   if (!c.grade) return 0;
-  return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price);
+  const edge = c.grade.edge ?? 0;
+  // A clean 2%+ edge is preferred over a sliver of an edge at the same risk.
+  const edgePreference = edge >= PREFERRED_EDGE ? 1.1 : edge > 0 ? 1 : 0.5;
+  return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price) * edgePreference;
 }
 
 function leadCheck(c: Candidate): { ok: boolean; why: string } {
@@ -1389,7 +1408,13 @@ export async function runLockLabFormula(
     const ranked = [
       ...distinct,
       ...candidates
-        .filter((c) => c.group !== "prop" && c.price >= MIN_RECOMMENDED_PRICE && !included.has(c.key))
+        .filter(
+          (c) =>
+            c.group !== "prop" &&
+            c.price >= MIN_RECOMMENDED_PRICE &&
+            hasPositiveEdge(c) &&
+            !included.has(c.key),
+        )
         .sort((a, b) => candidateRank(b) - candidateRank(a))
         .filter((c) => {
           const idea = betIdeaKey(c);
@@ -1588,10 +1613,9 @@ export async function runLockLabFormula(
     }
   }
 
-  // The result contract is exactly two real posted bets. If fewer than two
-  // selections clear the value gate, fill from the strongest remaining
-  // standard/alternate candidates and mark them RED. This ranks the live board
-  // without inventing an edge, line, price, book or timestamp.
+  // Up to two real posted bets. Slots are filled from the strongest remaining
+  // standard/alternate candidates, but only ones whose estimate still beats the
+  // posted price: a negative-edge selection is left off entirely.
   const selectedIds = new Set(shortlist.map(({ c }) => c.key));
   const selectedIdeas = new Set(shortlist.map(({ c }) => betIdeaKey(c)));
   const remaining = candidates
@@ -1600,6 +1624,7 @@ export async function runLockLabFormula(
         c.group !== "prop" &&
         // Never fill a slot with a price we would not recommend.
         c.price >= MIN_RECOMMENDED_PRICE &&
+        hasPositiveEdge(c) &&
         !selectedIds.has(c.key) &&
         !selectedIdeas.has(betIdeaKey(c)),
     )
