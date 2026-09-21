@@ -536,6 +536,22 @@ function softBadge(c: Candidate): Badge {
   return "red";
 }
 
+/**
+ * Two posted prices belong to the same betting idea when they express the same
+ * opinion: any rung of the same total direction, or the spread and moneyline on
+ * the same team. The board may only publish one bet per idea, so the Top 2 are
+ * always two genuinely different opportunities.
+ */
+function betIdeaKey(c: Candidate): string {
+  const market = c.market.toLowerCase();
+  const side = `${c.player ?? ""}|${String(c.selection).toLowerCase()}`;
+  if (market.includes("total")) return `total:${side}`;
+  if (market.includes("spread") || market.includes("moneyline") || market === "h2h") {
+    return `side:${side}`;
+  }
+  return `${market.replace("alternate_", "")}:${side}`;
+}
+
 function propMarketPriority(market: string): number {
   return market === "player_first_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
 }
