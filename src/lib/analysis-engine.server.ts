@@ -1492,7 +1492,7 @@ export async function runLockLabFormula(
         standardComparison: c.alt ? altPreferenceReason(c) : null,
       },
     });
-    selectedMarkets.add(c.marketLabel);
+    selectedIdeas.add(betIdeaKey(c));
   }
 
   for (const { c, entry } of shortlist.slice(0, 2)) {
