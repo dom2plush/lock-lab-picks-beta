@@ -58,7 +58,7 @@ const PROP_MARKET_LABEL: Record<string, string> = {
   player_rush_yds: "Rushing yards",
   player_reception_yds: "Receiving yards",
   player_receptions: "Receptions",
-  player_first_td: "First TD scorer",
+  player_1st_td: "First TD scorer",
   player_anytime_td: "Anytime TD",
 };
 
@@ -553,7 +553,7 @@ function betIdeaKey(c: Candidate): string {
 }
 
 function propMarketPriority(market: string): number {
-  return market === "player_first_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
+  return market === "player_1st_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
 }
 
 type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
@@ -1544,7 +1544,7 @@ export async function runLockLabFormula(
   const funEntries = [...(handicap.funBets ?? [])].sort((a, b) => {
     const marketA = byKey.get(a.key)?.market ?? "";
     const marketB = byKey.get(b.key)?.market ?? "";
-    const priority = (marketName: string) => marketName === "player_first_td" ? 0 : marketName === "player_anytime_td" ? 1 : 2;
+    const priority = (marketName: string) => marketName === "player_1st_td" ? 0 : marketName === "player_anytime_td" ? 1 : 2;
     return priority(marketA) - priority(marketB);
   });
   for (const entry of funEntries) {
