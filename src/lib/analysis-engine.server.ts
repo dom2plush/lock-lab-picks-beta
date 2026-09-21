@@ -576,6 +576,17 @@ function hasPositiveEdge(c: Candidate): boolean {
   return g.edge >= MIN_EDGE;
 }
 
+/**
+ * Looser gate for pick #2 and beyond: any positive modelled edge is a
+ * legitimate pick. The board light reports how big that edge actually is.
+ */
+function hasAnyPositiveEdge(c: Candidate): boolean {
+  const g = c.grade;
+  if (!g || g.modelProb == null || g.edge == null) return false;
+  if (g.ev != null && g.ev <= 0) return false;
+  return g.edge > 0;
+}
+
 /** True when an alternate rung sits further from the standard line than allowed. */
 function altTooFar(c: Candidate): boolean {
   if (!c.alt) return false;
