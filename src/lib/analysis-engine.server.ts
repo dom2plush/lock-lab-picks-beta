@@ -1701,7 +1701,9 @@ export async function runLockLabFormula(
     } else if (leadIndex === -1) {
       const head = shortlist[0]!;
       const check = leadCheck(head.c);
-      if (candidateRank(head.c) < 0.6) {
+      // Only step a weak leader aside when a positive-edge replacement exists;
+      // a legitimate lone pick is never dropped into an empty board.
+      if (candidateRank(head.c) < 0.6 && shortlist.length > 1) {
         rejected.push(`${head.c.label}: ${check.why}.`);
         decisions.set(head.c.key, {
           section: null,
