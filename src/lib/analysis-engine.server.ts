@@ -505,6 +505,21 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
  */
 const MIN_RECOMMENDED_PRICE = -180;
 
+/** Edge size Lock Lab treats as a properly playable number rather than a sliver. */
+const PREFERRED_EDGE = 0.02;
+
+/**
+ * Hard value floor. A selection may only reach the board when Lock Lab's own
+ * estimate beats the probability the posted price implies. Negative-edge
+ * selections are never published, on any path, at any price.
+ */
+function hasPositiveEdge(c: Candidate): boolean {
+  const g = c.grade;
+  if (!g || g.modelProb == null || g.edge == null) return false;
+  if (g.ev != null && g.ev <= 0) return false;
+  return g.edge > 0;
+}
+
 /**
  * Ranking gate for the Top 2. A pick has to be priced below Lock Lab's own
  * estimate of how often it wins — payout size never qualifies a bet. The bar is
