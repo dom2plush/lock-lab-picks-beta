@@ -1501,37 +1501,32 @@ export async function runLockLabFormula(
   );
 
   if (!handicap) {
-    const measurable = candidates
-      // Game picks come from the game markets only. Player props are selected
-      // from their own separate pool and never occupy a Top 2 slot.
-      .filter((c) => c.group !== "prop" && eligibleForTop(c).ok)
+    // Game picks come from the game markets only. Player props are selected
+    // from their own separate pool and never occupy a Top 2 slot. Every posted
+    // market inside the price cap is rankable; a fully eligible bet leads when
+    // one exists, but the second slot only needs the strongest remaining
+    // distinct market — a smaller edge is shown honestly by its light.
+    const priced = candidates
+      .filter(
+        (c) =>
+          c.group !== "prop" &&
+          c.price >= MIN_RECOMMENDED_PRICE &&
+          c.grade?.modelProb != null &&
+          !altTooFar(c),
+      )
       .sort((a, b) => candidateRank(b) - candidateRank(a));
     const seenIdeas = new Set<string>();
-    const distinct = measurable.filter((c) => {
+    const distinct = priced.filter((c) => {
       const idea = betIdeaKey(c);
       if (seenIdeas.has(idea)) return false;
       seenIdeas.add(idea);
       return true;
     });
-    const included = new Set(distinct.map((c) => c.key));
-    const ranked = [
-      ...distinct,
-      ...candidates
-        .filter(
-          (c) =>
-            c.group !== "prop" &&
-            c.price >= MIN_RECOMMENDED_PRICE &&
-            hasPositiveEdge(c) &&
-            !included.has(c.key),
-        )
-        .sort((a, b) => candidateRank(b) - candidateRank(a))
-        .filter((c) => {
-          const idea = betIdeaKey(c);
-          if (seenIdeas.has(idea)) return false;
-          seenIdeas.add(idea);
-          return true;
-        }),
-    ];
+    const leadIndex = distinct.findIndex((c) => eligibleForTop(c).ok);
+    const ranked =
+      leadIndex > 0
+        ? [distinct[leadIndex]!, ...distinct.filter((_, i) => i !== leadIndex)]
+        : distinct;
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
