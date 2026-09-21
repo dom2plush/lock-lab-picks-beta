@@ -1491,7 +1491,9 @@ export async function runLockLabFormula(
 
   if (!handicap) {
     const measurable = candidates
-      .filter((c) => eligibleForTop(c).ok)
+      // Game picks come from the game markets only. Player props are selected
+      // from their own separate pool and never occupy a Top 2 slot.
+      .filter((c) => c.group !== "prop" && eligibleForTop(c).ok)
       .sort((a, b) => candidateRank(b) - candidateRank(a));
     const seenIdeas = new Set<string>();
     const distinct = measurable.filter((c) => {
