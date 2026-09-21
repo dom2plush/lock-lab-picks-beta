@@ -796,7 +796,7 @@ function fillPlayerProps(
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  maximum = 3,
+  maximum = 4,
 ): void {
   const pool = candidates
     .filter(
