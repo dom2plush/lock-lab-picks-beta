@@ -70,6 +70,12 @@ export type GameProjection = {
   totalProb(side: "Over" | "Under", point: number): number | null;
   /** Chance this team wins outright. */
   moneylineProb(team: "home" | "away"): number | null;
+  /** Per-run win/lose vector for a handicap, graded on the same 50 scores. */
+  spreadOutcomes(team: "home" | "away", point: number): boolean[] | null;
+  /** Per-run win/lose vector for a total. */
+  totalOutcomes(side: "Over" | "Under", point: number): boolean[] | null;
+  /** Per-run win/lose vector for a moneyline. */
+  moneylineOutcomes(team: "home" | "away"): boolean[] | null;
 };
 
 /**
