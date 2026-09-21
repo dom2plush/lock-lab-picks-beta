@@ -67,6 +67,7 @@ function AnalyzePage() {
         .select("*")
         .eq("sport", sport)
         .neq("status", "final")
+        .gte("commence_time", new Date().toISOString())
         .order("commence_time", { ascending: true })
         .limit(24);
       if (error) throw new Error(error.message);
