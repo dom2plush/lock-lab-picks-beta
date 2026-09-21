@@ -540,6 +540,9 @@ function softBadge(c: Candidate): Badge {
   if (!g) return "red";
   if (g.tier === "strong") return "green";
   if (g.edge != null && g.edge >= 0.005) return "yellow";
+  // Red is reserved for genuinely coin-flip-or-worse prices; a selection the
+  // model still projects as the favourite side stays yellow.
+  if (g.modelProb != null && g.modelProb >= 0.5) return "yellow";
   return "red";
 }
 
@@ -603,14 +606,17 @@ function fillPlayerProps(
   decisions: DecisionMap,
   minimum = 2,
 ): void {
-  const pool = candidates
-    .filter((c) => c.group === "prop" && !used.has(c.key))
-    // Touchdown markets are held back for the fun bet where possible.
-    .sort(
+  const rankProps = (list: Candidate[]) =>
+    [...list].sort(
       (a, b) =>
+        // Touchdown markets are held back for the fun bet where possible.
         (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
         candidateRank(b) - candidateRank(a),
     );
+  const available = candidates.filter((c) => c.group === "prop" && !used.has(c.key));
+  // Props the model actually expects to hit come first; weaker ones only fill in.
+  const confident = rankProps(available.filter((c) => propBadge(c) !== "red"));
+  const pool = [...confident, ...rankProps(available.filter((c) => propBadge(c) === "red"))];
   for (const c of pool) {
     if (playerProps.length >= minimum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
@@ -1587,7 +1593,7 @@ export async function runLockLabFormula(
     used.add(c.key);
     funBets.push({
       key: `fun-${funBets.length + 1}`,
-      badge: asBadge(entry.badge),
+      badge: funBadge(c),
       label: c.label,
       market: c.marketLabel,
       odds: fmtOdds(c.price),
@@ -1597,7 +1603,7 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "fun",
-      badge: asBadge(entry.badge),
+      badge: funBadge(c),
       reason: clean(entry.reason, "Fun bet."),
     });
     break;
@@ -1609,10 +1615,12 @@ export async function runLockLabFormula(
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     if (!eligibleForTop(c).ok) continue;
+    // A prop the model expects to miss is left out; the fill pass replaces it.
+    if (propBadge(c) === "red") continue;
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
-      badge: asBadge(entry.badge),
+      badge: propBadge(c),
       label: c.label,
       player: c.player ?? "",
       market: c.marketLabel,
@@ -1623,7 +1631,7 @@ export async function runLockLabFormula(
     });
     decisions.set(c.key, {
       section: "prop",
-      badge: asBadge(entry.badge),
+      badge: propBadge(c),
       reason: clean(entry.reason, "Player prop."),
     });
     if (playerProps.length === 3) break;
