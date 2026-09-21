@@ -96,9 +96,14 @@ export async function generateBatch(
   previous: AnalysisRow | null,
 ): Promise<SimulationBatch> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const analysis = await buildLiveAnalysis(game, verifiedExtras(game), previous);
+  // A batch is only generated when inputs moved, so pull the current board
+  // (standard lines, alternate ladders, player props, injuries) first.
+  const { refreshGameOdds } = await import("./ingest.server");
+  const current = (await refreshGameOdds(game)) ?? game;
+  const currentFingerprint = inputFingerprint(current);
+  const analysis = await buildLiveAnalysis(current, verifiedExtras(current), previous);
   const { simulations, aggregate } = runSimulations(
-    fingerprint,
+    currentFingerprint,
     picksToSimulate(analysis),
     SIMULATION_RUNS,
   );
