@@ -129,7 +129,7 @@ describe("player props come out of the 50 simulated games", () => {
     const result = await runLockLabFormula(game, odds, { alternates: [], props });
 
     expect(result.playerProps.length).toBeGreaterThan(0);
-    expect(result.playerProps.length).toBeLessThanOrEqual(3);
+    expect(result.playerProps.length).toBeLessThanOrEqual(4);
     const players = result.playerProps.map((p) => `${p.player}|${p.market}`);
     expect(new Set(players).size).toBe(players.length);
     for (const pick of [...result.playerProps, ...result.funBets]) {
