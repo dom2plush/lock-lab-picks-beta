@@ -716,26 +716,27 @@ function betIdeaKey(c: Candidate): string {
 }
 
 /**
- * Props are not held to the Top 2 edge threshold. Their light reflects how
- * likely the model thinks the prop hits: green for a confident read, yellow for
- * a live one, red only when the model genuinely expects it to miss.
+ * Props use the same value logic as the Top 2 — a negative-edge prop is never
+ * green anywhere — with the confidence read layered on top of it.
  */
 function propBadge(c: Candidate): Badge {
   const g = c.grade;
-  if (!g || g.modelProb == null) return "red";
-  if (g.tier === "strong" || g.modelProb >= 0.6) return "green";
-  return g.modelProb >= 0.45 ? "yellow" : "red";
+  if (!g || g.modelProb == null || g.edge == null) return "red";
+  if (g.edge < MIN_EDGE) return "red";
+  if (g.edge >= TARGET_EDGE && (g.tier === "strong" || g.modelProb >= 0.6)) return "green";
+  return "yellow";
 }
 
 /**
- * The fun bet is an explicit long shot, so its light reads as a fun play rather
- * than a confidence claim: yellow whenever the price is real and the model gives
- * it a live chance, green only for an unusually strong one.
+ * The fun bet is an explicit long shot and may run at a lower threshold than
+ * the Top 2, but it is still never dressed up as a strong bet: a negative-edge
+ * scoring price can show as a fun play, never as green.
  */
 function funBadge(c: Candidate): Badge {
   const g = c.grade;
   if (!g || g.modelProb == null) return "red";
-  if (g.modelProb >= 0.5) return "green";
+  const edge = g.edge ?? 0;
+  if (edge >= TARGET_EDGE && g.modelProb >= 0.5) return "green";
   return g.modelProb >= 0.1 ? "yellow" : "red";
 }
 
