@@ -41,6 +41,9 @@ import {
   summariseAltValue,
 } from "./market-math.server";
 import { readMarketContext } from "./market-context.server";
+import { buildFairModel } from "./fair-model.server";
+import type { GameProjection } from "./game-sim.server";
+import { simulateGame } from "./game-sim.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
