@@ -458,7 +458,7 @@ function buildCandidates(
     });
   });
 
-  gradeBoard(out, game);
+  gradeBoard(out, game, projection);
   return out;
 }
 
