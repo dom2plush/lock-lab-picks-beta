@@ -1615,10 +1615,9 @@ export async function runLockLabFormula(
     }
   }
 
-  // The result contract is exactly two real posted bets. If fewer than two
-  // selections clear the value gate, fill from the strongest remaining
-  // standard/alternate candidates and mark them RED. This ranks the live board
-  // without inventing an edge, line, price, book or timestamp.
+  // Up to two real posted bets. Slots are filled from the strongest remaining
+  // standard/alternate candidates, but only ones whose estimate still beats the
+  // posted price: a negative-edge selection is left off entirely.
   const selectedIds = new Set(shortlist.map(({ c }) => c.key));
   const selectedIdeas = new Set(shortlist.map(({ c }) => betIdeaKey(c)));
   const remaining = candidates
@@ -1627,6 +1626,7 @@ export async function runLockLabFormula(
         c.group !== "prop" &&
         // Never fill a slot with a price we would not recommend.
         c.price >= MIN_RECOMMENDED_PRICE &&
+        hasPositiveEdge(c) &&
         !selectedIds.has(c.key) &&
         !selectedIdeas.has(betIdeaKey(c)),
     )
