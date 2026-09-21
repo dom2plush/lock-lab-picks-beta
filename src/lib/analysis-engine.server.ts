@@ -689,12 +689,11 @@ function capBadge(c: Candidate, badge: Badge): Badge {
  */
 function softBadge(c: Candidate): Badge {
   const g = c.grade;
-  if (!g) return "red";
-  if (g.tier === "strong") return "green";
-  if (g.edge != null && g.edge >= 0.005) return "yellow";
-  // Red is reserved for genuinely coin-flip-or-worse prices; a selection the
-  // model still projects as the favourite side stays yellow.
-  if (g.modelProb != null && g.modelProb >= 0.5) return "yellow";
+  if (!g || g.edge == null) return "red";
+  if (g.tier === "strong" && g.edge >= TARGET_EDGE) return "green";
+  if (g.edge >= TARGET_EDGE) return "yellow";
+  if (g.edge >= MIN_EDGE) return "yellow";
+  // No measurable edge: the light says so, whatever the price or the payout.
   return "red";
 }
 
