@@ -784,12 +784,19 @@ type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge:
  * price. Nothing is invented and nothing is padded: a game whose posted props
  * carry no measurable value shows fewer props, or none at all.
  */
+function propDirection(c: Candidate): string {
+  return (c.selection || "").trim().toLowerCase();
+}
+
+/** Closeness window: only a near-equal edge may be preferred for diversity. */
+const DIVERSITY_EDGE_TOLERANCE = 0.015;
+
 function fillPlayerProps(
   candidates: Candidate[],
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  maximum = 4,
+  maximum = 3,
 ): void {
   const pool = candidates
     .filter(
@@ -797,19 +804,14 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
-        // Every verified posted prop is rankable; the strongest model-supported
-        // ones surface first and each prop's light reports its true edge.
-        c.grade?.modelProb != null,
+        // Touchdown markets stay reserved for the fun bet.
+        propMarketPriority(c.market) === 2 &&
+        c.grade?.modelProb != null &&
+        (c.grade?.edge ?? 0) >= MIN_EDGE,
     )
-    .sort(
-      (a, b) =>
-        // Touchdown markets are held back for the fun bet where possible.
-        (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
-        candidateRank(b) - candidateRank(a),
-    );
-  for (const c of pool) {
-    if (playerProps.length >= maximum) break;
-    if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+    .sort((a, b) => candidateRank(b) - candidateRank(a));
+
+  const take = (c: Candidate) => {
     const badge = propBadge(c);
     used.add(c.key);
     playerProps.push({
@@ -824,8 +826,62 @@ function fillPlayerProps(
       reason: "The strongest remaining posted prop on this board under the model's usage and matchup read.",
     });
     decisions.set(c.key, { section: "prop", badge, reason: "Player prop from the ranked board." });
+  };
+
+  const remaining = pool.filter(
+    (c) => !playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel),
+  );
+
+  while (playerProps.length < maximum && remaining.length) {
+    // Edge always leads: the best remaining candidate defines the bar.
+    const best = remaining[0]!;
+    const bestEdge = best.grade?.edge ?? 0;
+    // Contenders are only those whose edge is genuinely close to the leader.
+    const contenders = remaining.filter((c) => (c.grade?.edge ?? 0) >= bestEdge - DIVERSITY_EDGE_TOLERANCE);
+
+    const chosenPlayers = new Set(playerProps.map((p) => p.player));
+    const chosenMarkets = new Set(playerProps.map((p) => p.market));
+    const directions = new Set(
+      playerProps
+        .map((p) => (p.label || "").toLowerCase())
+        .map((l) => (l.includes("under") ? "under" : l.includes("over") ? "over" : "")),
+    );
+    directions.delete("");
+    const oneSided = directions.size === 1;
+    const currentDirection = [...directions][0];
+
+    const score = (c: Candidate) => {
+      let s = 0;
+      // Soft preferences only — never enough to beat the tolerance window.
+      if (!chosenPlayers.has(c.player ?? "")) s += 2;
+      if (!chosenMarkets.has(c.marketLabel)) s += 1;
+      if (oneSided && propDirection(c) && propDirection(c) !== currentDirection) s += 3;
+      return s;
+    };
+
+    let chosen = best;
+    if (playerProps.length > 0) {
+      chosen = contenders.reduce((a, b) => {
+        const sa = score(a);
+        const sb = score(b);
+        if (sb > sa) return b;
+        if (sb < sa) return a;
+        return candidateRank(b) > candidateRank(a) ? b : a;
+      }, contenders[0]!);
+    }
+
+    take(chosen);
+    const idx = remaining.indexOf(chosen);
+    if (idx >= 0) remaining.splice(idx, 1);
+    for (let i = remaining.length - 1; i >= 0; i -= 1) {
+      const c = remaining[i]!;
+      if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) {
+        remaining.splice(i, 1);
+      }
+    }
   }
 }
+
 
 /** Exactly one higher-variance scoring play, First TD first, then Anytime TD. */
 function fillFunBet(
@@ -1989,7 +2045,7 @@ export async function runLockLabFormula(
       badge: propBadge(c),
       reason: clean(entry.reason, "Player prop."),
     });
-    if (playerProps.length === 4) break;
+    if (playerProps.length === 3) break;
   }
 
   // Sections are topped up from the ranked live board so a normal game shows
