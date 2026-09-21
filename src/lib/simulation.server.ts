@@ -93,7 +93,18 @@ export function americanToProbability(odds: string | null | undefined): number |
   return price > 0 ? 100 / (price + 100) : -price / (-price + 100);
 }
 
-type PickInput = { key: string; section: SimulatedPick["section"]; label: string; probability: number };
+type PickInput = {
+  key: string;
+  section: SimulatedPick["section"];
+  label: string;
+  probability: number;
+  /**
+   * Run numbers this pick won in the 50 simulated games. When present the
+   * settlement pass simply reads them: no coin flip is ever used for a pick
+   * the simulated games already decided.
+   */
+  hits?: number[] | null;
+};
 
 /** Every posted pick in a finished analysis, with the probability to settle it on. */
 export function picksToSimulate(analysis: {
@@ -108,6 +119,7 @@ export function picksToSimulate(analysis: {
       section: "top",
       label: bet.label,
       probability: americanToProbability(bet.odds) ?? 0.5,
+      hits: bet.simHits ?? null,
     });
   }
   for (const prop of analysis.player_props ?? []) {
@@ -116,6 +128,7 @@ export function picksToSimulate(analysis: {
       section: "prop",
       label: prop.label,
       probability: prop.estimatedProbability ?? americanToProbability(prop.odds) ?? 0.5,
+      hits: prop.simHits ?? null,
     });
   }
   for (const fun of analysis.fun_bets ?? []) {
@@ -124,6 +137,7 @@ export function picksToSimulate(analysis: {
       section: "fun",
       label: fun.label,
       probability: fun.estimatedProbability ?? americanToProbability(fun.odds) ?? 0.5,
+      hits: fun.simHits ?? null,
     });
   }
   return out;
