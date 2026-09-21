@@ -151,11 +151,11 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
 
   const topBets = (analysis.top_bets ?? [])
     .filter(positiveEdge)
-    .map(describe)
+    .map((bet) => describe(bet))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   const props = (analysis.player_props ?? [])
     .filter(positiveEdge)
-    .map(describe)
+    .map((prop) => describe(prop))
     .map((prop, index) => ({ ...prop, key: `prop-${index + 1}` }));
 
   return {
