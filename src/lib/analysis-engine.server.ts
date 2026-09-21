@@ -696,10 +696,8 @@ function fillPlayerProps(
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
         propBadge(c) !== "red" &&
-        // Real value only: the price is beaten outright, or the simulated hit
-        // rate is strong enough to be worth posting at a fair price.
-        ((c.grade?.edge ?? 0) > 0 ||
-          ((c.grade?.modelProb ?? 0) >= 0.6 && (c.grade?.edge ?? -1) >= -0.005)),
+        // Real value only: the estimate must beat the posted price outright.
+        hasPositiveEdge(c),
     )
     .sort(
       (a, b) =>
