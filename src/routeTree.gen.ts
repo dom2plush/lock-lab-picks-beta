@@ -16,6 +16,7 @@ import { Route as HistoricalRouteImport } from './routes/historical'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as MyBetsRouteImport } from './routes/my-bets'
 import { Route as RecordRouteImport } from './routes/record'
+import { Route as ApiPublicHooksPrecomputeSimulationsRouteImport } from './routes/api/public/hooks/precompute-simulations'
 import { Route as ApiPublicHooksRefreshSportsDataRouteImport } from './routes/api/public/hooks/refresh-sports-data'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,12 @@ const RecordRoute = RecordRouteImport.update({
   path: '/record',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksPrecomputeSimulationsRoute =
+  ApiPublicHooksPrecomputeSimulationsRouteImport.update({
+    id: '/api/public/hooks/precompute-simulations',
+    path: '/api/public/hooks/precompute-simulations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksRefreshSportsDataRoute =
   ApiPublicHooksRefreshSportsDataRouteImport.update({
     id: '/api/public/hooks/refresh-sports-data',
@@ -68,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/leaderboard': typeof LeaderboardRoute
   '/my-bets': typeof MyBetsRoute
   '/record': typeof RecordRoute
+  '/api/public/hooks/precompute-simulations': typeof ApiPublicHooksPrecomputeSimulationsRoute
   '/api/public/hooks/refresh-sports-data': typeof ApiPublicHooksRefreshSportsDataRoute
 }
 export interface FileRoutesByTo {
@@ -78,6 +86,7 @@ export interface FileRoutesByTo {
   '/leaderboard': typeof LeaderboardRoute
   '/my-bets': typeof MyBetsRoute
   '/record': typeof RecordRoute
+  '/api/public/hooks/precompute-simulations': typeof ApiPublicHooksPrecomputeSimulationsRoute
   '/api/public/hooks/refresh-sports-data': typeof ApiPublicHooksRefreshSportsDataRoute
 }
 export interface FileRoutesById {
@@ -89,6 +98,7 @@ export interface FileRoutesById {
   '/leaderboard': typeof LeaderboardRoute
   '/my-bets': typeof MyBetsRoute
   '/record': typeof RecordRoute
+  '/api/public/hooks/precompute-simulations': typeof ApiPublicHooksPrecomputeSimulationsRoute
   '/api/public/hooks/refresh-sports-data': typeof ApiPublicHooksRefreshSportsDataRoute
 }
 export interface FileRouteTypes {
@@ -101,6 +111,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/my-bets'
     | '/record'
+    | '/api/public/hooks/precompute-simulations'
     | '/api/public/hooks/refresh-sports-data'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -111,6 +122,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/my-bets'
     | '/record'
+    | '/api/public/hooks/precompute-simulations'
     | '/api/public/hooks/refresh-sports-data'
   id:
     | '__root__'
@@ -121,6 +133,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/my-bets'
     | '/record'
+    | '/api/public/hooks/precompute-simulations'
     | '/api/public/hooks/refresh-sports-data'
   fileRoutesById: FileRoutesById
 }
@@ -132,6 +145,7 @@ export interface RootRouteChildren {
   LeaderboardRoute: typeof LeaderboardRoute
   MyBetsRoute: typeof MyBetsRoute
   RecordRoute: typeof RecordRoute
+  ApiPublicHooksPrecomputeSimulationsRoute: typeof ApiPublicHooksPrecomputeSimulationsRoute
   ApiPublicHooksRefreshSportsDataRoute: typeof ApiPublicHooksRefreshSportsDataRoute
 }
 
@@ -186,6 +200,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/precompute-simulations': {
+      id: '/api/public/hooks/precompute-simulations'
+      path: '/api/public/hooks/precompute-simulations'
+      fullPath: '/api/public/hooks/precompute-simulations'
+      preLoaderRoute: typeof ApiPublicHooksPrecomputeSimulationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/refresh-sports-data': {
       id: '/api/public/hooks/refresh-sports-data'
       path: '/api/public/hooks/refresh-sports-data'
@@ -204,6 +225,8 @@ const rootRouteChildren: RootRouteChildren = {
   LeaderboardRoute: LeaderboardRoute,
   MyBetsRoute: MyBetsRoute,
   RecordRoute: RecordRoute,
+  ApiPublicHooksPrecomputeSimulationsRoute:
+    ApiPublicHooksPrecomputeSimulationsRoute,
   ApiPublicHooksRefreshSportsDataRoute: ApiPublicHooksRefreshSportsDataRoute,
 }
 export const routeTree = rootRouteImport

@@ -523,6 +523,23 @@ function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
 }
 
+/**
+ * Red is reserved for a genuinely too-close price. A posted selection the board
+ * still leans towards, whose edge simply sits inside the uncertainty band,
+ * is published as yellow rather than being written off.
+ */
+function softBadge(c: Candidate): Badge {
+  const g = c.grade;
+  if (!g) return "red";
+  if (g.tier === "strong") return "green";
+  if (g.edge != null && g.edge >= 0.005) return "yellow";
+  return "red";
+}
+
+function propMarketPriority(market: string): number {
+  return market === "player_first_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
+}
+
 /** How reliable a candidate's probability estimate is (0-1). */
 function candidateRobustness(c: Candidate): number {
   if (!c.grade) return 0.5;
