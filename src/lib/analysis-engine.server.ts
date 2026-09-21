@@ -543,8 +543,11 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
     return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
   }
 
-  if (g.ev != null && g.ev <= 0) {
-    return { ok: false, why: `${c.label}: negative expected value once the estimated win chance is priced in.` };
+  if (!hasPositiveEdge(c)) {
+    return {
+      ok: false,
+      why: `${c.label}: the estimated win chance does not beat the probability the posted price implies — negative edge, never recommended.`,
+    };
   }
 
   if (g.tier === "insufficient") {
