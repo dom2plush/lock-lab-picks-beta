@@ -1449,7 +1449,13 @@ export async function runLockLabFormula(
   extra: ExtraOffers = { alternates: [], props: [] },
   previousOdds?: GameOdds | null,
 ): Promise<EngineOutput> {
-  const candidates = buildCandidates(game, odds, extra);
+  // FAIR LINE FIRST. The baseline model and its 50 simulated games are built
+  // before a single sportsbook price is shopped, so no alternate can ever set
+  // the projection it is then judged against.
+  const fair = await buildFairModel(game, odds);
+  const projection = simulateGame(game, fair);
+
+  const candidates = buildCandidates(game, odds, extra, projection);
   const byKey = new Map(candidates.map((c) => [c.key, c]));
 
   if (!candidates.length) {
@@ -1460,11 +1466,23 @@ export async function runLockLabFormula(
   const altNotes = summariseAltValue(
     candidates.map((c) => c.alt).filter((a): a is AltEvaluation => Boolean(a)),
   );
+  // Market-context reads are commentary only: they never touch the fair line.
   const context = await readMarketContext(game, market.marketMargin);
   const handicap = await runHandicapPass(
     game,
     candidates,
-    [...market.notes, ...context.notes, ...altNotes],
+    [
+      "LOCK LAB FAIR LINE (built before any line shopping — this is the model, everything below is reference):",
+      ...projection.notes,
+      "",
+      "MARKET READ (reference only):",
+      ...market.notes,
+      "",
+      "MARKET CONTEXT — SECONDARY SIGNALS ONLY. These may never move the fair line above:",
+      ...context.notes,
+      "",
+      ...altNotes,
+    ],
     coverageNotes(candidates, Boolean(previousOdds)),
   );
 
