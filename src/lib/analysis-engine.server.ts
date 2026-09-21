@@ -463,31 +463,67 @@ function buildCandidates(
 }
 
 /**
- * Connects every candidate's price to a probability estimate.
+ * ONE probability source for the whole board.
  *
- * Core two-way markets are estimated from the vig-free market read; alternates
- * from the modelled curve at that exact number (key-number mass included); props
- * from the posted two-way price when the book prices both sides. Nothing is
- * invented: a selection with no supportable estimate is graded as unrankable and
- * can never be a top bet on payout alone.
+ * Every spread, total and moneyline price — standard or alternate, either side
+ * — is graded against the same 50 simulated final scores produced from Lock
+ * Lab's fair line. An alternate therefore cannot be "better" simply because it
+ * is further from the market: its probability and the standard line's come
+ * from the identical distribution, so the only thing that can separate them is
+ * the price.
+ *
+ * Player props have no score-level model, so they are estimated from the
+ * posted two-way price. That is conservative and never invented, and they are
+ * held to the same edge and price rules as everything else.
  */
-function gradeBoard(candidates: Candidate[], game: GameRow) {
+function gradeBoard(candidates: Candidate[], game: GameRow, projection: GameProjection) {
   const pairFair = (a: number, b: number) => devig(a, b);
+  const sideOf = (team: string): "home" | "away" | null =>
+    team === game.home_team ? "home" : team === game.away_team ? "away" : null;
+
+  /** Simulated probability for any spread/total/moneyline selection. */
+  const simulated = (c: Candidate): number | null => {
+    const market = c.market.toLowerCase();
+    if (market.includes("spread")) {
+      const side = sideOf(c.selection);
+      return side && c.point != null ? projection.spreadProb(side, c.point) : null;
+    }
+    if (market.includes("total") && !market.includes("team_total")) {
+      const side = c.selection === "Over" || c.selection === "Under" ? c.selection : null;
+      return side && c.point != null ? projection.totalProb(side, c.point) : null;
+    }
+    if (market === "moneyline" || market === "h2h") {
+      const side = sideOf(c.selection);
+      return side ? projection.moneylineProb(side) : null;
+    }
+    return null;
+  };
+
+  // Confidence in the simulated numbers is the model's own confidence: with no
+  // stored results behind the fair line, the band stays wide and almost
+  // nothing clears it — which is the correct, disciplined outcome.
+  const simEvidence = 0.35 + 0.4 * projection.confidence;
 
   for (const c of candidates) {
     let modelProb: number | null = null;
     let distance = 0;
     let evidence = 0.4;
 
-    if (c.group === "core") {
+    const fromSim = c.group === "prop" ? null : simulated(c);
+
+    if (fromSim != null) {
+      modelProb = fromSim;
+      evidence = simEvidence;
+      if (c.alt) distance = Math.abs(c.alt.point - c.alt.standardPoint);
+    } else if (c.group === "core") {
       const opposite = candidates.find((x) => x.key === CORE_OPPOSITE[c.key]);
+      // No simulated distribution available: fall back to the vig-free market
+      // read, which by construction carries no edge of its own.
       modelProb = opposite ? pairFair(c.price, opposite.price).a : impliedProbability(c.price);
-      // A two-sided posted market is the most reliable evidence on the board.
-      evidence = opposite ? 0.65 : 0.35;
+      evidence = opposite ? 0.5 : 0.3;
     } else if (c.alt) {
-      modelProb = c.alt.winProb;
+      modelProb = null;
       distance = Math.abs(c.alt.point - c.alt.standardPoint);
-      evidence = Math.max(0.15, 0.45 + (c.alt.worthIt ? 0.2 : -0.1) - 0.03 * distance);
     } else if (c.group === "prop") {
       const opposite = findOpposite(c, candidates, game);
       // One-sided prop markets (anytime / first TD) post no mirror price, so the
