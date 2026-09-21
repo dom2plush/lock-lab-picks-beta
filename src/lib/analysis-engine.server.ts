@@ -464,7 +464,7 @@ function buildCandidates(
     });
   });
 
-  gradeBoard(out, game, projection);
+  gradeBoard(out, game, projection, players);
   return out;
 }
 
@@ -478,11 +478,19 @@ function buildCandidates(
  * from the identical distribution, so the only thing that can separate them is
  * the price.
  *
- * Player props have no score-level model, so they are estimated from the
- * posted two-way price. That is conservative and never invented, and they are
- * held to the same edge and price rules as everything else.
+ * Player props are graded inside those SAME 50 simulated games: each run also
+ * produces a stat line for every posted player, correlated with that run's
+ * team score and game script, so a prop's probability is the count of runs it
+ * cleared. Where a player has no usable simulated stat the posted two-way
+ * price is used instead — conservative, never invented — and the same edge and
+ * price rules apply either way.
  */
-function gradeBoard(candidates: Candidate[], game: GameRow, projection: GameProjection) {
+function gradeBoard(
+  candidates: Candidate[],
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+) {
   const pairFair = (a: number, b: number) => devig(a, b);
   const sideOf = (team: string): "home" | "away" | null =>
     team === game.home_team ? "home" : team === game.away_team ? "away" : null;
