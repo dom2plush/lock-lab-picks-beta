@@ -76,11 +76,10 @@ const PROP_BUMP_LIMIT: Record<string, number> = {
   player_carries: 2,
 };
 
-/** Median posted point for a player/market ladder. */
+/** The player's main number: the median posted rung, always a real posted line. */
 function medianPoint(points: number[]): number {
   const sorted = [...points].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return sorted[Math.floor((sorted.length - 1) / 2)]!;
 }
 
 /**
