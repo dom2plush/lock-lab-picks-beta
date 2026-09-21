@@ -1761,6 +1761,39 @@ export async function runLockLabFormula(
     selectedIdeas.add(betIdeaKey(c));
   }
 
+  // Last resort: when the board has two legitimate posted markets but the
+  // value gates left a slot open, the strongest remaining distinct market
+  // still posts — its light says exactly how thin the edge is rather than
+  // the board showing NO BET with real prices available.
+  if (shortlist.length < 2) {
+    for (const c of candidates
+      .filter(
+        (c) =>
+          c.group !== "prop" &&
+          c.price >= MIN_RECOMMENDED_PRICE &&
+          c.grade?.modelProb != null &&
+          !altTooFar(c) &&
+          !selectedIds.has(c.key) &&
+          !selectedIdeas.has(betIdeaKey(c)),
+      )
+      .sort((a, b) => candidateRank(b) - candidateRank(a))) {
+      if (shortlist.length >= 2) break;
+      shortlist.push({
+        c,
+        entry: {
+          key: c.key,
+          badge: softBadge(c),
+          reason:
+            "The strongest remaining posted market on this board; the light reflects how thin the modelled edge is.",
+          standardKey: c.standardKey ?? null,
+          standardComparison: c.alt ? altPreferenceReason(c) : null,
+        },
+      });
+      selectedIds.add(c.key);
+      selectedIdeas.add(betIdeaKey(c));
+    }
+  }
+
   for (const { c, entry } of shortlist.slice(0, 2)) {
     // An alternate line always shows the standard number it beat, quoted from
     // the same snapshot, so the standard-vs-alternate decision is visible.
