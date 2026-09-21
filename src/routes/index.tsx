@@ -79,14 +79,18 @@ function AnalyzePage() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return games;
-    const words = term.split(/\s+|vs\.?|@|at/).filter((w) => w.length > 2);
+    const words = term
+      .split(/[^a-z0-9]+/i)
+      .filter((word) => word.length > 1 && !["vs", "at", "and", "the"].includes(word));
+    if (words.length === 0) return games;
     return games.filter((game) => {
       const haystack = `${game.home_team} ${game.away_team} ${game.home_team_short ?? ""} ${
         game.away_team_short ?? ""
       }`.toLowerCase();
-      return words.length > 0 ? words.some((word) => haystack.includes(word)) : true;
+      return words.some((word) => haystack.includes(word));
     });
   }, [games, search]);
+
 
   const selected = filtered.find((g) => g.id === selectedId) ?? games.find((g) => g.id === selectedId);
 
