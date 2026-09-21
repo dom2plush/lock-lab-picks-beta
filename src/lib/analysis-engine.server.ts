@@ -556,11 +556,11 @@ function fillPlayerProps(
 ): void {
   const pool = candidates
     .filter((c) => c.group === "prop" && !used.has(c.key))
+    // Touchdown markets are held back for the fun bet where possible.
     .sort(
       (a, b) =>
-        propMarketPriority(a.market) - propMarketPriority(b.market) === 0
-          ? candidateRank(b) - candidateRank(a)
-          : propMarketPriority(b.market) - propMarketPriority(a.market),
+        (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
+        candidateRank(b) - candidateRank(a),
     );
   for (const c of pool) {
     if (playerProps.length >= minimum) break;
