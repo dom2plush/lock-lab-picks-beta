@@ -1743,8 +1743,10 @@ export async function runLockLabFormula(
       c,
       entry: {
         key: c.key,
-        badge: "red",
-        reason: "This is the next-best posted option, but its estimated edge remains inside the model's uncertainty band.",
+        // A smaller edge than pick #1 is still a legitimate pick; the light
+        // reflects the size of that edge rather than blanket-failing it.
+        badge: softBadge(c),
+        reason: "A distinct posted market whose simulated win rate still beats the price implied by the odds.",
         standardKey: c.standardKey ?? null,
         standardComparison: c.alt ? altPreferenceReason(c) : null,
       },
