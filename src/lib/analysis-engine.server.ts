@@ -438,7 +438,9 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
       evidence = Math.max(0.15, 0.45 + (c.alt.worthIt ? 0.2 : -0.1) - 0.03 * distance);
     } else if (c.group === "prop") {
       const opposite = findOpposite(c, candidates, game);
-      modelProb = opposite ? pairFair(c.price, opposite.price).a : null;
+      // One-sided prop markets (anytime / first TD) post no mirror price, so the
+      // posted price itself is the estimate — conservative, never invented.
+      modelProb = opposite ? pairFair(c.price, opposite.price).a : impliedProbability(c.price);
       evidence = opposite ? 0.5 : 0.25;
     }
 
