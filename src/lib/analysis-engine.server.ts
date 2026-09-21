@@ -62,6 +62,51 @@ const PROP_MARKET_LABEL: Record<string, string> = {
   player_anytime_td: "Anytime TD",
 };
 
+/**
+ * How far a posted prop rung may sit from that player's main number before the
+ * board refuses to consider it. Large bumps manufacture value out of variance,
+ * so they are never evaluated, even when the sportsbook posts them.
+ */
+const PROP_BUMP_LIMIT: Record<string, number> = {
+  player_pass_yds: 25,
+  player_rush_yds: 10,
+  player_reception_yds: 10,
+  player_receptions: 1,
+  player_rush_attempts: 2,
+  player_carries: 2,
+};
+
+/** Median posted point for a player/market ladder. */
+function medianPoint(points: number[]): number {
+  const sorted = [...points].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Drops prop rungs that sit further from the player's main number than the
+ * allowed bump. Markets without a numeric line (touchdown scorers) pass
+ * through untouched.
+ */
+export function limitPropBumps(offers: MarketOffer[]): MarketOffer[] {
+  const ladders = new Map<string, number[]>();
+  for (const offer of offers) {
+    const limit = PROP_BUMP_LIMIT[offer.market];
+    if (limit == null || offer.point == null || !offer.player) continue;
+    const key = `${offer.market}|${offer.player}`;
+    ladders.set(key, [...(ladders.get(key) ?? []), offer.point]);
+  }
+  const base = new Map<string, number>();
+  for (const [key, points] of ladders) base.set(key, medianPoint(points));
+
+  return offers.filter((offer) => {
+    const limit = PROP_BUMP_LIMIT[offer.market];
+    if (limit == null || offer.point == null || !offer.player) return true;
+    const main = base.get(`${offer.market}|${offer.player}`);
+    return main == null || Math.abs(offer.point - main) <= limit;
+  });
+}
+
 const ALT_MARKET_LABEL: Record<string, string> = {
   alternate_spreads: "Alternate spread",
   alternate_totals: "Alternate total",
