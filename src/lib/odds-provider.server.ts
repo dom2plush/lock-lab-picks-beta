@@ -36,7 +36,7 @@ const PROP_MARKETS = [
   "player_rush_yds",
   "player_reception_yds",
   "player_receptions",
-  "player_first_td",
+  "player_1st_td",
   "player_anytime_td",
 ];
 
@@ -309,16 +309,20 @@ export async function fetchEventMarkets(
 
   // Alternate markets are isolated by key. One unavailable derivative must not
   // erase a spread or total ladder that the provider can return independently.
-  const [altResults, props] = await Promise.all([
+  // Alternate and player-prop markets are both isolated by key. One
+  // unavailable market must never erase the others the provider can serve.
+  const [altResults, propResults] = await Promise.all([
     Promise.all(
       ALT_MARKETS.map(async (market) => ({ market, event: await load([market]) })),
     ),
-    load(PROP_MARKETS),
+    Promise.all(
+      PROP_MARKETS.map(async (market) => ({ market, event: await load([market]) })),
+    ),
   ]);
   const alternates = altResults.flatMap(({ market, event }) => collect(event, [market]));
   return {
     alternates,
-    props: collect(props, PROP_MARKETS),
+    props: propResults.flatMap(({ market, event }) => collect(event, [market])),
     capturedAt,
     coverage,
   };

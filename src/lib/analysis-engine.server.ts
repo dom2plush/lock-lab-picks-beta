@@ -58,7 +58,7 @@ const PROP_MARKET_LABEL: Record<string, string> = {
   player_rush_yds: "Rushing yards",
   player_reception_yds: "Receiving yards",
   player_receptions: "Receptions",
-  player_first_td: "First TD scorer",
+  player_1st_td: "First TD scorer",
   player_anytime_td: "Anytime TD",
 };
 
@@ -536,8 +536,24 @@ function softBadge(c: Candidate): Badge {
   return "red";
 }
 
+/**
+ * Two posted prices belong to the same betting idea when they express the same
+ * opinion: any rung of the same total direction, or the spread and moneyline on
+ * the same team. The board may only publish one bet per idea, so the Top 2 are
+ * always two genuinely different opportunities.
+ */
+function betIdeaKey(c: Candidate): string {
+  const market = c.market.toLowerCase();
+  const side = `${c.player ?? ""}|${String(c.selection).toLowerCase()}`;
+  if (market.includes("total")) return `total:${side}`;
+  if (market.includes("spread") || market.includes("moneyline") || market === "h2h") {
+    return `side:${side}`;
+  }
+  return `${market.replace("alternate_", "")}:${side}`;
+}
+
 function propMarketPriority(market: string): number {
-  return market === "player_first_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
+  return market === "player_1st_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
 }
 
 type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
@@ -1239,26 +1255,25 @@ export async function runLockLabFormula(
     const measurable = candidates
       .filter((c) => eligibleForTop(c).ok)
       .sort((a, b) => candidateRank(b) - candidateRank(a));
-    const distinct = measurable.filter(
-      (c, index, all) =>
-        all.findIndex(
-          (other) =>
-            other.marketLabel === c.marketLabel &&
-            (other.player ?? other.selection) === (c.player ?? c.selection),
-        ) === index,
-    );
+    const seenIdeas = new Set<string>();
+    const distinct = measurable.filter((c) => {
+      const idea = betIdeaKey(c);
+      if (seenIdeas.has(idea)) return false;
+      seenIdeas.add(idea);
+      return true;
+    });
     const included = new Set(distinct.map((c) => c.key));
-    const includedMarkets = new Set(distinct.map((c) => c.marketLabel));
     const ranked = [
       ...distinct,
       ...candidates
-        .filter(
-          (c) =>
-            c.group !== "prop" &&
-            !included.has(c.key) &&
-            !includedMarkets.has(c.marketLabel),
-        )
-        .sort((a, b) => candidateRank(b) - candidateRank(a)),
+        .filter((c) => c.group !== "prop" && !included.has(c.key))
+        .sort((a, b) => candidateRank(b) - candidateRank(a))
+        .filter((c) => {
+          const idea = betIdeaKey(c);
+          if (seenIdeas.has(idea)) return false;
+          seenIdeas.add(idea);
+          return true;
+        }),
     ];
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
@@ -1342,7 +1357,7 @@ export async function runLockLabFormula(
       continue;
     }
     // A second pick in the same market/player as the first is not distinct.
-    if (shortlist.some((s) => s.c.marketLabel === c.marketLabel && (s.c.player ?? s.c.selection) === (c.player ?? c.selection))) {
+    if (shortlist.some((s) => betIdeaKey(s.c) === betIdeaKey(c))) {
       continue;
     }
     used.add(c.key);
@@ -1362,7 +1377,7 @@ export async function runLockLabFormula(
     .filter((c) => eligibleForTop(c).ok)
     .sort((a, b) => candidateRank(b) - candidateRank(a));
   for (const c of sweptAlternates.slice(0, 2)) {
-    if (shortlist.some((s) => (s.c.player ?? s.c.selection) === (c.player ?? c.selection) && candidateRank(s.c) >= candidateRank(c))) {
+    if (shortlist.some((s) => betIdeaKey(s.c) === betIdeaKey(c) && candidateRank(s.c) >= candidateRank(c))) {
       continue;
     }
     const reason = altPreferenceReason(c);
@@ -1417,7 +1432,7 @@ export async function runLockLabFormula(
   // both survive, only the sharper of the two is posted.
   const seenSelection = new Set<string>();
   for (let i = 0; i < shortlist.length; i += 1) {
-    const id = String(shortlist[i]!.c.player ?? shortlist[i]!.c.selection);
+    const id = betIdeaKey(shortlist[i]!.c);
     if (seenSelection.has(id)) {
       shortlist.splice(i, 1);
       i -= 1;
@@ -1455,10 +1470,16 @@ export async function runLockLabFormula(
   // standard/alternate candidates and mark them RED. This ranks the live board
   // without inventing an edge, line, price, book or timestamp.
   const selectedIds = new Set(shortlist.map(({ c }) => c.key));
-  const selectedMarkets = new Set(shortlist.map(({ c }) => c.marketLabel));
+  const selectedIdeas = new Set(shortlist.map(({ c }) => betIdeaKey(c)));
   const remaining = candidates
-    .filter((c) => c.group !== "prop" && !selectedIds.has(c.key) && !selectedMarkets.has(c.marketLabel))
-    .sort((a, b) => candidateRank(b) - candidateRank(a));
+    .filter((c) => c.group !== "prop" && !selectedIds.has(c.key) && !selectedIdeas.has(betIdeaKey(c)))
+    .sort((a, b) => candidateRank(b) - candidateRank(a))
+    .filter((c) => {
+      const idea = betIdeaKey(c);
+      if (selectedIdeas.has(idea)) return false;
+      selectedIdeas.add(idea);
+      return true;
+    });
   for (const c of remaining) {
     if (shortlist.length >= 2) break;
     shortlist.push({
@@ -1471,7 +1492,7 @@ export async function runLockLabFormula(
         standardComparison: c.alt ? altPreferenceReason(c) : null,
       },
     });
-    selectedMarkets.add(c.marketLabel);
+    selectedIdeas.add(betIdeaKey(c));
   }
 
   for (const { c, entry } of shortlist.slice(0, 2)) {
@@ -1523,7 +1544,7 @@ export async function runLockLabFormula(
   const funEntries = [...(handicap.funBets ?? [])].sort((a, b) => {
     const marketA = byKey.get(a.key)?.market ?? "";
     const marketB = byKey.get(b.key)?.market ?? "";
-    const priority = (marketName: string) => marketName === "player_first_td" ? 0 : marketName === "player_anytime_td" ? 1 : 2;
+    const priority = (marketName: string) => marketName === "player_1st_td" ? 0 : marketName === "player_anytime_td" ? 1 : 2;
     return priority(marketA) - priority(marketB);
   });
   for (const entry of funEntries) {
