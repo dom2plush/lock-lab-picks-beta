@@ -83,6 +83,12 @@ export type PickSource = {
   bookKey?: string | null;
   /** UTC timestamp of the odds snapshot this pick was priced from. */
   capturedAt?: string | null;
+  /** Internal: the graded board selection this pick was published from. */
+  candidateKey?: string | null;
+  /** Number of simulated games this pick was settled against (always 50). */
+  simRuns?: number | null;
+  /** Run numbers (1-based) this pick won in those simulated games. */
+  simHits?: number[] | null;
 };
 
 export type PickBet = PickSource & {

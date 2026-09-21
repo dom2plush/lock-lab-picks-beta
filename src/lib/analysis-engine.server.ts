@@ -44,6 +44,8 @@ import { readMarketContext } from "./market-context.server";
 import { buildFairModel } from "./fair-model.server";
 import type { GameProjection } from "./game-sim.server";
 import { simulateGame } from "./game-sim.server";
+import type { PlayerProjection } from "./player-sim.server";
+import { simulatePlayers } from "./player-sim.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -232,6 +234,7 @@ function buildCandidates(
   odds: GameOdds,
   extra: ExtraOffers,
   projection: GameProjection,
+  players: PlayerProjection,
 ): Candidate[] {
   const out: Candidate[] = [];
   const book = odds.bookmaker ?? "consensus";
@@ -461,7 +464,7 @@ function buildCandidates(
     });
   });
 
-  gradeBoard(out, game, projection);
+  gradeBoard(out, game, projection, players);
   return out;
 }
 
@@ -475,11 +478,19 @@ function buildCandidates(
  * from the identical distribution, so the only thing that can separate them is
  * the price.
  *
- * Player props have no score-level model, so they are estimated from the
- * posted two-way price. That is conservative and never invented, and they are
- * held to the same edge and price rules as everything else.
+ * Player props are graded inside those SAME 50 simulated games: each run also
+ * produces a stat line for every posted player, correlated with that run's
+ * team score and game script, so a prop's probability is the count of runs it
+ * cleared. Where a player has no usable simulated stat the posted two-way
+ * price is used instead — conservative, never invented — and the same edge and
+ * price rules apply either way.
  */
-function gradeBoard(candidates: Candidate[], game: GameRow, projection: GameProjection) {
+function gradeBoard(
+  candidates: Candidate[],
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+) {
   const pairFair = (a: number, b: number) => devig(a, b);
   const sideOf = (team: string): "home" | "away" | null =>
     team === game.home_team ? "home" : team === game.away_team ? "away" : null;
@@ -512,7 +523,15 @@ function gradeBoard(candidates: Candidate[], game: GameRow, projection: GameProj
     let distance = 0;
     let evidence = 0.4;
 
-    const fromSim = c.group === "prop" ? null : simulated(c);
+    const fromSim =
+      c.group === "prop"
+        ? players.probability({
+            market: c.market,
+            player: c.player,
+            selection: c.selection,
+            point: c.point,
+          })
+        : simulated(c);
 
     if (fromSim != null) {
       modelProb = fromSim;
@@ -920,6 +939,70 @@ function pickSource(c: Candidate) {
     book: c.book,
     bookKey: c.bookKey,
     capturedAt: c.capturedAt,
+    // Ties the published pick back to the graded selection so it can be
+    // settled against the same 50 simulated games it was chosen from.
+    candidateKey: c.key,
+  };
+}
+
+/**
+ * Settles every published pick against the 50 simulated games: game picks on
+ * the simulated final scores, player props and the fun bet on the player stat
+ * lines drawn inside those same games. A pick with no simulated settlement is
+ * left untouched and falls back to the existing price-based settlement.
+ */
+function attachSimulatedOutcomes(
+  output: EngineOutput,
+  candidates: Candidate[],
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+): EngineOutput {
+  const byKey = new Map(candidates.map((c) => [c.key, c]));
+  const sideOf = (team: string): "home" | "away" | null =>
+    team === game.home_team ? "home" : team === game.away_team ? "away" : null;
+
+  const outcomesFor = (c: Candidate): boolean[] | null => {
+    if (c.group === "prop") {
+      return players.outcomes({
+        market: c.market,
+        player: c.player,
+        selection: c.selection,
+        point: c.point,
+      });
+    }
+    const market = c.market.toLowerCase();
+    if (market.includes("spread")) {
+      const side = sideOf(c.selection);
+      return side && c.point != null ? projection.spreadOutcomes(side, c.point) : null;
+    }
+    if (market.includes("total") && !market.includes("team_total")) {
+      const side = c.selection === "Over" || c.selection === "Under" ? c.selection : null;
+      return side && c.point != null ? projection.totalOutcomes(side, c.point) : null;
+    }
+    if (market === "moneyline" || market === "h2h") {
+      const side = sideOf(c.selection);
+      return side ? projection.moneylineOutcomes(side) : null;
+    }
+    return null;
+  };
+
+  const settle = <T extends { candidateKey?: string | null }>(pick: T): T => {
+    const c = pick.candidateKey ? byKey.get(pick.candidateKey) : undefined;
+    const result = c ? outcomesFor(c) : null;
+    if (!result || !result.length) return pick;
+    const hits: number[] = [];
+    result.forEach((won, index) => {
+      if (won) hits.push(index + 1);
+    });
+    return { ...pick, simRuns: result.length, simHits: hits };
+  };
+
+  return {
+    ...output,
+    topBets: output.topBets.map(settle),
+    playerProps: output.playerProps.map(settle),
+    funBets: output.funBets.map(settle),
   };
 }
 
@@ -1469,7 +1552,10 @@ export async function runLockLabFormula(
   const fair = await buildFairModel(game, odds);
   const projection = simulateGame(game, fair);
 
-  const candidates = buildCandidates(game, odds, extra, projection);
+  // Player stat lines are drawn inside those same 50 simulated games, so a
+  // prop's probability is a count of simulated games, not a coin flip.
+  const players = simulatePlayers(game, projection, extra.props);
+  const candidates = buildCandidates(game, odds, extra, projection, players);
   const byKey = new Map(candidates.map((c) => [c.key, c]));
 
   if (!candidates.length) {
@@ -1488,6 +1574,7 @@ export async function runLockLabFormula(
     [
       "LOCK LAB FAIR LINE (built before any line shopping — this is the model, everything below is reference):",
       ...projection.notes,
+      ...players.notes,
       "",
       "MARKET READ (reference only):",
       ...market.notes,
@@ -1570,17 +1657,23 @@ export async function runLockLabFormula(
     const fallbackFun: FunBet[] = [];
     fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
     fillFunBet(candidates, usedFallback, fallbackFun, decisions);
-    return {
-      topBets,
-      funBets: fallbackFun,
-      playerProps: fallbackProps,
-      notes: {
-        propsAvailable: extra.props.length > 0,
-        altMarketsAvailable: extra.alternates.length > 0,
-        verdict: null,
+    return attachSimulatedOutcomes(
+      {
+        topBets,
+        funBets: fallbackFun,
+        playerProps: fallbackProps,
+        notes: {
+          propsAvailable: extra.props.length > 0,
+          altMarketsAvailable: extra.alternates.length > 0,
+          verdict: null,
+        },
+        candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
       },
-      candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
-    };
+      candidates,
+      game,
+      projection,
+      players,
+    );
   }
 
   const used = new Set<string>();
@@ -1911,17 +2004,23 @@ export async function runLockLabFormula(
       ? `The live board did not contain two distinct price records. ${rejected[0]}`
       : clean(handicap.verdict, "The live board did not contain two distinct price records.");
 
-  return {
-    topBets,
-    funBets,
-    playerProps,
-    notes: {
-      propsAvailable: extra.props.length > 0,
-      altMarketsAvailable: extra.alternates.length > 0,
-      verdict,
+  return attachSimulatedOutcomes(
+    {
+      topBets,
+      funBets,
+      playerProps,
+      notes: {
+        propsAvailable: extra.props.length > 0,
+        altMarketsAvailable: extra.alternates.length > 0,
+        verdict,
+      },
+      candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
     },
-    candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
-  };
+    candidates,
+    game,
+    projection,
+    players,
+  );
 }
 
 export type StoredAnalysis = Pick<
