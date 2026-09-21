@@ -543,19 +543,41 @@ function gradeBoard(candidates: Candidate[], game: GameRow, projection: GameProj
  */
 const MIN_RECOMMENDED_PRICE = -180;
 
-/** Edge size Lock Lab treats as a properly playable number rather than a sliver. */
-const PREFERRED_EDGE = 0.02;
+/**
+ * THE edge thresholds. Every section — Top 2, props, fun bet, fallback fills —
+ * reads these and nothing else, so a selection can never be playable in one
+ * part of the board and a pass in another.
+ */
+/** Edge Lock Lab is aiming for on a published bet. */
+const TARGET_EDGE = 0.01;
+/** Absolute floor. Below this the edge is indistinguishable from rounding. */
+const MIN_EDGE = 0.005;
+
+/**
+ * How far an alternate line may sit from the sportsbook's standard number.
+ * Beyond this the price stops being a line-shopping decision and becomes a
+ * different bet entirely, which is how artificial value gets manufactured.
+ */
+const MAX_ALT_DISTANCE: Record<string, number> = { spread: 3, total: 4 };
 
 /**
  * Hard value floor. A selection may only reach the board when Lock Lab's own
- * estimate beats the probability the posted price implies. Negative-edge
- * selections are never published, on any path, at any price.
+ * estimate beats the probability the posted price implies by more than a
+ * rounding error. Negative-edge selections are never published, on any path,
+ * at any price, in any section.
  */
 function hasPositiveEdge(c: Candidate): boolean {
   const g = c.grade;
   if (!g || g.modelProb == null || g.edge == null) return false;
   if (g.ev != null && g.ev <= 0) return false;
-  return g.edge > 0;
+  return g.edge >= MIN_EDGE;
+}
+
+/** True when an alternate rung sits further from the standard line than allowed. */
+function altTooFar(c: Candidate): boolean {
+  if (!c.alt) return false;
+  const limit = MAX_ALT_DISTANCE[c.alt.market] ?? 3;
+  return Math.abs(c.alt.point - c.alt.standardPoint) > limit;
 }
 
 /**
