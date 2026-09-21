@@ -540,6 +540,9 @@ function softBadge(c: Candidate): Badge {
   if (!g) return "red";
   if (g.tier === "strong") return "green";
   if (g.edge != null && g.edge >= 0.005) return "yellow";
+  // Red is reserved for genuinely coin-flip-or-worse prices; a selection the
+  // model still projects as the favourite side stays yellow.
+  if (g.modelProb != null && g.modelProb >= 0.5) return "yellow";
   return "red";
 }
 
@@ -1612,6 +1615,8 @@ export async function runLockLabFormula(
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     if (!eligibleForTop(c).ok) continue;
+    // A prop the model expects to miss is left out; the fill pass replaces it.
+    if (propBadge(c) === "red") continue;
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
