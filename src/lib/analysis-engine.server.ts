@@ -44,6 +44,8 @@ import { readMarketContext } from "./market-context.server";
 import { buildFairModel } from "./fair-model.server";
 import type { GameProjection } from "./game-sim.server";
 import { simulateGame } from "./game-sim.server";
+import type { PlayerProjection } from "./player-sim.server";
+import { simulatePlayers } from "./player-sim.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -232,6 +234,7 @@ function buildCandidates(
   odds: GameOdds,
   extra: ExtraOffers,
   projection: GameProjection,
+  players: PlayerProjection,
 ): Candidate[] {
   const out: Candidate[] = [];
   const book = odds.bookmaker ?? "consensus";
