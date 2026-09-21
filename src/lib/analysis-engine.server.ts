@@ -62,6 +62,50 @@ const PROP_MARKET_LABEL: Record<string, string> = {
   player_anytime_td: "Anytime TD",
 };
 
+/**
+ * How far a posted prop rung may sit from that player's main number before the
+ * board refuses to consider it. Large bumps manufacture value out of variance,
+ * so they are never evaluated, even when the sportsbook posts them.
+ */
+const PROP_BUMP_LIMIT: Record<string, number> = {
+  player_pass_yds: 25,
+  player_rush_yds: 10,
+  player_reception_yds: 10,
+  player_receptions: 1,
+  player_rush_attempts: 2,
+  player_carries: 2,
+};
+
+/** The player's main number: the median posted rung, always a real posted line. */
+function medianPoint(points: number[]): number {
+  const sorted = [...points].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)]!;
+}
+
+/**
+ * Drops prop rungs that sit further from the player's main number than the
+ * allowed bump. Markets without a numeric line (touchdown scorers) pass
+ * through untouched.
+ */
+export function limitPropBumps(offers: MarketOffer[]): MarketOffer[] {
+  const ladders = new Map<string, number[]>();
+  for (const offer of offers) {
+    const limit = PROP_BUMP_LIMIT[offer.market];
+    if (limit == null || offer.point == null || !offer.player) continue;
+    const key = `${offer.market}|${offer.player}`;
+    ladders.set(key, [...(ladders.get(key) ?? []), offer.point]);
+  }
+  const base = new Map<string, number>();
+  for (const [key, points] of ladders) base.set(key, medianPoint(points));
+
+  return offers.filter((offer) => {
+    const limit = PROP_BUMP_LIMIT[offer.market];
+    if (limit == null || offer.point == null || !offer.player) return true;
+    const main = base.get(`${offer.market}|${offer.player}`);
+    return main == null || Math.abs(offer.point - main) <= limit;
+  });
+}
+
 const ALT_MARKET_LABEL: Record<string, string> = {
   alternate_spreads: "Alternate spread",
   alternate_totals: "Alternate total",
@@ -370,7 +414,7 @@ function buildCandidates(
   let propCount = 0;
   // Touchdown-scorer markets are read first so the per-game prop budget can
   // never cut them off before the fun bet gets a look at them.
-  const propOffers = [...extra.props].sort(
+  const propOffers = limitPropBumps(extra.props).sort(
     (a, b) => propMarketPriority(a.market) - propMarketPriority(b.market),
   );
   propOffers.forEach((offer, index) => {
@@ -595,30 +639,33 @@ function propMarketPriority(market: string): number {
 type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
 
 /**
- * Tops the prop section up to the requested minimum from real posted prices the
- * board actually ranks. Nothing is invented: when the sportsbook supplied no
- * further verified prop, the section simply stays short.
+ * Adds further props ONLY where the board's own probability beats the posted
+ * price. Nothing is invented and nothing is padded: a game whose posted props
+ * carry no measurable value shows fewer props, or none at all.
  */
 function fillPlayerProps(
   candidates: Candidate[],
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  minimum = 2,
+  maximum = 3,
 ): void {
-  const rankProps = (list: Candidate[]) =>
-    [...list].sort(
+  const pool = candidates
+    .filter(
+      (c) =>
+        c.group === "prop" &&
+        !used.has(c.key) &&
+        propBadge(c) !== "red" &&
+        (c.grade?.edge ?? 0) > 0,
+    )
+    .sort(
       (a, b) =>
         // Touchdown markets are held back for the fun bet where possible.
         (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
         candidateRank(b) - candidateRank(a),
     );
-  const available = candidates.filter((c) => c.group === "prop" && !used.has(c.key));
-  // Props the model actually expects to hit come first; weaker ones only fill in.
-  const confident = rankProps(available.filter((c) => propBadge(c) !== "red"));
-  const pool = [...confident, ...rankProps(available.filter((c) => propBadge(c) === "red"))];
   for (const c of pool) {
-    if (playerProps.length >= minimum) break;
+    if (playerProps.length >= maximum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
     const badge = propBadge(c);
     used.add(c.key);
@@ -646,7 +693,8 @@ function fillFunBet(
 ): void {
   if (funBets.length) return;
   const pool = candidates
-    .filter((c) => c.group === "prop" && !used.has(c.key))
+    // The fun bet is always a scoring play: First TD first, then Anytime TD.
+    .filter((c) => c.group === "prop" && !used.has(c.key) && propMarketPriority(c.market) < 2)
     .sort(
       (a, b) =>
         propMarketPriority(a.market) - propMarketPriority(b.market) ||
@@ -1589,6 +1637,8 @@ export async function runLockLabFormula(
   for (const entry of funEntries) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key) || c.group !== "prop") continue;
+    // Fun bet is a touchdown-scorer market only.
+    if (propMarketPriority(c.market) === 2) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     used.add(c.key);
     funBets.push({

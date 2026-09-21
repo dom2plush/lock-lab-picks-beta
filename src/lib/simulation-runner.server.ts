@@ -11,6 +11,7 @@ import type { AnalysisRow, GameRow } from "./lock-lab-types";
 import {
   SIMULATION_ENGINE_VERSION,
   SIMULATION_RUNS,
+  americanToProbability,
   inputFingerprint,
   picksToSimulate,
   runSimulations,
@@ -89,6 +90,40 @@ export async function ensureSimulationBatch(
   return generateBatch(game, fingerprint, stored.analysis);
 }
 
+
+/**
+ * Replaces every pick's write-up with the numbers the 50 runs actually
+ * produced: simulated hit rate, the hit count, the probability the posted
+ * price implies, and the resulting edge. No generic status text survives.
+ */
+function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggregate): AnalysisRow {
+  const byKey = new Map(aggregate.picks.map((pick) => [pick.key, pick]));
+  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const describe = <T extends { key: string; odds?: string | null; reason: string }>(pick: T): T => {
+    const simulated = byKey.get(pick.key);
+    if (!simulated) return pick;
+    const implied = americanToProbability(pick.odds ?? null);
+    const edge = implied != null ? simulated.hitRate - implied : null;
+    const parts = [
+      `Simulated hit rate ${pct(simulated.hitRate)} (${simulated.wins} of ${aggregate.runs} Lock Lab runs)`,
+    ];
+    if (implied != null && edge != null) {
+      parts.push(
+        `price implies ${pct(implied)}`,
+        `${edge >= 0 ? "+" : ""}${(edge * 100).toFixed(1)}% edge`,
+      );
+    }
+    return { ...pick, reason: `${parts.join(" · ")}.` };
+  };
+
+  return {
+    ...analysis,
+    top_bets: (analysis.top_bets ?? []).map(describe),
+    player_props: (analysis.player_props ?? []).map(describe),
+    fun_bets: (analysis.fun_bets ?? []).map(describe),
+  };
+}
+
 /** One handicap read + 50 deterministic settlements, persisted together. */
 export async function generateBatch(
   game: GameRow,
@@ -107,6 +142,17 @@ export async function generateBatch(
     picksToSimulate(analysis),
     SIMULATION_RUNS,
   );
+
+  const described = withSimulatedReasons(analysis, aggregate);
+  const updated = await supabaseAdmin
+    .from("game_analyses")
+    .update({
+      top_bets: described.top_bets as unknown as never,
+      player_props: described.player_props as unknown as never,
+      fun_bets: described.fun_bets as unknown as never,
+    } as never)
+    .eq("id", analysis.id);
+  if (updated.error) console.error("simulated reasons save failed", game.id, updated.error.message);
 
   const saved = await supabaseAdmin
     .from("game_simulations")
@@ -129,7 +175,7 @@ export async function generateBatch(
 
   if (saved.error) console.error("simulation batch save failed", game.id, saved.error.message);
 
-  return { analysis, aggregate, fingerprint: currentFingerprint, fromCache: false };
+  return { analysis: described, aggregate, fingerprint: currentFingerprint, fromCache: false };
 }
 
 /**

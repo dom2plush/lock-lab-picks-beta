@@ -86,7 +86,7 @@ export type SimulationAggregate = {
   generatedAt: string;
 };
 
-function americanToProbability(odds: string | null | undefined): number | null {
+export function americanToProbability(odds: string | null | undefined): number | null {
   if (!odds) return null;
   const price = Number(odds.replace("+", ""));
   if (!Number.isFinite(price) || price === 0) return null;
