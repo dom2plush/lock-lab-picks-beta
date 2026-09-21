@@ -796,7 +796,7 @@ function fillPlayerProps(
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  maximum = 3,
+  maximum = 4,
 ): void {
   const pool = candidates
     .filter(
@@ -2045,7 +2045,7 @@ export async function runLockLabFormula(
       badge: propBadge(c),
       reason: clean(entry.reason, "Player prop."),
     });
-    if (playerProps.length === 3) break;
+    if (playerProps.length === 4) break;
   }
 
   // Sections are topped up from the ranked live board so a normal game shows
