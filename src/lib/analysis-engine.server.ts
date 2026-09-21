@@ -855,7 +855,7 @@ function candidateRank(c: Candidate): number {
   if (!c.grade) return 0;
   const edge = c.grade.edge ?? 0;
   // A clean 2%+ edge is preferred over a sliver of an edge at the same risk.
-  const edgePreference = edge >= PREFERRED_EDGE ? 1.1 : edge > 0 ? 1 : 0.5;
+  const edgePreference = edge >= TARGET_EDGE * 2 ? 1.15 : edge >= TARGET_EDGE ? 1.1 : edge >= MIN_EDGE ? 1 : 0.5;
   return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price) * edgePreference;
 }
 
