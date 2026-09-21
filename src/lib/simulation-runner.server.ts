@@ -137,24 +137,13 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
     return { ...pick, badge, reason: `${parts.join(" · ")}.` } as T;
   };
 
-  // Final value check against the 50 runs themselves: a selection whose
-  // simulated hit rate sits below the probability the posted price implies has
-  // negative edge and is removed, never published. The fun bet is deliberately
-  // a high-variance play and is exempt from the edge floor.
-  const positiveEdge = <T extends { key: string; odds?: string | null }>(pick: T): boolean => {
-    const simulated = byKey.get(pick.key);
-    if (!simulated) return true;
-    const implied = americanToProbability(pick.odds ?? null);
-    if (implied == null) return true;
-    return simulated.hitRate > implied;
-  };
-
+  // Every selected pick is published with the numbers the 50 runs produced.
+  // A thin or negative simulated edge turns the light red — the pick is never
+  // dressed up — but it is not silently deleted when real prices exist.
   const topBets = (analysis.top_bets ?? [])
-    .filter(positiveEdge)
     .map((bet) => describe(bet))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   const props = (analysis.player_props ?? [])
-    .filter(positiveEdge)
     .map((prop) => describe(prop))
     .map((prop, index) => ({ ...prop, key: `prop-${index + 1}` }));
 

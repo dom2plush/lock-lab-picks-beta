@@ -576,6 +576,17 @@ function hasPositiveEdge(c: Candidate): boolean {
   return g.edge >= MIN_EDGE;
 }
 
+/**
+ * Looser gate for pick #2 and beyond: any positive modelled edge is a
+ * legitimate pick. The board light reports how big that edge actually is.
+ */
+function hasAnyPositiveEdge(c: Candidate): boolean {
+  const g = c.grade;
+  if (!g || g.modelProb == null || g.edge == null) return false;
+  if (g.ev != null && g.ev <= 0) return false;
+  return g.edge > 0;
+}
+
 /** True when an alternate rung sits further from the standard line than allowed. */
 function altTooFar(c: Candidate): boolean {
   if (!c.alt) return false;
@@ -759,7 +770,7 @@ function fillPlayerProps(
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  maximum = 3,
+  maximum = 4,
 ): void {
   const pool = candidates
     .filter(
@@ -767,9 +778,9 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
-        propBadge(c) !== "red" &&
-        // Real value only: the estimate must beat the posted price outright.
-        hasPositiveEdge(c),
+        // Every verified posted prop is rankable; the strongest model-supported
+        // ones surface first and each prop's light reports its true edge.
+        c.grade?.modelProb != null,
     )
     .sort(
       (a, b) =>
@@ -1490,37 +1501,32 @@ export async function runLockLabFormula(
   );
 
   if (!handicap) {
-    const measurable = candidates
-      // Game picks come from the game markets only. Player props are selected
-      // from their own separate pool and never occupy a Top 2 slot.
-      .filter((c) => c.group !== "prop" && eligibleForTop(c).ok)
+    // Game picks come from the game markets only. Player props are selected
+    // from their own separate pool and never occupy a Top 2 slot. Every posted
+    // market inside the price cap is rankable; a fully eligible bet leads when
+    // one exists, but the second slot only needs the strongest remaining
+    // distinct market — a smaller edge is shown honestly by its light.
+    const priced = candidates
+      .filter(
+        (c) =>
+          c.group !== "prop" &&
+          c.price >= MIN_RECOMMENDED_PRICE &&
+          c.grade?.modelProb != null &&
+          !altTooFar(c),
+      )
       .sort((a, b) => candidateRank(b) - candidateRank(a));
     const seenIdeas = new Set<string>();
-    const distinct = measurable.filter((c) => {
+    const distinct = priced.filter((c) => {
       const idea = betIdeaKey(c);
       if (seenIdeas.has(idea)) return false;
       seenIdeas.add(idea);
       return true;
     });
-    const included = new Set(distinct.map((c) => c.key));
-    const ranked = [
-      ...distinct,
-      ...candidates
-        .filter(
-          (c) =>
-            c.group !== "prop" &&
-            c.price >= MIN_RECOMMENDED_PRICE &&
-            hasPositiveEdge(c) &&
-            !included.has(c.key),
-        )
-        .sort((a, b) => candidateRank(b) - candidateRank(a))
-        .filter((c) => {
-          const idea = betIdeaKey(c);
-          if (seenIdeas.has(idea)) return false;
-          seenIdeas.add(idea);
-          return true;
-        }),
-    ];
+    const leadIndex = distinct.findIndex((c) => eligibleForTop(c).ok);
+    const ranked =
+      leadIndex > 0
+        ? [distinct[leadIndex]!, ...distinct.filter((_, i) => i !== leadIndex)]
+        : distinct;
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
@@ -1726,7 +1732,8 @@ export async function runLockLabFormula(
         c.group !== "prop" &&
         // Never fill a slot with a price we would not recommend.
         c.price >= MIN_RECOMMENDED_PRICE &&
-        hasPositiveEdge(c) &&
+        // Pick #2 only needs a measurable positive edge; its light shows the size.
+        hasAnyPositiveEdge(c) &&
         !selectedIds.has(c.key) &&
         !selectedIdeas.has(betIdeaKey(c)),
     )
@@ -1752,6 +1759,39 @@ export async function runLockLabFormula(
       },
     });
     selectedIdeas.add(betIdeaKey(c));
+  }
+
+  // Last resort: when the board has two legitimate posted markets but the
+  // value gates left a slot open, the strongest remaining distinct market
+  // still posts — its light says exactly how thin the edge is rather than
+  // the board showing NO BET with real prices available.
+  if (shortlist.length < 2) {
+    for (const c of candidates
+      .filter(
+        (c) =>
+          c.group !== "prop" &&
+          c.price >= MIN_RECOMMENDED_PRICE &&
+          c.grade?.modelProb != null &&
+          !altTooFar(c) &&
+          !selectedIds.has(c.key) &&
+          !selectedIdeas.has(betIdeaKey(c)),
+      )
+      .sort((a, b) => candidateRank(b) - candidateRank(a))) {
+      if (shortlist.length >= 2) break;
+      shortlist.push({
+        c,
+        entry: {
+          key: c.key,
+          badge: softBadge(c),
+          reason:
+            "The strongest remaining posted market on this board; the light reflects how thin the modelled edge is.",
+          standardKey: c.standardKey ?? null,
+          standardComparison: c.alt ? altPreferenceReason(c) : null,
+        },
+      });
+      selectedIds.add(c.key);
+      selectedIdeas.add(betIdeaKey(c));
+    }
   }
 
   for (const { c, entry } of shortlist.slice(0, 2)) {
@@ -1836,9 +1876,9 @@ export async function runLockLabFormula(
     const c = byKey.get(entry.key);
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
-    if (!eligibleForTop(c).ok) continue;
-    // A prop the model expects to miss is left out; the fill pass replaces it.
-    if (propBadge(c) === "red") continue;
+    // Props are a separate pool from the game picks: only the price cap gates
+    // them here, and each prop's light reports its true edge.
+    if (c.price < MIN_RECOMMENDED_PRICE) continue;
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
@@ -1856,7 +1896,7 @@ export async function runLockLabFormula(
       badge: propBadge(c),
       reason: clean(entry.reason, "Player prop."),
     });
-    if (playerProps.length === 3) break;
+    if (playerProps.length === 4) break;
   }
 
   // Sections are topped up from the ranked live board so a normal game shows
