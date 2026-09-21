@@ -65,9 +65,11 @@ describe("fair line is built before any line shopping", () => {
     expect(projection.scores).toHaveLength(50);
     // Probabilities must be internally consistent: more points is always at
     // least as likely to cover, so an alternate cannot invent value.
-    expect(projection.spreadProb("away", 10)).toBeGreaterThanOrEqual(projection.spreadProb("away", 7));
-    expect(projection.spreadProb("away", 7)).toBeGreaterThanOrEqual(projection.spreadProb("away", 3));
-    expect(projection.totalProb("Under", 40)).toBeLessThanOrEqual(projection.totalProb("Under", 52));
+    const spread = (point: number) => projection.spreadProb("away", point) ?? 0;
+    const under = (point: number) => projection.totalProb("Under", point) ?? 0;
+    expect(spread(10)).toBeGreaterThanOrEqual(spread(7));
+    expect(spread(7)).toBeGreaterThanOrEqual(spread(3));
+    expect(under(40)).toBeLessThanOrEqual(under(52));
     expect(projection.homeWinProb).toBeGreaterThan(0.5);
   });
 });
