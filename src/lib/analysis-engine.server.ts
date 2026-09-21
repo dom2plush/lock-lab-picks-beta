@@ -939,6 +939,70 @@ function pickSource(c: Candidate) {
     book: c.book,
     bookKey: c.bookKey,
     capturedAt: c.capturedAt,
+    // Ties the published pick back to the graded selection so it can be
+    // settled against the same 50 simulated games it was chosen from.
+    candidateKey: c.key,
+  };
+}
+
+/**
+ * Settles every published pick against the 50 simulated games: game picks on
+ * the simulated final scores, player props and the fun bet on the player stat
+ * lines drawn inside those same games. A pick with no simulated settlement is
+ * left untouched and falls back to the existing price-based settlement.
+ */
+function attachSimulatedOutcomes(
+  output: EngineOutput,
+  candidates: Candidate[],
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+): EngineOutput {
+  const byKey = new Map(candidates.map((c) => [c.key, c]));
+  const sideOf = (team: string): "home" | "away" | null =>
+    team === game.home_team ? "home" : team === game.away_team ? "away" : null;
+
+  const outcomesFor = (c: Candidate): boolean[] | null => {
+    if (c.group === "prop") {
+      return players.outcomes({
+        market: c.market,
+        player: c.player,
+        selection: c.selection,
+        point: c.point,
+      });
+    }
+    const market = c.market.toLowerCase();
+    if (market.includes("spread")) {
+      const side = sideOf(c.selection);
+      return side && c.point != null ? projection.spreadOutcomes(side, c.point) : null;
+    }
+    if (market.includes("total") && !market.includes("team_total")) {
+      const side = c.selection === "Over" || c.selection === "Under" ? c.selection : null;
+      return side && c.point != null ? projection.totalOutcomes(side, c.point) : null;
+    }
+    if (market === "moneyline" || market === "h2h") {
+      const side = sideOf(c.selection);
+      return side ? projection.moneylineOutcomes(side) : null;
+    }
+    return null;
+  };
+
+  const settle = <T extends { candidateKey?: string | null }>(pick: T): T => {
+    const c = pick.candidateKey ? byKey.get(pick.candidateKey) : undefined;
+    const result = c ? outcomesFor(c) : null;
+    if (!result || !result.length) return pick;
+    const hits: number[] = [];
+    result.forEach((won, index) => {
+      if (won) hits.push(index + 1);
+    });
+    return { ...pick, simRuns: result.length, simHits: hits };
+  };
+
+  return {
+    ...output,
+    topBets: output.topBets.map(settle),
+    playerProps: output.playerProps.map(settle),
+    funBets: output.funBets.map(settle),
   };
 }
 
