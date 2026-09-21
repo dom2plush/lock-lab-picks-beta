@@ -523,7 +523,15 @@ function gradeBoard(
     let distance = 0;
     let evidence = 0.4;
 
-    const fromSim = c.group === "prop" ? null : simulated(c);
+    const fromSim =
+      c.group === "prop"
+        ? players.probability({
+            market: c.market,
+            player: c.player,
+            selection: c.selection,
+            point: c.point,
+          })
+        : simulated(c);
 
     if (fromSim != null) {
       modelProb = fromSim;
