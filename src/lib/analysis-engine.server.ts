@@ -656,7 +656,10 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         propBadge(c) !== "red" &&
-        (c.grade?.edge ?? 0) > 0,
+        // Real value only: the price is beaten outright, or the simulated hit
+        // rate is strong enough to be worth posting at a fair price.
+        ((c.grade?.edge ?? 0) > 0 ||
+          ((c.grade?.modelProb ?? 0) >= 0.65 && (c.grade?.edge ?? -1) >= 0)),
     )
     .sort(
       (a, b) =>
