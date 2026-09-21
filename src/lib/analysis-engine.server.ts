@@ -770,7 +770,7 @@ function fillPlayerProps(
   used: Set<string>,
   playerProps: PropBet[],
   decisions: DecisionMap,
-  maximum = 3,
+  maximum = 4,
 ): void {
   const pool = candidates
     .filter(
@@ -778,9 +778,9 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
-        propBadge(c) !== "red" &&
-        // Real value only: the estimate must beat the posted price outright.
-        hasPositiveEdge(c),
+        // Every verified posted prop is rankable; the strongest model-supported
+        // ones surface first and each prop's light reports its true edge.
+        c.grade?.modelProb != null,
     )
     .sort(
       (a, b) =>
@@ -1876,9 +1876,9 @@ export async function runLockLabFormula(
     const c = byKey.get(entry.key);
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
-    if (!eligibleForTop(c).ok) continue;
-    // A prop the model expects to miss is left out; the fill pass replaces it.
-    if (propBadge(c) === "red") continue;
+    // Props are a separate pool from the game picks: only the price cap gates
+    // them here, and each prop's light reports its true edge.
+    if (c.price < MIN_RECOMMENDED_PRICE) continue;
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
