@@ -1638,6 +1638,8 @@ export async function runLockLabFormula(
   for (const entry of funEntries) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key) || c.group !== "prop") continue;
+    // Fun bet is a touchdown-scorer market only.
+    if (propMarketPriority(c.market) === 2) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     used.add(c.key);
     funBets.push({
