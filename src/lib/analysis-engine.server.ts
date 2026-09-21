@@ -41,6 +41,9 @@ import {
   summariseAltValue,
 } from "./market-math.server";
 import { readMarketContext } from "./market-context.server";
+import { buildFairModel } from "./fair-model.server";
+import type { GameProjection } from "./game-sim.server";
+import { simulateGame } from "./game-sim.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -228,6 +231,7 @@ function buildCandidates(
   game: GameRow,
   odds: GameOdds,
   extra: ExtraOffers,
+  projection: GameProjection,
 ): Candidate[] {
   const out: Candidate[] = [];
   const book = odds.bookmaker ?? "consensus";
@@ -457,36 +461,72 @@ function buildCandidates(
     });
   });
 
-  gradeBoard(out, game);
+  gradeBoard(out, game, projection);
   return out;
 }
 
 /**
- * Connects every candidate's price to a probability estimate.
+ * ONE probability source for the whole board.
  *
- * Core two-way markets are estimated from the vig-free market read; alternates
- * from the modelled curve at that exact number (key-number mass included); props
- * from the posted two-way price when the book prices both sides. Nothing is
- * invented: a selection with no supportable estimate is graded as unrankable and
- * can never be a top bet on payout alone.
+ * Every spread, total and moneyline price — standard or alternate, either side
+ * — is graded against the same 50 simulated final scores produced from Lock
+ * Lab's fair line. An alternate therefore cannot be "better" simply because it
+ * is further from the market: its probability and the standard line's come
+ * from the identical distribution, so the only thing that can separate them is
+ * the price.
+ *
+ * Player props have no score-level model, so they are estimated from the
+ * posted two-way price. That is conservative and never invented, and they are
+ * held to the same edge and price rules as everything else.
  */
-function gradeBoard(candidates: Candidate[], game: GameRow) {
+function gradeBoard(candidates: Candidate[], game: GameRow, projection: GameProjection) {
   const pairFair = (a: number, b: number) => devig(a, b);
+  const sideOf = (team: string): "home" | "away" | null =>
+    team === game.home_team ? "home" : team === game.away_team ? "away" : null;
+
+  /** Simulated probability for any spread/total/moneyline selection. */
+  const simulated = (c: Candidate): number | null => {
+    const market = c.market.toLowerCase();
+    if (market.includes("spread")) {
+      const side = sideOf(c.selection);
+      return side && c.point != null ? projection.spreadProb(side, c.point) : null;
+    }
+    if (market.includes("total") && !market.includes("team_total")) {
+      const side = c.selection === "Over" || c.selection === "Under" ? c.selection : null;
+      return side && c.point != null ? projection.totalProb(side, c.point) : null;
+    }
+    if (market === "moneyline" || market === "h2h") {
+      const side = sideOf(c.selection);
+      return side ? projection.moneylineProb(side) : null;
+    }
+    return null;
+  };
+
+  // Confidence in the simulated numbers is the model's own confidence: with no
+  // stored results behind the fair line, the band stays wide and almost
+  // nothing clears it — which is the correct, disciplined outcome.
+  const simEvidence = 0.35 + 0.4 * projection.confidence;
 
   for (const c of candidates) {
     let modelProb: number | null = null;
     let distance = 0;
     let evidence = 0.4;
 
-    if (c.group === "core") {
+    const fromSim = c.group === "prop" ? null : simulated(c);
+
+    if (fromSim != null) {
+      modelProb = fromSim;
+      evidence = simEvidence;
+      if (c.alt) distance = Math.abs(c.alt.point - c.alt.standardPoint);
+    } else if (c.group === "core") {
       const opposite = candidates.find((x) => x.key === CORE_OPPOSITE[c.key]);
+      // No simulated distribution available: fall back to the vig-free market
+      // read, which by construction carries no edge of its own.
       modelProb = opposite ? pairFair(c.price, opposite.price).a : impliedProbability(c.price);
-      // A two-sided posted market is the most reliable evidence on the board.
-      evidence = opposite ? 0.65 : 0.35;
+      evidence = opposite ? 0.5 : 0.3;
     } else if (c.alt) {
-      modelProb = c.alt.winProb;
+      modelProb = null;
       distance = Math.abs(c.alt.point - c.alt.standardPoint);
-      evidence = Math.max(0.15, 0.45 + (c.alt.worthIt ? 0.2 : -0.1) - 0.03 * distance);
     } else if (c.group === "prop") {
       const opposite = findOpposite(c, candidates, game);
       // One-sided prop markets (anytime / first TD) post no mirror price, so the
@@ -506,19 +546,41 @@ function gradeBoard(candidates: Candidate[], game: GameRow) {
  */
 const MIN_RECOMMENDED_PRICE = -180;
 
-/** Edge size Lock Lab treats as a properly playable number rather than a sliver. */
-const PREFERRED_EDGE = 0.02;
+/**
+ * THE edge thresholds. Every section — Top 2, props, fun bet, fallback fills —
+ * reads these and nothing else, so a selection can never be playable in one
+ * part of the board and a pass in another.
+ */
+/** Edge Lock Lab is aiming for on a published bet. */
+const TARGET_EDGE = 0.01;
+/** Absolute floor. Below this the edge is indistinguishable from rounding. */
+const MIN_EDGE = 0.005;
+
+/**
+ * How far an alternate line may sit from the sportsbook's standard number.
+ * Beyond this the price stops being a line-shopping decision and becomes a
+ * different bet entirely, which is how artificial value gets manufactured.
+ */
+const MAX_ALT_DISTANCE: Record<string, number> = { spread: 3, total: 4 };
 
 /**
  * Hard value floor. A selection may only reach the board when Lock Lab's own
- * estimate beats the probability the posted price implies. Negative-edge
- * selections are never published, on any path, at any price.
+ * estimate beats the probability the posted price implies by more than a
+ * rounding error. Negative-edge selections are never published, on any path,
+ * at any price, in any section.
  */
 function hasPositiveEdge(c: Candidate): boolean {
   const g = c.grade;
   if (!g || g.modelProb == null || g.edge == null) return false;
   if (g.ev != null && g.ev <= 0) return false;
-  return g.edge > 0;
+  return g.edge >= MIN_EDGE;
+}
+
+/** True when an alternate rung sits further from the standard line than allowed. */
+function altTooFar(c: Candidate): boolean {
+  if (!c.alt) return false;
+  const limit = MAX_ALT_DISTANCE[c.alt.market] ?? 3;
+  return Math.abs(c.alt.point - c.alt.standardPoint) > limit;
 }
 
 /**
@@ -547,7 +609,16 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
   if (!hasPositiveEdge(c)) {
     return {
       ok: false,
-      why: `${c.label}: the estimated win chance does not beat the probability the posted price implies — negative edge, never recommended.`,
+      why: `${c.label}: the simulated win chance does not beat the probability the posted price implies by at least ${(MIN_EDGE * 100).toFixed(1)}% — never recommended.`,
+    };
+  }
+
+  // An alternate several points off the market is not line shopping, it is a
+  // different bet. Distance alone can never be the source of an edge.
+  if (altTooFar(c) && c.alt) {
+    return {
+      ok: false,
+      why: `${c.label}: sits more than ${MAX_ALT_DISTANCE[c.alt.market] ?? 3} points off the standard ${c.alt.market} — too far from the market to treat as a line-shopping option.`,
     };
   }
 
@@ -621,12 +692,11 @@ function capBadge(c: Candidate, badge: Badge): Badge {
  */
 function softBadge(c: Candidate): Badge {
   const g = c.grade;
-  if (!g) return "red";
-  if (g.tier === "strong") return "green";
-  if (g.edge != null && g.edge >= 0.005) return "yellow";
-  // Red is reserved for genuinely coin-flip-or-worse prices; a selection the
-  // model still projects as the favourite side stays yellow.
-  if (g.modelProb != null && g.modelProb >= 0.5) return "yellow";
+  if (!g || g.edge == null) return "red";
+  if (g.tier === "strong" && g.edge >= TARGET_EDGE) return "green";
+  if (g.edge >= TARGET_EDGE) return "yellow";
+  if (g.edge >= MIN_EDGE) return "yellow";
+  // No measurable edge: the light says so, whatever the price or the payout.
   return "red";
 }
 
@@ -649,26 +719,27 @@ function betIdeaKey(c: Candidate): string {
 }
 
 /**
- * Props are not held to the Top 2 edge threshold. Their light reflects how
- * likely the model thinks the prop hits: green for a confident read, yellow for
- * a live one, red only when the model genuinely expects it to miss.
+ * Props use the same value logic as the Top 2 — a negative-edge prop is never
+ * green anywhere — with the confidence read layered on top of it.
  */
 function propBadge(c: Candidate): Badge {
   const g = c.grade;
-  if (!g || g.modelProb == null) return "red";
-  if (g.tier === "strong" || g.modelProb >= 0.6) return "green";
-  return g.modelProb >= 0.45 ? "yellow" : "red";
+  if (!g || g.modelProb == null || g.edge == null) return "red";
+  if (g.edge < MIN_EDGE) return "red";
+  if (g.edge >= TARGET_EDGE && (g.tier === "strong" || g.modelProb >= 0.6)) return "green";
+  return "yellow";
 }
 
 /**
- * The fun bet is an explicit long shot, so its light reads as a fun play rather
- * than a confidence claim: yellow whenever the price is real and the model gives
- * it a live chance, green only for an unusually strong one.
+ * The fun bet is an explicit long shot and may run at a lower threshold than
+ * the Top 2, but it is still never dressed up as a strong bet: a negative-edge
+ * scoring price can show as a fun play, never as green.
  */
 function funBadge(c: Candidate): Badge {
   const g = c.grade;
   if (!g || g.modelProb == null) return "red";
-  if (g.modelProb >= 0.5) return "green";
+  const edge = g.edge ?? 0;
+  if (edge >= TARGET_EDGE && g.modelProb >= 0.5) return "green";
   return g.modelProb >= 0.1 ? "yellow" : "red";
 }
 
@@ -787,7 +858,7 @@ function candidateRank(c: Candidate): number {
   if (!c.grade) return 0;
   const edge = c.grade.edge ?? 0;
   // A clean 2%+ edge is preferred over a sliver of an edge at the same risk.
-  const edgePreference = edge >= PREFERRED_EDGE ? 1.1 : edge > 0 ? 1 : 0.5;
+  const edgePreference = edge >= TARGET_EDGE * 2 ? 1.15 : edge >= TARGET_EDGE ? 1.1 : edge >= MIN_EDGE ? 1 : 0.5;
   return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price) * edgePreference;
 }
 
@@ -1381,7 +1452,13 @@ export async function runLockLabFormula(
   extra: ExtraOffers = { alternates: [], props: [] },
   previousOdds?: GameOdds | null,
 ): Promise<EngineOutput> {
-  const candidates = buildCandidates(game, odds, extra);
+  // FAIR LINE FIRST. The baseline model and its 50 simulated games are built
+  // before a single sportsbook price is shopped, so no alternate can ever set
+  // the projection it is then judged against.
+  const fair = await buildFairModel(game, odds);
+  const projection = simulateGame(game, fair);
+
+  const candidates = buildCandidates(game, odds, extra, projection);
   const byKey = new Map(candidates.map((c) => [c.key, c]));
 
   if (!candidates.length) {
@@ -1392,11 +1469,23 @@ export async function runLockLabFormula(
   const altNotes = summariseAltValue(
     candidates.map((c) => c.alt).filter((a): a is AltEvaluation => Boolean(a)),
   );
+  // Market-context reads are commentary only: they never touch the fair line.
   const context = await readMarketContext(game, market.marketMargin);
   const handicap = await runHandicapPass(
     game,
     candidates,
-    [...market.notes, ...context.notes, ...altNotes],
+    [
+      "LOCK LAB FAIR LINE (built before any line shopping — this is the model, everything below is reference):",
+      ...projection.notes,
+      "",
+      "MARKET READ (reference only):",
+      ...market.notes,
+      "",
+      "MARKET CONTEXT — SECONDARY SIGNALS ONLY. These may never move the fair line above:",
+      ...context.notes,
+      "",
+      ...altNotes,
+    ],
     coverageNotes(candidates, Boolean(previousOdds)),
   );
 

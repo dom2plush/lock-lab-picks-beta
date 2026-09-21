@@ -99,7 +99,21 @@ export async function ensureSimulationBatch(
 function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggregate): AnalysisRow {
   const byKey = new Map(aggregate.picks.map((pick) => [pick.key, pick]));
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
-  const describe = <T extends { key: string; odds?: string | null; reason: string }>(pick: T): T => {
+  /**
+   * Same thresholds the engine ranks on, applied to the published light so a
+   * bet cannot read as a pass in one section and playable in another:
+   * 1%+ simulated edge is green, 0.5%+ is yellow, anything less is red.
+   */
+  const badgeFor = (edge: number | null, fallback: string): string => {
+    if (edge == null) return fallback;
+    if (edge >= 0.01) return "green";
+    return edge >= 0.005 ? "yellow" : "red";
+  };
+
+  const describe = <T extends { key: string; odds?: string | null; reason: string; badge?: string }>(
+    pick: T,
+    { fun = false }: { fun?: boolean } = {},
+  ): T => {
     const simulated = byKey.get(pick.key);
     if (!simulated) return pick;
     const implied = americanToProbability(pick.odds ?? null);
@@ -113,7 +127,14 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
         `${edge >= 0 ? "+" : ""}${(edge * 100).toFixed(1)}% edge`,
       );
     }
-    return { ...pick, reason: `${parts.join(" · ")}.` };
+    // The fun bet is a long shot by design, so it is never promoted to green
+    // on a thin edge, but it is not marked red for being a long shot either.
+    const badge = fun
+      ? edge != null && edge >= 0.01
+        ? "green"
+        : "yellow"
+      : badgeFor(edge, pick.badge ?? "yellow");
+    return { ...pick, badge, reason: `${parts.join(" · ")}.` } as T;
   };
 
   // Final value check against the 50 runs themselves: a selection whose
@@ -130,18 +151,18 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
 
   const topBets = (analysis.top_bets ?? [])
     .filter(positiveEdge)
-    .map(describe)
+    .map((bet) => describe(bet))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   const props = (analysis.player_props ?? [])
     .filter(positiveEdge)
-    .map(describe)
+    .map((prop) => describe(prop))
     .map((prop, index) => ({ ...prop, key: `prop-${index + 1}` }));
 
   return {
     ...analysis,
     top_bets: topBets,
     player_props: props,
-    fun_bets: (analysis.fun_bets ?? []).map(describe),
+    fun_bets: (analysis.fun_bets ?? []).map((bet) => describe(bet, { fun: true })),
   };
 }
 
