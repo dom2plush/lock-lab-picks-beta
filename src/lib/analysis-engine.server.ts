@@ -694,7 +694,8 @@ function fillFunBet(
 ): void {
   if (funBets.length) return;
   const pool = candidates
-    .filter((c) => c.group === "prop" && !used.has(c.key))
+    // The fun bet is always a scoring play: First TD first, then Anytime TD.
+    .filter((c) => c.group === "prop" && !used.has(c.key) && propMarketPriority(c.market) < 2)
     .sort(
       (a, b) =>
         propMarketPriority(a.market) - propMarketPriority(b.market) ||
