@@ -368,12 +368,17 @@ function buildCandidates(
   // Player props: only real, verified sides from the posted board.
   const seen = new Set<string>();
   let propCount = 0;
-  extra.props.forEach((offer, index) => {
+  // Touchdown-scorer markets are read first so the per-game prop budget can
+  // never cut them off before the fun bet gets a look at them.
+  const propOffers = [...extra.props].sort(
+    (a, b) => propMarketPriority(a.market) - propMarketPriority(b.market),
+  );
+  propOffers.forEach((offer, index) => {
     const side = offer.selection.toLowerCase();
     if (!["over", "under", "yes", "no"].includes(side)) return;
     if (!offer.player) return;
     const id = `${offer.market}:${offer.player}:${side}`;
-    if (seen.has(id) || propCount >= 60) return;
+    if (seen.has(id) || propCount >= 90) return;
     seen.add(id);
     propCount += 1;
     const marketLabel = PROP_MARKET_LABEL[offer.market] ?? offer.market;
