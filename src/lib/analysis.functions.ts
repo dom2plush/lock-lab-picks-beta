@@ -103,15 +103,16 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     }
 
 
-    // Only offers that can be proven to belong to this exact game, sportsbook
-    // and snapshot reach the formula. Everything else is discarded, never
-    // substituted.
-    const { buildLiveAnalysis, verifiedExtras } = await import("./analysis-runner.server");
+    // Analyze reads the precomputed 50-run batch. A new batch is only produced
+    // when none exists yet or when a meaningful input (line, injury, QB) moved,
+    // so clicking Analyze does not spend a new run.
+    const { verifiedExtras } = await import("./analysis-runner.server");
+    const { ensureSimulationBatch } = await import("./simulation-runner.server");
     const extra = verifiedExtras(game);
-    const analysis = await buildLiveAnalysis(game, extra, stored);
+    const batch = await ensureSimulationBatch(game);
     return {
       status,
-      analysis,
+      analysis: batch?.analysis ?? stored,
       message: null,
       propsVerified: extra.props.length > 0,
     };

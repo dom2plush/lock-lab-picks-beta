@@ -523,6 +523,98 @@ function capBadge(c: Candidate, badge: Badge): Badge {
   return c.grade?.tier === "playable" && badge === "green" ? "yellow" : badge;
 }
 
+/**
+ * Red is reserved for a genuinely too-close price. A posted selection the board
+ * still leans towards, whose edge simply sits inside the uncertainty band,
+ * is published as yellow rather than being written off.
+ */
+function softBadge(c: Candidate): Badge {
+  const g = c.grade;
+  if (!g) return "red";
+  if (g.tier === "strong") return "green";
+  if (g.edge != null && g.edge >= 0.005) return "yellow";
+  return "red";
+}
+
+function propMarketPriority(market: string): number {
+  return market === "player_first_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
+}
+
+type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
+
+/**
+ * Tops the prop section up to the requested minimum from real posted prices the
+ * board actually ranks. Nothing is invented: when the sportsbook supplied no
+ * further verified prop, the section simply stays short.
+ */
+function fillPlayerProps(
+  candidates: Candidate[],
+  used: Set<string>,
+  playerProps: PropBet[],
+  decisions: DecisionMap,
+  minimum = 2,
+): void {
+  const pool = candidates
+    .filter((c) => c.group === "prop" && !used.has(c.key))
+    // Touchdown markets are held back for the fun bet where possible.
+    .sort(
+      (a, b) =>
+        (propMarketPriority(a.market) === 2 ? 0 : 1) - (propMarketPriority(b.market) === 2 ? 0 : 1) ||
+        candidateRank(b) - candidateRank(a),
+    );
+  for (const c of pool) {
+    if (playerProps.length >= minimum) break;
+    if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+    const badge = softBadge(c);
+    used.add(c.key);
+    playerProps.push({
+      key: `prop-${playerProps.length + 1}`,
+      badge,
+      label: c.label,
+      player: c.player ?? "",
+      market: c.marketLabel,
+      odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
+      ...pickSource(c),
+      reason: "The strongest remaining posted prop on this board under the model's usage and matchup read.",
+    });
+    decisions.set(c.key, { section: "prop", badge, reason: "Player prop from the ranked board." });
+  }
+}
+
+/** Exactly one higher-variance scoring play, First TD first, then Anytime TD. */
+function fillFunBet(
+  candidates: Candidate[],
+  used: Set<string>,
+  funBets: FunBet[],
+  decisions: DecisionMap,
+): void {
+  if (funBets.length) return;
+  const pool = candidates
+    .filter((c) => c.group === "prop" && !used.has(c.key))
+    .sort(
+      (a, b) =>
+        propMarketPriority(a.market) - propMarketPriority(b.market) ||
+        candidateRank(b) - candidateRank(a),
+    );
+  const c = pool[0];
+  if (!c) return;
+  const badge = softBadge(c);
+  used.add(c.key);
+  funBets.push({
+    key: "fun-1",
+    badge,
+    label: c.label,
+    market: c.marketLabel,
+    odds: fmtOdds(c.price),
+    estimatedProbability: c.grade?.modelProb ?? null,
+    ...pickSource(c),
+    reason:
+      "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units.",
+  });
+  decisions.set(c.key, { section: "fun", badge, reason: "Fun bet from the ranked board." });
+}
+
 /** How reliable a candidate's probability estimate is (0-1). */
 function candidateRobustness(c: Candidate): number {
   if (!c.grade) return 0.5;
@@ -1174,7 +1266,7 @@ export async function runLockLabFormula(
       return {
         key: `top${index + 1}`,
         rank: index + 1,
-        badge: eligible ? (c.grade?.tier === "strong" ? "green" : "yellow") : "red",
+        badge: eligible ? (c.grade?.tier === "strong" ? "green" : "yellow") : softBadge(c),
         label: c.label,
         market: c.marketLabel,
         selection: c.player ?? c.selection,
@@ -1199,14 +1291,22 @@ export async function runLockLabFormula(
       };
     });
     const decisions = new Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>();
+    const usedFallback = new Set<string>();
     topBets.forEach((bet, index) => {
       const c = ranked[index];
-      if (c) decisions.set(c.key, { section: "top", badge: bet.badge, reason: bet.reason });
+      if (c) {
+        usedFallback.add(c.key);
+        decisions.set(c.key, { section: "top", badge: bet.badge, reason: bet.reason });
+      }
     });
+    const fallbackProps: PropBet[] = [];
+    const fallbackFun: FunBet[] = [];
+    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
+    fillFunBet(candidates, usedFallback, fallbackFun, decisions);
     return {
       topBets,
-      funBets: [],
-      playerProps: [],
+      funBets: fallbackFun,
+      playerProps: fallbackProps,
       notes: {
         propsAvailable: extra.props.length > 0,
         altMarketsAvailable: extra.alternates.length > 0,
@@ -1393,7 +1493,7 @@ export async function runLockLabFormula(
           ),
         }
       : {};
-    const badge = eligibleForTop(c).ok ? capBadge(c, asBadge(entry.badge)) : "red";
+    const badge = eligibleForTop(c).ok ? capBadge(c, asBadge(entry.badge)) : softBadge(c);
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
@@ -1474,6 +1574,12 @@ export async function runLockLabFormula(
     });
     if (playerProps.length === 3) break;
   }
+
+  // Sections are topped up from the ranked live board so a normal game shows
+  // two props and one fun bet. Only real posted prices are ever used.
+  fillPlayerProps(candidates, used, playerProps, decisions);
+  fillFunBet(candidates, used, funBets, decisions);
+
 
   const verdict = topBets.length === 2
     ? null
