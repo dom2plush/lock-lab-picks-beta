@@ -1266,7 +1266,7 @@ export async function runLockLabFormula(
       return {
         key: `top${index + 1}`,
         rank: index + 1,
-        badge: eligible ? (c.grade?.tier === "strong" ? "green" : "yellow") : "red",
+        badge: eligible ? (c.grade?.tier === "strong" ? "green" : "yellow") : softBadge(c),
         label: c.label,
         market: c.marketLabel,
         selection: c.player ?? c.selection,
