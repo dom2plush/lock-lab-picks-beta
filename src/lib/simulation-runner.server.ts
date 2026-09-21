@@ -112,10 +112,10 @@ export async function generateBatch(
     .from("game_simulations")
     .upsert(
       {
-        game_id: game.id,
+        game_id: current.id,
         analysis_id: analysis.id,
         sport: game.sport,
-        input_fingerprint: fingerprint,
+        input_fingerprint: currentFingerprint,
         engine_version: SIMULATION_ENGINE_VERSION,
         runs: SIMULATION_RUNS,
         generated_at: new Date().toISOString(),
@@ -129,7 +129,7 @@ export async function generateBatch(
 
   if (saved.error) console.error("simulation batch save failed", game.id, saved.error.message);
 
-  return { analysis, aggregate, fingerprint, fromCache: false };
+  return { analysis, aggregate, fingerprint: currentFingerprint, fromCache: false };
 }
 
 /**
