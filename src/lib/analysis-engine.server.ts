@@ -612,7 +612,7 @@ function fillPlayerProps(
   for (const c of pool) {
     if (playerProps.length >= minimum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
-    const badge = sideBadge(c);
+    const badge = propBadge(c);
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
@@ -646,7 +646,7 @@ function fillFunBet(
     );
   const c = pool[0];
   if (!c) return;
-  const badge = sideBadge(c);
+  const badge = funBadge(c);
   used.add(c.key);
   funBets.push({
     key: "fun-1",
