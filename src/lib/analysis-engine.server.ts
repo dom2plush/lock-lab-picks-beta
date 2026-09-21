@@ -542,31 +542,45 @@ function softBadge(c: Candidate): Badge {
 }
 
 /**
- * Two posted prices belong to the same betting idea when they express the same
- * opinion: any rung of the same total direction, or the spread and moneyline on
- * the same team. The board may only publish one bet per idea, so the Top 2 are
- * always two genuinely different opportunities.
+ * Two posted prices belong to the same betting idea when they express an opinion
+ * on the same question: any rung or side of the game total, and any spread or
+ * moneyline on either team (a side bet and its mirror are one idea, not two).
+ * The board publishes one bet per idea, so the Top 2 are always two genuinely
+ * different opportunities.
  */
 function betIdeaKey(c: Candidate): string {
   const market = c.market.toLowerCase();
   const side = `${c.player ?? ""}|${String(c.selection).toLowerCase()}`;
-  if (market.includes("total")) return `total:${side}`;
+  if (market.includes("team_total")) return `team_total:${side}`;
+  if (market.includes("total")) return "total";
   if (market.includes("spread") || market.includes("moneyline") || market === "h2h") {
-    return `side:${side}`;
+    return "side";
   }
   return `${market.replace("alternate_", "")}:${side}`;
 }
 
 /**
- * Props and the fun bet are graded on their own scale: they are not held to the
- * Top 2 threshold. Green is a strong read, yellow is any posted price the model
- * estimates it beats, red only when the model is genuinely behind the number.
+ * Props are not held to the Top 2 edge threshold. Their light reflects how
+ * likely the model thinks the prop hits: green for a confident read, yellow for
+ * a live one, red only when the model genuinely expects it to miss.
  */
-function sideBadge(c: Candidate): Badge {
+function propBadge(c: Candidate): Badge {
   const g = c.grade;
-  if (!g) return "red";
-  if (g.tier === "strong") return "green";
-  return g.edge != null && g.edge > 0 ? "yellow" : "red";
+  if (!g || g.modelProb == null) return "red";
+  if (g.tier === "strong" || g.modelProb >= 0.6) return "green";
+  return g.modelProb >= 0.45 ? "yellow" : "red";
+}
+
+/**
+ * The fun bet is an explicit long shot, so its light reads as a fun play rather
+ * than a confidence claim: yellow whenever the price is real and the model gives
+ * it a live chance, green only for an unusually strong one.
+ */
+function funBadge(c: Candidate): Badge {
+  const g = c.grade;
+  if (!g || g.modelProb == null) return "red";
+  if (g.modelProb >= 0.5) return "green";
+  return g.modelProb >= 0.1 ? "yellow" : "red";
 }
 
 function propMarketPriority(market: string): number {
@@ -598,7 +612,7 @@ function fillPlayerProps(
   for (const c of pool) {
     if (playerProps.length >= minimum) break;
     if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
-    const badge = sideBadge(c);
+    const badge = propBadge(c);
     used.add(c.key);
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
@@ -632,7 +646,7 @@ function fillFunBet(
     );
   const c = pool[0];
   if (!c) return;
-  const badge = sideBadge(c);
+  const badge = funBadge(c);
   used.add(c.key);
   funBets.push({
     key: "fun-1",
