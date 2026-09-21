@@ -786,7 +786,10 @@ function pricePreference(price: number): number {
 /** Risk-adjusted ranking number: edge in uncertainty bands, discounted by robustness. */
 function candidateRank(c: Candidate): number {
   if (!c.grade) return 0;
-  return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price);
+  const edge = c.grade.edge ?? 0;
+  // A clean 2%+ edge is preferred over a sliver of an edge at the same risk.
+  const edgePreference = edge >= PREFERRED_EDGE ? 1.1 : edge > 0 ? 1 : 0.5;
+  return riskAdjustedScore(c.grade, candidateRobustness(c)) * pricePreference(c.price) * edgePreference;
 }
 
 function leadCheck(c: Candidate): { ok: boolean; why: string } {
