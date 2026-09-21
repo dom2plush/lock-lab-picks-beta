@@ -1410,7 +1410,13 @@ export async function runLockLabFormula(
     const ranked = [
       ...distinct,
       ...candidates
-        .filter((c) => c.group !== "prop" && c.price >= MIN_RECOMMENDED_PRICE && !included.has(c.key))
+        .filter(
+          (c) =>
+            c.group !== "prop" &&
+            c.price >= MIN_RECOMMENDED_PRICE &&
+            hasPositiveEdge(c) &&
+            !included.has(c.key),
+        )
         .sort((a, b) => candidateRank(b) - candidateRank(a))
         .filter((c) => {
           const idea = betIdeaKey(c);
