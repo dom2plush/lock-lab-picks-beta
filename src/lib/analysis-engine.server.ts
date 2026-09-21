@@ -412,8 +412,11 @@ function buildCandidates(
   // Player props: only real, verified sides from the posted board.
   const seen = new Set<string>();
   let propCount = 0;
+  const perMarket = new Map<string, number>();
   // Touchdown-scorer markets are read first so the per-game prop budget can
-  // never cut them off before the fun bet gets a look at them.
+  // never cut them off before the fun bet gets a look at them. The per-market
+  // budget then guarantees the yardage and reception markets are graded too,
+  // instead of a long scorer list swallowing the whole board.
   const propOffers = limitPropBumps(extra.props).sort(
     (a, b) => propMarketPriority(a.market) - propMarketPriority(b.market),
   );
@@ -422,7 +425,10 @@ function buildCandidates(
     if (!["over", "under", "yes", "no"].includes(side)) return;
     if (!offer.player) return;
     const id = `${offer.market}:${offer.player}:${side}`;
-    if (seen.has(id) || propCount >= 90) return;
+    if (seen.has(id) || propCount >= 160) return;
+    const marketCount = perMarket.get(offer.market) ?? 0;
+    if (marketCount >= 30) return;
+    perMarket.set(offer.market, marketCount + 1);
     seen.add(id);
     propCount += 1;
     const marketLabel = PROP_MARKET_LABEL[offer.market] ?? offer.market;
@@ -656,7 +662,10 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         propBadge(c) !== "red" &&
-        (c.grade?.edge ?? 0) > 0,
+        // Real value only: the price is beaten outright, or the simulated hit
+        // rate is strong enough to be worth posting at a fair price.
+        ((c.grade?.edge ?? 0) > 0 ||
+          ((c.grade?.modelProb ?? 0) >= 0.65 && (c.grade?.edge ?? -1) >= 0)),
     )
     .sort(
       (a, b) =>
