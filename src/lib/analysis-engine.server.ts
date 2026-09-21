@@ -2004,17 +2004,23 @@ export async function runLockLabFormula(
       ? `The live board did not contain two distinct price records. ${rejected[0]}`
       : clean(handicap.verdict, "The live board did not contain two distinct price records.");
 
-  return {
-    topBets,
-    funBets,
-    playerProps,
-    notes: {
-      propsAvailable: extra.props.length > 0,
-      altMarketsAvailable: extra.alternates.length > 0,
-      verdict,
+  return attachSimulatedOutcomes(
+    {
+      topBets,
+      funBets,
+      playerProps,
+      notes: {
+        propsAvailable: extra.props.length > 0,
+        altMarketsAvailable: extra.alternates.length > 0,
+        verdict,
+      },
+      candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
     },
-    candidateAudit: buildCandidateAudit(game, candidates, extra, decisions),
-  };
+    candidates,
+    game,
+    projection,
+    players,
+  );
 }
 
 export type StoredAnalysis = Pick<
