@@ -156,12 +156,21 @@ export function runSimulations(
   const wins = new Map<string, number>();
   const simulations: SimulationRun[] = [];
 
+  // Picks settled inside the simulated games carry their own per-run result.
+  const settled = new Map<string, Set<number>>();
+  for (const pick of picks) {
+    if (pick.hits) settled.set(pick.key, new Set(pick.hits));
+  }
+
   for (let run = 1; run <= runs; run += 1) {
     const hits: string[] = [];
     for (const pick of picks) {
-      const random = mulberry32(seedFrom(`${fingerprint}:${pick.key}:${run}`))();
-      const probability = Math.min(0.97, Math.max(0.03, pick.probability));
-      if (random < probability) {
+      const decided = settled.get(pick.key);
+      const won = decided
+        ? decided.has(run)
+        : mulberry32(seedFrom(`${fingerprint}:${pick.key}:${run}`))() <
+          Math.min(0.97, Math.max(0.03, pick.probability));
+      if (won) {
         hits.push(pick.key);
         wins.set(pick.key, (wins.get(pick.key) ?? 0) + 1);
       }
