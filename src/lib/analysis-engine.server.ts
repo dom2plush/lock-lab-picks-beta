@@ -606,7 +606,16 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
   if (!hasPositiveEdge(c)) {
     return {
       ok: false,
-      why: `${c.label}: the estimated win chance does not beat the probability the posted price implies — negative edge, never recommended.`,
+      why: `${c.label}: the simulated win chance does not beat the probability the posted price implies by at least ${(MIN_EDGE * 100).toFixed(1)}% — never recommended.`,
+    };
+  }
+
+  // An alternate several points off the market is not line shopping, it is a
+  // different bet. Distance alone can never be the source of an edge.
+  if (altTooFar(c) && c.alt) {
+    return {
+      ok: false,
+      why: `${c.label}: sits more than ${MAX_ALT_DISTANCE[c.alt.market] ?? 3} points off the standard ${c.alt.market} — too far from the market to treat as a line-shopping option.`,
     };
   }
 
