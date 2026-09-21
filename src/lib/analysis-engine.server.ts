@@ -1493,7 +1493,7 @@ export async function runLockLabFormula(
           ),
         }
       : {};
-    const badge = eligibleForTop(c).ok ? capBadge(c, asBadge(entry.badge)) : "red";
+    const badge = eligibleForTop(c).ok ? capBadge(c, asBadge(entry.badge)) : softBadge(c);
     topBets.push({
       key: `top${topBets.length + 1}`,
       rank: topBets.length + 1,
@@ -1574,6 +1574,12 @@ export async function runLockLabFormula(
     });
     if (playerProps.length === 3) break;
   }
+
+  // Sections are topped up from the ranked live board so a normal game shows
+  // two props and one fun bet. Only real posted prices are ever used.
+  fillPlayerProps(candidates, used, playerProps, decisions);
+  fillFunBet(candidates, used, funBets, decisions);
+
 
   const verdict = topBets.length === 2
     ? null
