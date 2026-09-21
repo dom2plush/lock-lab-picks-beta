@@ -40,6 +40,7 @@ import {
   readMarket,
   summariseAltValue,
 } from "./market-math.server";
+import { readMarketContext } from "./market-context.server";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
