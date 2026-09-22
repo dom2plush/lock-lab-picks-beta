@@ -11,8 +11,8 @@ import { TailDialog, type TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/integrations/supabase/client";
 import { getOddsFeedStatus, getOrCreateAnalysis } from "@/lib/analysis.functions";
+import { getUpcomingGames } from "@/lib/games.functions";
 import type { AnalysisRow, GameRow, Sport } from "@/lib/lock-lab-types";
 
 export const Route = createFileRoute("/")({
@@ -53,6 +53,7 @@ function AnalyzePage() {
 
   const analyze = useServerFn(getOrCreateAnalysis);
   const feedStatus = useServerFn(getOddsFeedStatus);
+  const loadGames = useServerFn(getUpcomingGames);
 
   const feedQuery = useQuery({
     queryKey: ["odds-feed-status"],
@@ -62,16 +63,8 @@ function AnalyzePage() {
   const gamesQuery = useQuery({
     queryKey: ["upcoming-games", sport],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("games")
-        .select("*")
-        .eq("sport", sport)
-        .neq("status", "final")
-        .gte("commence_time", new Date().toISOString())
-        .order("commence_time", { ascending: true })
-        .limit(24);
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as GameRow[];
+      const result = await loadGames({ data: { sport } });
+      return result.games;
     },
   });
 
@@ -197,7 +190,25 @@ function AnalyzePage() {
           />
         ))}
       </div>
-      {!gamesQuery.isLoading && filtered.length === 0 && (
+      {gamesQuery.isError && (
+        <div className="mt-3 rounded-lg border border-stop/40 bg-stop/10 p-4">
+          <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+            Games could not be loaded
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The schedule feed hit an error — this is not an empty board. Try again in a moment.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => gamesQuery.refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+      {!gamesQuery.isLoading && !gamesQuery.isError && filtered.length === 0 && (
         <p className="mt-3 rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
           No {sport} matchups match that search.
         </p>
