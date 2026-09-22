@@ -190,7 +190,25 @@ function AnalyzePage() {
           />
         ))}
       </div>
-      {!gamesQuery.isLoading && filtered.length === 0 && (
+      {gamesQuery.isError && (
+        <div className="mt-3 rounded-lg border border-stop/40 bg-stop/10 p-4">
+          <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+            Games could not be loaded
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The schedule feed hit an error — this is not an empty board. Try again in a moment.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => gamesQuery.refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+      {!gamesQuery.isLoading && !gamesQuery.isError && filtered.length === 0 && (
         <p className="mt-3 rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
           No {sport} matchups match that search.
         </p>
