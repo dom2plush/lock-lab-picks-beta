@@ -11,8 +11,8 @@ import { TailDialog, type TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/integrations/supabase/client";
 import { getOddsFeedStatus, getOrCreateAnalysis } from "@/lib/analysis.functions";
+import { getUpcomingGames } from "@/lib/games.functions";
 import type { AnalysisRow, GameRow, Sport } from "@/lib/lock-lab-types";
 
 export const Route = createFileRoute("/")({
@@ -53,6 +53,7 @@ function AnalyzePage() {
 
   const analyze = useServerFn(getOrCreateAnalysis);
   const feedStatus = useServerFn(getOddsFeedStatus);
+  const loadGames = useServerFn(getUpcomingGames);
 
   const feedQuery = useQuery({
     queryKey: ["odds-feed-status"],
@@ -62,16 +63,8 @@ function AnalyzePage() {
   const gamesQuery = useQuery({
     queryKey: ["upcoming-games", sport],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("games")
-        .select("*")
-        .eq("sport", sport)
-        .neq("status", "final")
-        .gte("commence_time", new Date().toISOString())
-        .order("commence_time", { ascending: true })
-        .limit(24);
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as GameRow[];
+      const result = await loadGames({ data: { sport } });
+      return result.games;
     },
   });
 
