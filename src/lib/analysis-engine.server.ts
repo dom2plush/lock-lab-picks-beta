@@ -973,7 +973,12 @@ function fillPlayerProps(
 }
 
 
-/** Exactly one higher-variance scoring play, First TD first, then Anytime TD. */
+/**
+ * Exactly one higher-variance play. A +200 or longer game price the model
+ * genuinely likes leads here — it is held out of the Top 2 on price alone, so
+ * this is where it belongs. Otherwise it is a scoring play: First TD, then
+ * Anytime TD.
+ */
 function fillFunBet(
   candidates: Candidate[],
   used: Set<string>,
@@ -981,14 +986,23 @@ function fillFunBet(
   decisions: DecisionMap,
 ): void {
   if (funBets.length) return;
+  const funPriority = (c: Candidate): number => {
+    // A long game price only qualifies on real modelled value, never on payout.
+    if (c.group !== "prop") return (c.grade?.edge ?? 0) >= TARGET_EDGE ? 0 : 3;
+    return propMarketPriority(c.market) + 1;
+  };
   const pool = candidates
-    // The fun bet is always a scoring play: First TD first, then Anytime TD.
-    .filter((c) => c.group === "prop" && !used.has(c.key) && propMarketPriority(c.market) < 2)
-    .sort(
-      (a, b) =>
-        propMarketPriority(a.market) - propMarketPriority(b.market) ||
-        candidateRank(b) - candidateRank(a),
-    );
+    .filter((c) => {
+      if (used.has(c.key)) return false;
+      if (c.group === "prop") return propMarketPriority(c.market) < 2;
+      return (
+        c.market === "moneyline" &&
+        isLongshotPrice(c.price) &&
+        hasPositiveEdge(c)
+      );
+    })
+    .filter((c) => funPriority(c) < 3)
+    .sort((a, b) => funPriority(a) - funPriority(b) || candidateRank(b) - candidateRank(a));
   const c = pool[0];
   if (!c) return;
   const badge = funBadge(c);
@@ -1002,9 +1016,12 @@ function fillFunBet(
     estimatedProbability: c.grade?.modelProb ?? null,
     ...pickSource(c),
     reason:
-      "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units.",
+      c.group === "prop"
+        ? "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units."
+        : "The model's win estimate beats this long price, but it pays too long for a normal top bet. For fun only — keep it to smaller units.",
   });
   decisions.set(c.key, { section: "fun", badge, reason: "Fun bet from the ranked board." });
+}
 }
 
 /** How reliable a candidate's probability estimate is (0-1). */
