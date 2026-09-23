@@ -2015,6 +2015,7 @@ export async function runLockLabFormula(
         (c) =>
           c.group !== "prop" &&
           c.price >= MIN_RECOMMENDED_PRICE &&
+          !isLongshotPrice(c.price) &&
           c.grade?.modelProb != null &&
           !altTooFar(c) &&
           !failsKeyGate(c) &&
