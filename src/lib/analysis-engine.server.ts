@@ -1279,7 +1279,11 @@ export function enforceAltSpreadSide(c: Candidate, byKey: Map<string, Candidate>
     c.point > standard.point;
   if (ok) return c;
   console.warn("Lock Lab rejected an alternate spread that did not stay on its own side", c.label);
-  return standard && standard.selection === c.selection ? standard : c;
+  // Fall back to the standard line of the alternate's OWN team, never the other team's.
+  const own = [...byKey.values()].find(
+    (x) => x.group === "core" && x.market === "spread" && x.selection === c.selection,
+  );
+  return own ?? c;
 }
 
 /** Plain reason for taking a key-number spread alternate over the standard line. */
