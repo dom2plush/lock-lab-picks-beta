@@ -347,6 +347,48 @@ export function keyNumberGate(input: {
   };
 }
 
+/** Alternate spread prices must sit in this negative-odds window. */
+export const ALT_SPREAD_PRICE_MIN = -199;
+export const ALT_SPREAD_PRICE_MAX = -100;
+
+/**
+ * Direction and price rule for alternate spreads. The alternate must give the
+ * bettor more protection (a higher number on the same side), cross a real key
+ * margin, and be priced at negative odds between -100 and -199. Moving away
+ * from the key number or into plus-money is never allowed.
+ */
+export function alternateSpreadRule(input: {
+  sport: Sport;
+  standardPoint: number;
+  point: number;
+  price: number;
+}): { ok: boolean; keys: number[]; why: string } {
+  if (!(input.point > input.standardPoint)) {
+    return {
+      ok: false,
+      keys: [],
+      why: `Moves from ${signedLine(input.standardPoint)} to ${signedLine(input.point)} — less protection, so this alternate is never used.`,
+    };
+  }
+  const keys = spreadGateKeysBetween(input.standardPoint, input.point, input.sport);
+  if (!keys.length) {
+    return {
+      ok: false,
+      keys,
+      why: `Moving from ${signedLine(input.standardPoint)} to ${signedLine(input.point)} crosses no key number, so this alternate is never used.`,
+    };
+  }
+  if (input.price > ALT_SPREAD_PRICE_MAX || input.price < ALT_SPREAD_PRICE_MIN) {
+    return {
+      ok: false,
+      keys,
+      why: `Priced at ${input.price > 0 ? "+" : ""}${input.price} — alternate spreads must be between -100 and -199.`,
+    };
+  }
+  return { ok: true, keys, why: "" };
+}
+
+
 function pts(value: number): string {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pts`;
 }
