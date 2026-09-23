@@ -226,6 +226,8 @@ export type AltEvaluation = {
   /** Key numbers the move crosses, e.g. [3] for +2.5 -> +3.5. */
   keysCrossed: number[];
   note: string;
+  /** Key-number + simulated-cover check for alternates that buy points. */
+  keyGate?: { ok: boolean; why: string; simGain: number | null };
 };
 
 function clampProb(p: number) {
@@ -248,6 +250,101 @@ function keysBetween(from: number, to: number, sport: Sport): number[] {
     if (density) hits.push(Math.abs(n));
   }
   return hits;
+}
+
+// ---------------------------------------------------------------------------
+// Key-number gate for alternates that BUY points
+// ---------------------------------------------------------------------------
+
+/** Margins worth paying extra juice to cross on an alternate spread. */
+export const SPREAD_GATE_KEYS: Record<Sport, number[]> = { NFL: [3, 7, 10], CFB: [3, 7, 10] };
+
+/** Most common final combined scores — the only totals worth buying through. */
+export const TOTAL_KEY_NUMBERS: Record<Sport, number[]> = {
+  NFL: [37, 40, 41, 43, 44, 47, 51],
+  CFB: [45, 48, 51, 52, 55, 58, 59],
+};
+
+/** Minimum extra covers out of the simulated games before a bought point counts. */
+export const MIN_SIM_COVER_GAIN = 2;
+
+/** Recognised spread key margins swept when moving from `from` to `to`. */
+export function spreadGateKeysBetween(from: number, to: number, sport: Sport): number[] {
+  const lo = Math.min(-from, -to);
+  const hi = Math.max(-from, -to);
+  const hits: number[] = [];
+  for (let n = Math.ceil(lo); n <= Math.floor(hi); n += 1) {
+    if (SPREAD_GATE_KEYS[sport].includes(Math.abs(n))) hits.push(Math.abs(n));
+  }
+  return hits;
+}
+
+/** Recognised total key numbers strictly between the standard and alternate totals. */
+export function totalKeysBetween(standardPoint: number, altPoint: number, sport: Sport): number[] {
+  const lo = Math.min(standardPoint, altPoint);
+  const hi = Math.max(standardPoint, altPoint);
+  return TOTAL_KEY_NUMBERS[sport].filter((n) => n > lo && n < hi);
+}
+
+export type KeyGateResult = { ok: boolean; keys: number[]; simGain: number | null; why: string };
+
+/**
+ * An alternate that buys points must cross a recognised football key number AND
+ * the simulated games must confirm it actually wins more often than the standard
+ * line. Alternates that sell points (better price, worse number) are untouched.
+ */
+export function keyNumberGate(input: {
+  market: "spread" | "total";
+  sport: Sport;
+  side: string;
+  standardPoint: number;
+  point: number;
+  standardHits: number | null;
+  altHits: number | null;
+  runs: number;
+}): KeyGateResult {
+  const buying =
+    input.market === "spread"
+      ? input.point > input.standardPoint
+      : input.side === "Under"
+        ? input.point > input.standardPoint
+        : input.point < input.standardPoint;
+  if (!buying) return { ok: true, keys: [], simGain: null, why: "" };
+
+  const keys =
+    input.market === "spread"
+      ? spreadGateKeysBetween(input.standardPoint, input.point, input.sport)
+      : totalKeysBetween(input.standardPoint, input.point, input.sport);
+  const simGain =
+    input.standardHits != null && input.altHits != null ? input.altHits - input.standardHits : null;
+
+  if (!keys.length) {
+    return {
+      ok: false,
+      keys,
+      simGain,
+      why: `Buying from ${input.standardPoint} to ${input.point} crosses no recognised ${
+        input.market === "spread" ? "key margin" : "key scoring total"
+      }, so the extra juice is not worth paying.`,
+    };
+  }
+  if (simGain == null) {
+    return { ok: false, keys, simGain, why: "The simulated games could not confirm any extra covers for this number." };
+  }
+  if (simGain < MIN_SIM_COVER_GAIN) {
+    return {
+      ok: false,
+      keys,
+      simGain,
+      why: `Crosses ${keys.join(" and ")}, but only ${simGain} of ${input.runs} simulated games changed result — not a meaningful gain.`,
+    };
+  }
+  return {
+    ok: true,
+    keys,
+    simGain,
+    why: `Crosses ${keys.join(" and ")}: ${simGain} more of ${input.runs} simulated games cash than the standard line.`,
+  };
 }
 
 function pts(value: number): string {
