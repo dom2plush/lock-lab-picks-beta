@@ -1022,7 +1022,6 @@ function fillFunBet(
   });
   decisions.set(c.key, { section: "fun", badge, reason: "Fun bet from the ranked board." });
 }
-}
 
 /** How reliable a candidate's probability estimate is (0-1). */
 function candidateRobustness(c: Candidate): number {
