@@ -242,6 +242,24 @@ function applyKeyGate(
   projection: GameProjection,
 ): AltEvaluation | null {
   if (!evaluation) return evaluation;
+  // Alternate spreads: more protection only, across a real key number, at
+  // negative odds between -100 and -199. Anything else is never selectable.
+  if (evaluation.market === "spread") {
+    const rule = alternateSpreadRule({
+      sport: game.sport,
+      standardPoint: evaluation.standardPoint,
+      point: evaluation.point,
+      price: evaluation.price,
+    });
+    if (!rule.ok) {
+      return {
+        ...evaluation,
+        worthIt: false,
+        keyGate: { ok: false, why: rule.why, simGain: null },
+        note: `${evaluation.note} ${rule.why}`.trim(),
+      };
+    }
+  }
   const count = (o: boolean[] | null) => (o ? o.filter(Boolean).length : null);
   let standardOutcomes: boolean[] | null = null;
   let altOutcomes: boolean[] | null = null;
