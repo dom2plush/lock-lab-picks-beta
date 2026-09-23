@@ -566,6 +566,7 @@ export type Database = {
         }
         Returns: string
       }
+      ensure_profile: { Args: { _uid: string }; Returns: undefined }
       grade_tail_result: {
         Args: {
           _as: number
