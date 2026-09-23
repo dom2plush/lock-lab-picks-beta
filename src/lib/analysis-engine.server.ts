@@ -622,6 +622,18 @@ function gradeBoard(
 const MIN_RECOMMENDED_PRICE = -180;
 
 /**
+ * Longest price allowed in the Top 2. Those two slots are normal bets, so a
+ * +200 or longer underdog price never sits there — when the model likes one it
+ * is published as the fun bet instead.
+ */
+const MAX_TOP_PRICE = 199;
+
+/** True when a game price is long enough to belong in the fun bet, not the Top 2. */
+function isLongshotPrice(price: number): boolean {
+  return price > MAX_TOP_PRICE;
+}
+
+/**
  * THE edge thresholds. Every section — Top 2, props, fun bet, fallback fills —
  * reads these and nothing else, so a selection can never be playable in one
  * part of the board and a pass in another.
@@ -685,6 +697,15 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
     return {
       ok: false,
       why: `${c.label}: priced worse than ${MIN_RECOMMENDED_PRICE} — too heavily juiced to recommend.`,
+    };
+  }
+
+  // The Top 2 are normal bets. A +200 or longer game price — usually an
+  // underdog moneyline — belongs in the fun bet, never in these two slots.
+  if (c.group !== "prop" && isLongshotPrice(c.price)) {
+    return {
+      ok: false,
+      why: `${c.label}: pays longer than +${MAX_TOP_PRICE} — held out of the Top 2 and considered for the fun bet instead.`,
     };
   }
 
@@ -952,7 +973,12 @@ function fillPlayerProps(
 }
 
 
-/** Exactly one higher-variance scoring play, First TD first, then Anytime TD. */
+/**
+ * Exactly one higher-variance play. A +200 or longer game price the model
+ * genuinely likes leads here — it is held out of the Top 2 on price alone, so
+ * this is where it belongs. Otherwise it is a scoring play: First TD, then
+ * Anytime TD.
+ */
 function fillFunBet(
   candidates: Candidate[],
   used: Set<string>,
@@ -960,14 +986,23 @@ function fillFunBet(
   decisions: DecisionMap,
 ): void {
   if (funBets.length) return;
+  const funPriority = (c: Candidate): number => {
+    // A long game price only qualifies on real modelled value, never on payout.
+    if (c.group !== "prop") return (c.grade?.edge ?? 0) >= TARGET_EDGE ? 0 : 3;
+    return propMarketPriority(c.market) + 1;
+  };
   const pool = candidates
-    // The fun bet is always a scoring play: First TD first, then Anytime TD.
-    .filter((c) => c.group === "prop" && !used.has(c.key) && propMarketPriority(c.market) < 2)
-    .sort(
-      (a, b) =>
-        propMarketPriority(a.market) - propMarketPriority(b.market) ||
-        candidateRank(b) - candidateRank(a),
-    );
+    .filter((c) => {
+      if (used.has(c.key)) return false;
+      if (c.group === "prop") return propMarketPriority(c.market) < 2;
+      return (
+        c.market === "moneyline" &&
+        isLongshotPrice(c.price) &&
+        hasPositiveEdge(c)
+      );
+    })
+    .filter((c) => funPriority(c) < 3)
+    .sort((a, b) => funPriority(a) - funPriority(b) || candidateRank(b) - candidateRank(a));
   const c = pool[0];
   if (!c) return;
   const badge = funBadge(c);
@@ -981,7 +1016,9 @@ function fillFunBet(
     estimatedProbability: c.grade?.modelProb ?? null,
     ...pickSource(c),
     reason:
-      "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units.",
+      c.group === "prop"
+        ? "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units."
+        : "The model's win estimate beats this long price, but it pays too long for a normal top bet. For fun only — keep it to smaller units.",
   });
   decisions.set(c.key, { section: "fun", badge, reason: "Fun bet from the ranked board." });
 }
@@ -1724,6 +1761,7 @@ export async function runLockLabFormula(
         (c) =>
           c.group !== "prop" &&
           c.price >= MIN_RECOMMENDED_PRICE &&
+          !isLongshotPrice(c.price) &&
           c.grade?.modelProb != null &&
           !altTooFar(c) &&
           !failsKeyGate(c),
@@ -1953,6 +1991,7 @@ export async function runLockLabFormula(
         c.group !== "prop" &&
         // Never fill a slot with a price we would not recommend.
         c.price >= MIN_RECOMMENDED_PRICE &&
+        !isLongshotPrice(c.price) &&
         // Pick #2 only needs a measurable positive edge; its light shows the size.
         hasAnyPositiveEdge(c) &&
         !selectedIds.has(c.key) &&
@@ -1992,6 +2031,7 @@ export async function runLockLabFormula(
         (c) =>
           c.group !== "prop" &&
           c.price >= MIN_RECOMMENDED_PRICE &&
+          !isLongshotPrice(c.price) &&
           c.grade?.modelProb != null &&
           !altTooFar(c) &&
           !failsKeyGate(c) &&

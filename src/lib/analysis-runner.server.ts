@@ -49,7 +49,7 @@ export async function buildLiveAnalysis(
       {
         game_id: game.id,
         sport: game.sport,
-        engine_version: "direct-v1",
+        engine_version: "direct-v3",
         odds_snapshot: game.odds as unknown as never,
         odds_captured_at: currentCapture,
         odds_book: game.odds.bookmaker ?? null,
