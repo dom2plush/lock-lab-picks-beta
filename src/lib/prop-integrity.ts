@@ -21,6 +21,7 @@ export const VERIFIED_PROP_MARKETS = [
   "player_receptions",
   "player_1st_td",
   "player_anytime_td",
+  "player_tds_over",
 ] as const;
 
 const PROP_SIDES = ["over", "under", "yes", "no"];

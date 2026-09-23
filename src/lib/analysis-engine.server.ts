@@ -1127,11 +1127,8 @@ function fillFunBet(
   };
 
   // ---- 1. Primary TD fun bet ------------------------------------------------
-  const byKey = new Map(candidates.map((c) => [c.key, c]));
-  const hasTd = funBets.some((f) => {
-    const c = candidates.find((x) => x.label === f.label);
-    return c ? isTdFunCandidate(c) : false;
-  });
+  const chosen = candidates.filter((c) => decisions.get(c.key)?.section === "fun");
+  const hasTd = chosen.some(isTdFunCandidate);
   if (!hasTd) {
     const tdPool = candidates
       .filter((c) => !used.has(c.key) && isTdFunCandidate(c))
@@ -1149,14 +1146,9 @@ function fillFunBet(
       );
     }
   }
-  void byKey;
 
   // ---- 2. Optional Bonus fun bet: a +200 or longer moneyline ---------------
-  const hasBonus = funBets.some((f) => {
-    const c = candidates.find((x) => x.label === f.label);
-    return c ? c.group !== "prop" : false;
-  });
-  if (hasBonus) return;
+  if (chosen.some((c) => c.group !== "prop")) return;
   const bonus = candidates
     .filter(
       (c) =>

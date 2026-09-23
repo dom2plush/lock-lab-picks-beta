@@ -42,6 +42,7 @@ const PROP_MARKETS = [
   "player_receptions",
   "player_1st_td",
   "player_anytime_td",
+  "player_tds_over",
 ];
 
 export type NormalizedGame = {
