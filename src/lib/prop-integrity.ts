@@ -12,7 +12,11 @@ import type { GameRow, MarketOffer } from "./lock-lab-types";
 export const VERIFIED_PROP_MARKETS = [
   "player_pass_yds",
   "player_pass_tds",
+  "player_pass_completions",
+  "player_pass_attempts",
+  "player_pass_interceptions",
   "player_rush_yds",
+  "player_rush_attempts",
   "player_reception_yds",
   "player_receptions",
   "player_1st_td",
@@ -72,7 +76,10 @@ export function verifyPropOffers(offers: MarketOffer[], game: GameRow): OfferVer
   const seen = new Set<string>();
 
   for (const offer of offers) {
-    const problems = baseProblems(offer, game, true);
+    // Props may come from any sportsbook in the feed: each pick carries and
+    // displays its own book, line, price and capture time, so a prop is never
+    // dropped just because the main-line snapshot came from another book.
+    const problems = baseProblems(offer, game, false);
 
     if (!(VERIFIED_PROP_MARKETS as readonly string[]).includes(offer.market)) {
       problems.push("market is not a verified player-prop market");

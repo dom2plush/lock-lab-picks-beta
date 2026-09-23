@@ -24,9 +24,21 @@ const YARD_CV: Record<string, number> = {
   player_pass_yds: 0.24,
   player_rush_yds: 0.45,
   player_reception_yds: 0.5,
+  // Workload counts with large lines scatter far less than yardage.
+  player_pass_completions: 0.18,
+  player_pass_attempts: 0.15,
+  player_rush_attempts: 0.3,
 };
 
-const COUNT_MARKETS = new Set(["player_receptions", "player_pass_tds"]);
+const COUNT_MARKETS = new Set(["player_receptions", "player_pass_tds", "player_pass_interceptions"]);
+const PASS_SCRIPT_MARKETS = new Set([
+  "player_pass_yds",
+  "player_reception_yds",
+  "player_receptions",
+  "player_pass_completions",
+  "player_pass_attempts",
+]);
+const RUSH_SCRIPT_MARKETS = new Set(["player_rush_yds", "player_rush_attempts"]);
 const TD_MARKETS = new Set(["player_anytime_td", "player_1st_td"]);
 
 export type PropQuery = {
@@ -219,12 +231,11 @@ export function simulatePlayers(
         if (TD_MARKETS.has(market)) continue;
         const line = baseline.line;
         if (line == null || line <= 0) continue;
-        const script =
-          market === "player_rush_yds"
-            ? rushFactor
-            : market === "player_pass_yds" || market === "player_reception_yds" || market === "player_receptions"
-              ? passFactor
-              : 1;
+        const script = RUSH_SCRIPT_MARKETS.has(market)
+          ? rushFactor
+          : PASS_SCRIPT_MARKETS.has(market)
+            ? passFactor
+            : 1;
         const mean = line * scoreFactor * script;
         if (COUNT_MARKETS.has(market)) {
           const lambda = market === "player_pass_tds" ? mean + 0.15 : mean + 0.1;

@@ -45,13 +45,20 @@ describe("player prop verification", () => {
     expect(rejected[0]!.reason).toContain("different game");
   });
 
-  it("rejects a prop priced at a different sportsbook than the displayed snapshot", () => {
-    const { verified, rejected } = verifyPropOffers(
+  it("keeps a real prop posted by a different sportsbook, with its own book attached", () => {
+    const { verified } = verifyPropOffers(
       [{ ...base, book: "FanDuel", bookKey: "fanduel" }],
       game,
     );
-    expect(verified).toHaveLength(0);
-    expect(rejected[0]!.reason).toContain("sportsbook differs");
+    expect(verified).toHaveLength(1);
+    expect(verified[0]!.book).toBe("FanDuel");
+  });
+
+  it("accepts completions, rush attempts and interceptions markets", () => {
+    const offers = ["player_pass_completions", "player_rush_attempts", "player_pass_interceptions"].map(
+      (market) => ({ ...base, market }),
+    );
+    expect(verifyPropOffers(offers, game).verified).toHaveLength(3);
   });
 
   it("rejects a prop with no player, no timestamp or an unsupported market", () => {

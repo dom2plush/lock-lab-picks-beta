@@ -64,7 +64,11 @@ function fmtLine(line: number): string {
 const PROP_MARKET_LABEL: Record<string, string> = {
   player_pass_yds: "Passing yards",
   player_pass_tds: "Passing TDs",
+  player_pass_completions: "Pass completions",
+  player_pass_attempts: "Pass attempts",
+  player_pass_interceptions: "Interceptions thrown",
   player_rush_yds: "Rushing yards",
+  player_rush_attempts: "Rush attempts",
   player_reception_yds: "Receiving yards",
   player_receptions: "Receptions",
   player_1st_td: "First TD scorer",
@@ -81,6 +85,8 @@ const PROP_BUMP_LIMIT: Record<string, number> = {
   player_rush_yds: 10,
   player_reception_yds: 10,
   player_receptions: 1,
+  player_pass_completions: 2,
+  player_pass_attempts: 3,
   player_rush_attempts: 2,
   player_carries: 2,
 };
@@ -517,7 +523,7 @@ export function buildCandidates(
     if (!["over", "under", "yes", "no"].includes(side)) return;
     if (!offer.player) return;
     const id = `${offer.market}:${offer.player}:${side}`;
-    if (seen.has(id) || propCount >= 160) return;
+    if (seen.has(id) || propCount >= 400) return;
     const marketCount = perMarket.get(offer.market) ?? 0;
     if (marketCount >= 30) return;
     perMarket.set(offer.market, marketCount + 1);
@@ -997,6 +1003,54 @@ function fillPlayerProps(
         remaining.splice(i, 1);
       }
     }
+  }
+
+  // Availability floor: when the feed has at least two real posted player
+  // markets but fewer than two cleared the edge bar, the strongest remaining
+  // ones (by the same 50-run simulated probabilities) are shown with an honest
+  // badge rather than reporting props as unavailable. The -180 limit holds,
+  // and any touchdown market left here is one the fun bet did not take.
+  const MIN_PROPS = 2;
+  if (playerProps.length >= MIN_PROPS) return;
+  const floor = candidates
+    .filter(
+      (c) =>
+        c.group === "prop" &&
+        !used.has(c.key) &&
+        c.price >= MIN_RECOMMENDED_PRICE &&
+        c.market !== "player_1st_td" &&
+        c.grade?.modelProb != null &&
+        !playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel),
+    )
+    // Non-touchdown markets first, then by the model's own ranking.
+    .sort(
+      (a, b) =>
+        Number(propMarketPriority(a.market) !== 2) - Number(propMarketPriority(b.market) !== 2) ||
+        candidateRank(b) - candidateRank(a),
+    );
+  for (const c of floor) {
+    if (playerProps.length >= MIN_PROPS) break;
+    if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+    const thin = (c.grade?.edge ?? 0) < MIN_EDGE;
+    const badge: Badge = thin ? "red" : propBadge(c);
+    used.add(c.key);
+    const reason =
+      reasons?.get(c.key) ??
+      (thin
+        ? "Thin edge — the strongest remaining posted prop in the 50 simulated games, shown so you can compare it; the model sees little value at this price."
+        : "The strongest remaining posted prop on this board under the model's usage and matchup read.");
+    playerProps.push({
+      key: `prop-${playerProps.length + 1}`,
+      badge,
+      label: c.label,
+      player: c.player ?? "",
+      market: c.marketLabel,
+      odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
+      ...pickSource(c),
+      reason,
+    });
+    decisions.set(c.key, { section: "prop", badge, reason });
   }
 }
 
@@ -1896,8 +1950,10 @@ export async function runLockLabFormula(
     });
     const fallbackProps: PropBet[] = [];
     const fallbackFun: FunBet[] = [];
-    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
+    // Fun bet claims its touchdown/longshot pick first so the props floor can
+    // never take it; props themselves never draw from those markets otherwise.
     fillFunBet(candidates, usedFallback, fallbackFun, decisions);
+    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
     return attachSimulatedOutcomes(
       {
         topBets,
@@ -2243,8 +2299,8 @@ export async function runLockLabFormula(
 
   // Sections are topped up from the ranked live board so a normal game shows
   // two props and one fun bet. Only real posted prices are ever used.
-  fillPlayerProps(candidates, used, playerProps, decisions, 4, propReasons);
   fillFunBet(candidates, used, funBets, decisions);
+  fillPlayerProps(candidates, used, playerProps, decisions, 4, propReasons);
 
 
   const verdict = topBets.length === 2
