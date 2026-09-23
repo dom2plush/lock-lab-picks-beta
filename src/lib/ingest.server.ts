@@ -303,7 +303,7 @@ export async function syncSportsData(): Promise<SyncReport> {
               .map(({ capturedAt: _c, ...rest }) => rest)
               .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
           );
-        for (const game of (soon ?? []) as unknown as Pick<GameRow, "id" | "provider_game_id" | "home_team" | "away_team"> & { props: MarketOffer[] }[]) {
+        for (const game of (soon ?? []) as unknown as (Pick<GameRow, "id" | "provider_game_id" | "home_team" | "away_team"> & { props: MarketOffer[] })[]) {
           if (!creditsOk(PROP_CREDIT_FLOOR)) break;
           try {
             const markets = await fetchEventMarkets(sport, game.provider_game_id);

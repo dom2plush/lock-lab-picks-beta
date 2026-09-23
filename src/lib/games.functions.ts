@@ -44,7 +44,7 @@ export const getUpcomingGames = createServerFn({ method: "GET" })
       .neq("status", "final")
       .gte("commence_time", new Date().toISOString())
       .order("commence_time", { ascending: true })
-      .limit(24);
+      .limit(300);
     if (error) throw new Error(error.message);
     return { games: (rows ?? []) as unknown as GameRow[] };
   });
