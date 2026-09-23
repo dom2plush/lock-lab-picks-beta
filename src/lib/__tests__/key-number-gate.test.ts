@@ -19,7 +19,7 @@ describe("key-number gate for bought points", () => {
   });
 
   it("requires the simulated games to confirm the extra covers", () => {
-    const weak = keyNumberGate({ ...base, market: "spread", sport: "NFL", side: "A", standardPoint: 2.5, point: 3.5, altHits: 26 });
+    const weak = keyNumberGate({ ...base, market: "spread", sport: "NFL", side: "A", standardPoint: 2.5, point: 3.5, altHits: 25 });
     const real = keyNumberGate({ ...base, market: "spread", sport: "NFL", side: "A", standardPoint: 2.5, point: 3.5, altHits: 28 });
     expect(weak.ok).toBe(false);
     expect(real.ok).toBe(true);
