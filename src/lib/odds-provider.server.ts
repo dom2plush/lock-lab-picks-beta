@@ -152,6 +152,13 @@ function normalizeOdds(event: ProviderEvent, capturedAt: string): GameOdds {
   return odds;
 }
 
+/** Provider credits left after the most recent call (null until one is made). */
+let lastCreditsRemaining: number | null = null;
+
+export function getCreditsRemaining(): number | null {
+  return lastCreditsRemaining;
+}
+
 async function providerFetch<T>(path: string, params: Record<string, string>): Promise<T> {
   const key = getProviderKey();
   if (!key) throw new Error("ODDS_API_KEY is not configured");
@@ -160,12 +167,47 @@ async function providerFetch<T>(path: string, params: Record<string, string>): P
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
   const res = await fetch(url.toString());
+  const remaining = res.headers.get("x-requests-remaining");
+  if (remaining != null && remaining !== "" && Number.isFinite(Number(remaining))) {
+    lastCreditsRemaining = Number(remaining);
+  }
   if (!res.ok) {
     const body = await res.text();
     // Never leak the key through an error string.
     throw new Error(`Odds provider ${res.status}: ${body.slice(0, 300)}`);
   }
   return (await res.json()) as T;
+}
+
+/**
+ * The complete scheduled slate for a sport from the provider's events list.
+ * This call costs no provider credits and returns every listed game —
+ * including ones sportsbooks have not priced yet — so the board never misses
+ * a game just because its lines are not up. No odds are attached here.
+ */
+export async function fetchScheduledEvents(sport: Sport): Promise<NormalizedGame[]> {
+  const events = await providerFetch<ProviderEvent[]>(`/sports/${SPORT_KEYS[sport]}/events`, {});
+  const now = Date.now();
+  return events.map((event) => ({
+    provider_game_id: event.id,
+    sport,
+    home_team: event.home_team,
+    away_team: event.away_team,
+    home_team_short: shortName(event.home_team),
+    away_team_short: shortName(event.away_team),
+    commence_time: event.commence_time,
+    status: (new Date(event.commence_time).getTime() <= now ? "live" : "scheduled") as
+      | "live"
+      | "scheduled",
+    home_score: null,
+    away_score: null,
+    odds: {},
+    injuries: [],
+    is_demo: false,
+    odds_book: null,
+    odds_book_key: null,
+    odds_updated_at: null as unknown as string,
+  }));
 }
 
 export async function fetchUpcomingGames(sport: Sport): Promise<NormalizedGame[]> {
