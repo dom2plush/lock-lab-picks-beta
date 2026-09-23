@@ -110,7 +110,15 @@ function checkEntry(
       `Priced at ${source.book} but the page is showing a ${snapshot.bookmaker} snapshot.`,
     );
   }
-  if (snapshot.capturedAt && source.capturedAt && !sameTime(source.capturedAt, snapshot.capturedAt)) {
+  // Player props may come from another book whose prop market last moved at a
+  // different time; they carry and display their own capture timestamp.
+  const isPlayerProp = /player|prop/.test(tag);
+  if (
+    !isPlayerProp &&
+    snapshot.capturedAt &&
+    source.capturedAt &&
+    !sameTime(source.capturedAt, snapshot.capturedAt)
+  ) {
     problems.push("This pick was priced from an older snapshot than the one displayed.");
   }
 
