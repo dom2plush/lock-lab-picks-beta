@@ -117,12 +117,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
  * (the project URL and the publishable key) are exposed.
  */
 function runtimePublicConfigScript() {
-  if (typeof window !== "undefined") return null;
-  const config = {
-    SUPABASE_URL: process.env["SUPABASE_URL"] ?? process.env["VITE_SUPABASE_URL"] ?? "",
-    SUPABASE_PUBLISHABLE_KEY:
-      process.env["SUPABASE_PUBLISHABLE_KEY"] ?? process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ?? "",
-  };
+  let config: { SUPABASE_URL: string; SUPABASE_PUBLISHABLE_KEY: string };
+  if (typeof window !== "undefined") {
+    // Re-render the exact same script on the client so hydration matches.
+    const existing = (globalThis as { __LOVABLE_PUBLIC_ENV__?: Record<string, string> })
+      .__LOVABLE_PUBLIC_ENV__;
+    config = {
+      SUPABASE_URL: existing?.["SUPABASE_URL"] ?? "",
+      SUPABASE_PUBLISHABLE_KEY: existing?.["SUPABASE_PUBLISHABLE_KEY"] ?? "",
+    };
+  } else {
+    config = {
+      SUPABASE_URL: process.env["SUPABASE_URL"] ?? process.env["VITE_SUPABASE_URL"] ?? "",
+      SUPABASE_PUBLISHABLE_KEY:
+        process.env["SUPABASE_PUBLISHABLE_KEY"] ?? process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ?? "",
+    };
+  }
   if (!config.SUPABASE_URL || !config.SUPABASE_PUBLISHABLE_KEY) return null;
   return `globalThis.__LOVABLE_PUBLIC_ENV__=Object.assign({},globalThis.__LOVABLE_PUBLIC_ENV__,${JSON.stringify(
     config,

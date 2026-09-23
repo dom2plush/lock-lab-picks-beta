@@ -33,6 +33,7 @@ import {
   createAltEvaluator,
   devig,
   gradeValue,
+  keyNumberGate,
   robustnessScore,
   riskAdjustedScore,
   canLeadBoard,
@@ -229,6 +230,61 @@ function teamTag(game: GameRow, team: string) {
   return team;
 }
 
+/**
+ * Key-number gate for alternates that buy points: the move must cross a
+ * recognised football key number, and the existing 50 simulated games must show
+ * it cashes meaningfully more often than the standard line. A failing rung is
+ * never treated as better than its standard number.
+ */
+function applyKeyGate(
+  evaluation: AltEvaluation | null,
+  game: GameRow,
+  projection: GameProjection,
+): AltEvaluation | null {
+  if (!evaluation) return evaluation;
+  const count = (o: boolean[] | null) => (o ? o.filter(Boolean).length : null);
+  let standardOutcomes: boolean[] | null = null;
+  let altOutcomes: boolean[] | null = null;
+  if (evaluation.market === "spread") {
+    const side = evaluation.side === game.home_team ? "home" : evaluation.side === game.away_team ? "away" : null;
+    if (side) {
+      standardOutcomes = projection.spreadOutcomes(side, evaluation.standardPoint);
+      altOutcomes = projection.spreadOutcomes(side, evaluation.point);
+    }
+  } else if (evaluation.side === "Over" || evaluation.side === "Under") {
+    standardOutcomes = projection.totalOutcomes(evaluation.side, evaluation.standardPoint);
+    altOutcomes = projection.totalOutcomes(evaluation.side, evaluation.point);
+  }
+  const gate = keyNumberGate({
+    market: evaluation.market,
+    sport: game.sport,
+    side: evaluation.side,
+    standardPoint: evaluation.standardPoint,
+    point: evaluation.point,
+    standardHits: count(standardOutcomes),
+    altHits: count(altOutcomes),
+    runs: altOutcomes?.length ?? standardOutcomes?.length ?? 50,
+  });
+  if (gate.ok && !gate.why) return evaluation;
+  return {
+    ...evaluation,
+    worthIt: gate.ok ? evaluation.worthIt : false,
+    keyGate: { ok: gate.ok, why: gate.why, simGain: gate.simGain },
+    note: `${evaluation.note} ${gate.why}`.trim(),
+  };
+}
+
+/** True when an alternate buys points without crossing a key number the simulations confirm. */
+function failsKeyGate(c: Candidate): boolean {
+  return Boolean(c.alt?.keyGate && !c.alt.keyGate.ok);
+}
+
+/** An alternate must match or beat its own standard line's edge before it can replace it. */
+function beatsStandardEdge(alt: Candidate, standard: Candidate | undefined): boolean {
+  if (!standard?.grade || standard.grade.edge == null) return true;
+  return (alt.grade?.edge ?? -Infinity) >= standard.grade.edge;
+}
+
 function buildCandidates(
   game: GameRow,
   odds: GameOdds,
@@ -370,7 +426,7 @@ function buildCandidates(
   type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
   const scored: ScoredAlt[] = extra.alternates
     .filter((o) => o.point != null && o.price <= 1200 && o.price >= -1000)
-    .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
+    .map((offer) => ({ offer, evaluation: applyKeyGate(evaluator.evaluateOffer(offer), game, projection) }));
 
   // Both rungs of the ladder matter: the cap is per market AND per side, so a
   // long favourite ladder can never crowd the other side's numbers off the board.
@@ -645,6 +701,12 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
 
   // An alternate several points off the market is not line shopping, it is a
   // different bet. Distance alone can never be the source of an edge.
+  // A bought point that crosses no key number, or that the simulated games do
+  // not confirm, is never a Top 2 candidate — however the edge looks on paper.
+  if (failsKeyGate(c) && c.alt?.keyGate) {
+    return { ok: false, why: `${c.label}: ${c.alt.keyGate.why}` };
+  }
+
   if (altTooFar(c) && c.alt) {
     return {
       ok: false,
@@ -797,6 +859,7 @@ function fillPlayerProps(
   playerProps: PropBet[],
   decisions: DecisionMap,
   maximum = 4,
+  reasons?: Map<string, string>,
 ): void {
   const pool = candidates
     .filter(
@@ -823,9 +886,15 @@ function fillPlayerProps(
       odds: fmtOdds(c.price),
       estimatedProbability: c.grade?.modelProb ?? null,
       ...pickSource(c),
-      reason: "The strongest remaining posted prop on this board under the model's usage and matchup read.",
+      reason:
+        reasons?.get(c.key) ??
+        "The strongest remaining posted prop on this board under the model's usage and matchup read.",
     });
-    decisions.set(c.key, { section: "prop", badge, reason: "Player prop from the ranked board." });
+    decisions.set(c.key, {
+      section: "prop",
+      badge,
+      reason: reasons?.get(c.key) ?? "Player prop from the ranked board.",
+    });
   };
 
   const remaining = pool.filter(
@@ -972,7 +1041,8 @@ function bestGradedAlternate(
         x.alt.worthIt &&
         x.standardKey === standard.key &&
         !used.has(x.key) &&
-        eligibleForTop(x).ok,
+        eligibleForTop(x).ok &&
+        beatsStandardEdge(x, standard),
     )
     .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
 }
@@ -1655,7 +1725,8 @@ export async function runLockLabFormula(
           c.group !== "prop" &&
           c.price >= MIN_RECOMMENDED_PRICE &&
           c.grade?.modelProb != null &&
-          !altTooFar(c),
+          !altTooFar(c) &&
+          !failsKeyGate(c),
       )
       .sort((a, b) => candidateRank(b) - candidateRank(a));
     const seenIdeas = new Set<string>();
@@ -1778,6 +1849,7 @@ export async function runLockLabFormula(
   const sweptAlternates: Candidate[] = candidates
     .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
     .filter((c) => eligibleForTop(c).ok)
+    .filter((c) => beatsStandardEdge(c, c.standardKey ? byKey.get(c.standardKey) : undefined))
     .sort((a, b) => candidateRank(b) - candidateRank(a));
   for (const c of sweptAlternates.slice(0, 2)) {
     if (shortlist.some((s) => betIdeaKey(s.c) === betIdeaKey(c) && candidateRank(s.c) >= candidateRank(c))) {
@@ -1922,6 +1994,7 @@ export async function runLockLabFormula(
           c.price >= MIN_RECOMMENDED_PRICE &&
           c.grade?.modelProb != null &&
           !altTooFar(c) &&
+          !failsKeyGate(c) &&
           !selectedIds.has(c.key) &&
           !selectedIdeas.has(betIdeaKey(c)),
       )
@@ -2021,36 +2094,20 @@ export async function runLockLabFormula(
   }
 
   const playerProps: PropBet[] = [];
+  // The handicap read's props are not inserted directly: their lean is applied
+  // and their reasoning kept, then every prop (read-nominated or not) goes
+  // through the same edge-first selector with the 1.5% diversity window.
+  const propReasons = new Map<string, string>();
   for (const entry of handicap.props ?? []) {
     const c = byKey.get(entry.key);
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
-    // Props are a separate pool from the game picks: only the price cap gates
-    // them here, and each prop's light reports its true edge.
-    if (c.price < MIN_RECOMMENDED_PRICE) continue;
-    used.add(c.key);
-    playerProps.push({
-      key: `prop-${playerProps.length + 1}`,
-      badge: propBadge(c),
-      label: c.label,
-      player: c.player ?? "",
-      market: c.marketLabel,
-      odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
-      ...pickSource(c),
-      reason: clean(entry.reason, "Usage and matchup back this number."),
-    });
-    decisions.set(c.key, {
-      section: "prop",
-      badge: propBadge(c),
-      reason: clean(entry.reason, "Player prop."),
-    });
-    if (playerProps.length === 4) break;
+    propReasons.set(c.key, clean(entry.reason, "Usage and matchup back this number."));
   }
 
   // Sections are topped up from the ranked live board so a normal game shows
   // two props and one fun bet. Only real posted prices are ever used.
-  fillPlayerProps(candidates, used, playerProps, decisions);
+  fillPlayerProps(candidates, used, playerProps, decisions, 4, propReasons);
   fillFunBet(candidates, used, funBets, decisions);
 
 
