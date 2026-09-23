@@ -287,7 +287,7 @@ export const TOTAL_KEY_NUMBERS: Record<Sport, number[]> = {
 };
 
 /** Minimum extra covers out of the simulated games before a bought point counts. */
-export const MIN_SIM_COVER_GAIN = 2;
+export const MIN_SIM_COVER_GAIN = 1;
 
 /** Recognised spread key margins swept when moving from `from` to `to`. */
 export function spreadGateKeysBetween(from: number, to: number, sport: Sport): number[] {
