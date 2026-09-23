@@ -115,7 +115,7 @@ function RecordCard({ title, line }: { title: string; line: RecordLine }) {
   );
 }
 
-function ResultPill({ result, label }: { result: Result; label?: string }) {
+function ResultPill({ result, label }: { result: Result; label?: string | undefined }) {
   return (
     <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase", RESULT_STYLE[result])}>
       {label ?? result}
@@ -128,7 +128,7 @@ function lockedLine(book: string | null, capturedAt: string | null) {
   return parts.length ? parts.join(" · ") : null;
 }
 
-function SingleCard({ tail, phase, onDelete }: { tail: MyTail; phase: Phase; onDelete?: () => void }) {
+function SingleCard({ tail, phase, onDelete }: { tail: MyTail; phase: Phase; onDelete?: (() => void) | undefined }) {
   const g = tail.games;
   const awaiting = phase === "past" && tail.lock_leg_result === "pending";
   const stake = Number(tail.wager ?? 0);
@@ -178,7 +178,7 @@ function SingleCard({ tail, phase, onDelete }: { tail: MyTail; phase: Phase; onD
   );
 }
 
-function ParlayCard({ parlay, phase, onDelete }: { parlay: MyParlay; phase: Phase; onDelete?: () => void }) {
+function ParlayCard({ parlay, phase, onDelete }: { parlay: MyParlay; phase: Phase; onDelete?: (() => void) | undefined }) {
   const odds = parlay.actual_odds ?? parlay.computed_odds;
   const toReturn = parlay.actual_payout ?? Number(parlay.stake) * decimal(odds);
   return (
