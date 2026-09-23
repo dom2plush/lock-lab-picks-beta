@@ -32,3 +32,10 @@
 - Coverage statement per run: the engine is told exactly how many alternate spreads/totals/team totals/props the book supplied, and the verdict must say whether alternates were absent, evaluated and rejected, or selected.
 - Bad bet prefers a market with a legitimately priced opposing selection; the posted flip side is matched from the board and graded independently. When the book posts no opposing price: "NO VALID BAD-BET FLIP".
 - Displayed reasons capped at two sentences; deep reasoning stays internal.
+
+## Published-site database connection (done)
+- Games board reads through the server; real "Games could not be loaded" error state; sign-in/history pages receive public config at page load.
+
+## Selection refinements (done, sim-v16)
+- All player props (including ones the handicap read nominates) go through one edge-first selector: max 4, 1.5% soft diversity window.
+- Alternate spreads that buy points must cross 3, 7 or 10 and gain 2+ covers of 50 simulated games; alternate totals must cross a sport-specific key total (NFL 37/40/41/43/44/47/51, CFB 45/48/51/52/55/58/59) with the same simulated check; alternates must match or beat the standard line's edge.
