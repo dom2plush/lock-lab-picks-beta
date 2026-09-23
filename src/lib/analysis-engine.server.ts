@@ -30,6 +30,7 @@ import type {
 } from "./lock-lab-types";
 import type { AltEvaluation, ValueGrade } from "./market-math.server";
 import {
+  alternateSpreadRule,
   createAltEvaluator,
   devig,
   gradeValue,
