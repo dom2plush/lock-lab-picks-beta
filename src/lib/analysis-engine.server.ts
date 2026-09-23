@@ -1101,6 +1101,8 @@ function leadCheck(c: Candidate): { ok: boolean; why: string } {
 function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate {
   if (c.group !== "core" || c.market !== "spread" || c.point == null) return c;
   const standardPoint = c.point;
+  const priceOk = (p: number) =>
+    (p >= MIN_RECOMMENDED_PRICE && p <= -100) || (p >= 100 && p <= MAX_TOP_PRICE);
   const rungs = candidates
     .filter(
       (x) =>
@@ -1111,15 +1113,15 @@ function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate
         x.point > standardPoint &&
         Boolean(x.alt.keyGate?.ok) &&
         !altTooFar(x) &&
-        x.price >= MIN_RECOMMENDED_PRICE &&
-        x.price <= -100 &&
+        priceOk(x.price) &&
         hasAnyPositiveEdge(x),
     )
     .sort((a, b) => (b.point ?? 0) - (a.point ?? 0) || b.price - a.price);
-  // Standard within 1 point of a key margin (3, 7, 10): take the first posted
-  // rung that moves strictly past that key (e.g. +6.5 or +7 -> +7.5), even if
-  // the standard line grades a higher edge.
-  const nearKeys = [3, 7, 10].filter((k) => Math.abs(k - Math.abs(standardPoint)) <= 1);
+  // Standard sitting within a point of a real football scoring margin (3, 7,
+  // 10, 14, 17 …): take the first posted rung that moves strictly past that
+  // margin (e.g. +6.5 or +7 -> +7.5, -7.5 -> -6.5), even if the standard line
+  // grades a higher edge on its own.
+  const nearKeys = FOOTBALL_KEY_MARGINS.filter((k) => Math.abs(k - Math.abs(standardPoint)) <= 1);
   const passesNearKey = (point: number) => {
     const ts = -standardPoint;
     const ta = -point;
