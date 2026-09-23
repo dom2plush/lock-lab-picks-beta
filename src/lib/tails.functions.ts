@@ -44,12 +44,13 @@ export const createParlay = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => CreateParlayInput.parse(input))
   .handler(async ({ data, context }) => {
-    const { data: id, error } = await context.supabase.rpc("create_parlay", {
+    const args: { _tail_ids: string[]; _stake: number; _actual_odds?: number; _actual_payout?: number } = {
       _tail_ids: data.tailIds,
       _stake: data.stake,
-      _actual_odds: data.actualOdds ?? undefined,
-      _actual_payout: data.actualPayout ?? undefined,
-    });
+    };
+    if (data.actualOdds != null) args._actual_odds = data.actualOdds;
+    if (data.actualPayout != null) args._actual_payout = data.actualPayout;
+    const { data: id, error } = await context.supabase.rpc("create_parlay", args);
     if (error) throw new Error(error.message);
     return { id: id as string };
   });
