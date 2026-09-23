@@ -28,10 +28,16 @@ const margins = [
   ...Array(8).fill(-7), ...Array(6).fill(-3), ...Array(6).fill(-10), ...Array(10).fill(-14),
   ...Array(10).fill(4), ...Array(5).fill(-1), ...Array(5).fill(-17),
 ];
+const spreadOutcomes = (team: "home" | "away", point: number) =>
+  margins.map((m) => (team === "away" ? m : -m) + point > 0);
 const projection = {
-  spreadOutcomes: (team: "home" | "away", point: number) =>
-    margins.map((m) => (team === "away" ? m : -m) + point > 0),
+  spreadOutcomes,
+  spreadProb: (team: "home" | "away", point: number) =>
+    spreadOutcomes(team, point).filter(Boolean).length / margins.length,
   totalOutcomes: () => null,
+  totalProb: () => null,
+  moneylineProb: () => null,
+  moneylineOutcomes: () => null,
 } as never;
 
 const odds = {
