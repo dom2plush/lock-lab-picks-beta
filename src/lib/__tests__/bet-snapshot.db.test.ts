@@ -20,7 +20,7 @@ function hasPsql(): boolean {
 const SQL = String.raw`
 \set ON_ERROR_STOP 1
 begin;
-select id as uid from auth.users order by created_at limit 1 \gset
+select id as uid from public.profiles order by created_at limit 1 \gset
 
 insert into public.games (id, provider_game_id, sport, home_team, away_team, commence_time, status, odds)
 values ('00000000-0000-4000-8000-00000000a001', 'snapshot-test-evt', 'NFL', 'Green Bay Packers', 'Atlanta Falcons',
