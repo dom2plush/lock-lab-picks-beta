@@ -40,6 +40,11 @@ const PASS_SCRIPT_MARKETS = new Set([
 ]);
 const RUSH_SCRIPT_MARKETS = new Set(["player_rush_yds", "player_rush_attempts"]);
 const TD_MARKETS = new Set(["player_anytime_td", "player_1st_td"]);
+/**
+ * Multi-touchdown rungs (2+ TDs) are not modelled by the per-player stat draw,
+ * so they return no simulated outcome and fall back to the posted price.
+ */
+const UNSIMULATED_MARKETS = new Set(["player_tds_over"]);
 
 export type PropQuery = {
   market: string;
@@ -228,7 +233,7 @@ export function simulatePlayers(
 
       const value = new Map<string, number>();
       for (const [market, baseline] of model.markets) {
-        if (TD_MARKETS.has(market)) continue;
+        if (TD_MARKETS.has(market) || UNSIMULATED_MARKETS.has(market)) continue;
         const line = baseline.line;
         if (line == null || line <= 0) continue;
         const script = RUSH_SCRIPT_MARKETS.has(market)
