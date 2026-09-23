@@ -14,6 +14,29 @@ export type Database = {
   }
   public: {
     Tables: {
+      analysis_generation_locks: {
+        Row: {
+          game_id: string
+          locked_until: string
+        }
+        Insert: {
+          game_id: string
+          locked_until: string
+        }
+        Update: {
+          game_id?: string
+          locked_until?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_generation_locks_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: true
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       follows: {
         Row: {
           created_at: string
@@ -76,6 +99,7 @@ export type Database = {
           odds_captured_at: string | null
           odds_snapshot: Json
           player_props: Json
+          simulation_id: string | null
           sport: string
           top_bets: Json
           top_pick_result: string
@@ -95,6 +119,7 @@ export type Database = {
           odds_captured_at?: string | null
           odds_snapshot?: Json
           player_props?: Json
+          simulation_id?: string | null
           sport: string
           top_bets?: Json
           top_pick_result?: string
@@ -114,6 +139,7 @@ export type Database = {
           odds_captured_at?: string | null
           odds_snapshot?: Json
           player_props?: Json
+          simulation_id?: string | null
           sport?: string
           top_bets?: Json
           top_pick_result?: string
@@ -127,17 +153,27 @@ export type Database = {
             referencedRelation: "games"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "game_analyses_simulation_id_fkey"
+            columns: ["simulation_id"]
+            isOneToOne: false
+            referencedRelation: "game_simulations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       game_simulations: {
         Row: {
           aggregate: Json
           analysis_id: string | null
+          analysis_snapshot: Json | null
           engine_version: string
           game_id: string
           generated_at: string
           id: string
           input_fingerprint: string
+          input_snapshot: Json | null
+          is_current: boolean
           runs: number
           simulations: Json
           sport: string
@@ -145,11 +181,14 @@ export type Database = {
         Insert: {
           aggregate?: Json
           analysis_id?: string | null
+          analysis_snapshot?: Json | null
           engine_version?: string
           game_id: string
           generated_at?: string
           id?: string
           input_fingerprint: string
+          input_snapshot?: Json | null
+          is_current?: boolean
           runs?: number
           simulations?: Json
           sport: string
@@ -157,11 +196,14 @@ export type Database = {
         Update: {
           aggregate?: Json
           analysis_id?: string | null
+          analysis_snapshot?: Json | null
           engine_version?: string
           game_id?: string
           generated_at?: string
           id?: string
           input_fingerprint?: string
+          input_snapshot?: Json | null
+          is_current?: boolean
           runs?: number
           simulations?: Json
           sport?: string
@@ -439,6 +481,7 @@ export type Database = {
           line_point: number | null
           lock_leg_result: string
           market: string | null
+          model_edge: number | null
           odds_book: string | null
           odds_captured_at: string | null
           pick_key: string
@@ -448,6 +491,10 @@ export type Database = {
           player: string | null
           price: number | null
           selection: string | null
+          sim_hit_rate: number | null
+          sim_hits: number | null
+          sim_runs: number | null
+          simulation_id: string | null
           user_id: string
           wager: number | null
         }
@@ -462,6 +509,7 @@ export type Database = {
           line_point?: number | null
           lock_leg_result?: string
           market?: string | null
+          model_edge?: number | null
           odds_book?: string | null
           odds_captured_at?: string | null
           pick_key: string
@@ -471,6 +519,10 @@ export type Database = {
           player?: string | null
           price?: number | null
           selection?: string | null
+          sim_hit_rate?: number | null
+          sim_hits?: number | null
+          sim_runs?: number | null
+          simulation_id?: string | null
           user_id: string
           wager?: number | null
         }
@@ -485,6 +537,7 @@ export type Database = {
           line_point?: number | null
           lock_leg_result?: string
           market?: string | null
+          model_edge?: number | null
           odds_book?: string | null
           odds_captured_at?: string | null
           pick_key?: string
@@ -494,6 +547,10 @@ export type Database = {
           player?: string | null
           price?: number | null
           selection?: string | null
+          sim_hit_rate?: number | null
+          sim_hits?: number | null
+          sim_runs?: number | null
+          simulation_id?: string | null
           user_id?: string
           wager?: number | null
         }
@@ -510,6 +567,13 @@ export type Database = {
             columns: ["game_id"]
             isOneToOne: false
             referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tails_simulation_id_fkey"
+            columns: ["simulation_id"]
+            isOneToOne: false
+            referencedRelation: "game_simulations"
             referencedColumns: ["id"]
           },
           {
@@ -557,6 +621,10 @@ export type Database = {
     }
     Functions: {
       american_to_decimal: { Args: { _price: number }; Returns: number }
+      claim_analysis_generation: {
+        Args: { _game_id: string; _seconds: number }
+        Returns: boolean
+      }
       create_parlay: {
         Args: {
           _actual_odds?: number
@@ -582,7 +650,12 @@ export type Database = {
       my_bet_record: { Args: never; Returns: Json }
       regrade_parlay: { Args: { _parlay_id: string }; Returns: undefined }
       tail_pick: {
-        Args: { _analysis_id: string; _pick_key: string; _stake: number }
+        Args: {
+          _analysis_id: string
+          _pick_key: string
+          _simulation_id?: string
+          _stake: number
+        }
         Returns: string
       }
     }
