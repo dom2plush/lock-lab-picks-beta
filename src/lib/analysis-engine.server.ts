@@ -1108,7 +1108,19 @@ function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate
         hasAnyPositiveEdge(x),
     )
     .sort((a, b) => (b.point ?? 0) - (a.point ?? 0) || b.price - a.price);
-  return rungs[0] ?? c;
+  // Standard within 1 point of a key margin (3, 7, 10): take the first posted
+  // rung that moves strictly past that key (e.g. +6.5 or +7 -> +7.5), even if
+  // the standard line grades a higher edge.
+  const nearKeys = [3, 7, 10].filter((k) => Math.abs(k - Math.abs(standardPoint)) <= 1);
+  const passesNearKey = (point: number) => {
+    const ts = -standardPoint;
+    const ta = -point;
+    return nearKeys.some((k) => [k, -k].some((m) => ta < m && m <= ts));
+  };
+  const nearRung = rungs
+    .filter((x) => passesNearKey(x.point as number))
+    .sort((a, b) => (a.point ?? 0) - (b.point ?? 0) || b.price - a.price)[0];
+  return nearRung ?? rungs[0] ?? c;
 }
 
 /** Plain reason for taking a key-number spread alternate over the standard line. */
