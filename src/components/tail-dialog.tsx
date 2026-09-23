@@ -1,6 +1,7 @@
 import { useServerFn } from "@tanstack/react-start";
 import { Link } from "@tanstack/react-router";
-import { Plus, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Lock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,6 +28,12 @@ export type TailTarget = {
   pickSection: "top_bets" | "fun_bets" | "player_props";
 };
 
+function toWin(stake: number, odds: string | null): number | null {
+  const price = odds ? Number.parseInt(odds, 10) : Number.NaN;
+  if (!Number.isFinite(price) || Math.abs(price) < 100 || !(stake > 0)) return null;
+  return price > 0 ? (stake * price) / 100 : (stake * 100) / Math.abs(price);
+}
+
 export function TailDialog({
   target,
   onClose,
@@ -35,42 +42,28 @@ export function TailDialog({
   onClose: () => void;
 }) {
   const { user } = useSession();
+  const queryClient = useQueryClient();
   const submit = useServerFn(createTail);
-  const [betType, setBetType] = useState<"straight" | "parlay">("straight");
-  const [wager, setWager] = useState("");
-  const [legs, setLegs] = useState<{ label: string; odds: string }[]>([]);
+  const [stake, setStake] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const stakeValue = Number.parseFloat(stake);
+  const stakeValid = Number.isFinite(stakeValue) && stakeValue > 0 && stakeValue <= 1_000_000;
+  const win = stakeValid ? toWin(stakeValue, target?.pickOdds ?? null) : null;
+
   const reset = () => {
-    setBetType("straight");
-    setWager("");
-    setLegs([]);
+    setStake("");
     onClose();
   };
 
   const save = async () => {
-    if (!target) return;
+    if (!target || !stakeValid) return;
     setSaving(true);
     try {
-      const wagerValue = wager.trim() === "" ? null : Number.parseFloat(wager);
       await submit({
-        data: {
-          gameId: target.gameId,
-          analysisId: target.analysisId,
-          pickKey: target.pickKey,
-          pickLabel: target.pickLabel,
-          pickOdds: target.pickOdds,
-          pickSection: target.pickSection,
-          betType,
-          wager: wagerValue != null && Number.isFinite(wagerValue) ? wagerValue : null,
-          extraLegs:
-            betType === "parlay"
-              ? legs
-                  .filter((leg) => leg.label.trim() !== "")
-                  .map((leg) => ({ label: leg.label.trim(), odds: leg.odds.trim() || undefined }))
-              : [],
-        },
+        data: { analysisId: target.analysisId, pickKey: target.pickKey, stake: stakeValue },
       });
+      await queryClient.invalidateQueries({ queryKey: ["my-bets"] });
       toast.success("Tailed — tracking in My Bets");
       reset();
     } catch (error) {
@@ -87,101 +80,53 @@ export function TailDialog({
           <DialogTitle className="font-display text-xl">Tail this pick</DialogTitle>
           <DialogDescription>
             {target?.pickLabel}
-            {target?.pickOdds ? ` · ${target.pickOdds}` : ""}
+            {target?.pickOdds && !target.pickLabel.includes(target.pickOdds)
+              ? ` · ${target.pickOdds}`
+              : ""}
           </DialogDescription>
         </DialogHeader>
 
         {user ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              {(["straight", "parlay"] as const).map((type) => (
-                <Button
-                  key={type}
-                  type="button"
-                  variant={betType === type ? "default" : "outline"}
-                  onClick={() => setBetType(type)}
-                  className="capitalize"
-                >
-                  {type}
-                </Button>
-              ))}
-            </div>
-
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save();
+            }}
+          >
             <div className="space-y-1.5">
-              <Label htmlFor="wager">Wager (optional)</Label>
+              <Label htmlFor="stake">Stake ($)</Label>
               <Input
-                id="wager"
+                id="stake"
                 inputMode="decimal"
                 placeholder="25"
-                value={wager}
-                onChange={(event) => setWager(event.target.value)}
+                autoFocus
+                required
+                value={stake}
+                onChange={(event) => setStake(event.target.value.replace(/[^0-9.]/g, ""))}
               />
+              <p className="text-xs text-muted-foreground">
+                {win != null
+                  ? `To win $${win.toFixed(2)} at ${target?.pickOdds}.`
+                  : "A stake is required to tail."}
+              </p>
             </div>
 
-            {betType === "parlay" && (
-              <div className="space-y-2">
-                <Label>Your extra legs</Label>
-                {legs.map((leg, index) => (
-                  <div key={index} className="flex gap-2">
-                    <Input
-                      placeholder="e.g. Ravens ML"
-                      value={leg.label}
-                      onChange={(event) =>
-                        setLegs((prev) =>
-                          prev.map((item, i) =>
-                            i === index ? { ...item, label: event.target.value } : item,
-                          ),
-                        )
-                      }
-                    />
-                    <Input
-                      className="w-24"
-                      placeholder="-110"
-                      value={leg.odds}
-                      onChange={(event) =>
-                        setLegs((prev) =>
-                          prev.map((item, i) =>
-                            i === index ? { ...item, odds: event.target.value } : item,
-                          ),
-                        )
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Remove leg"
-                      onClick={() => setLegs((prev) => prev.filter((_, i) => i !== index))}
-                    >
-                      <X className="size-4" />
-                    </Button>
-                  </div>
-                ))}
-                {legs.length < 8 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLegs((prev) => [...prev, { label: "", odds: "" }])}
-                  >
-                    <Plus className="size-4" /> Add leg
-                  </Button>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Only the Lock Lab leg is graded for your win/loss record.
-                </p>
-              </div>
-            )}
+            <p className="flex items-start gap-2 rounded-md bg-surface p-3 text-xs text-muted-foreground">
+              <Lock className="mt-0.5 size-3.5 shrink-0" />
+              The exact line, odds, sportsbook and time from this Lock Lab pick are locked in when you
+              confirm and never change afterwards. Build parlays from your tails in My Bets.
+            </p>
 
             <DialogFooter>
-              <Button variant="ghost" onClick={reset}>
+              <Button type="button" variant="ghost" onClick={reset}>
                 Cancel
               </Button>
-              <Button onClick={save} disabled={saving}>
+              <Button type="submit" disabled={saving || !stakeValid}>
                 {saving ? "Saving…" : "Confirm tail"}
               </Button>
             </DialogFooter>
-          </div>
+          </form>
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
