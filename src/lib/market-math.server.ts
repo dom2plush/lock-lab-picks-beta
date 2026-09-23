@@ -256,8 +256,29 @@ function keysBetween(from: number, to: number, sport: Sport): number[] {
 // Key-number gate for alternates that BUY points
 // ---------------------------------------------------------------------------
 
+/**
+ * Every football scoring margin reachable with touchdowns (7) and field goals
+ * (3) up to 70 — 3, 6, 7, 10, 13, 14, 17, 20, 21, 24 … These are the margins
+ * worth paying extra juice to cross on an alternate spread.
+ */
+function buildFootballKeyMargins(max: number): number[] {
+  const out = new Set<number>();
+  for (let td = 0; td * 7 <= max; td += 1) {
+    for (let fg = 0; td * 7 + fg * 3 <= max; fg += 1) {
+      const margin = td * 7 + fg * 3;
+      if (margin > 0) out.add(margin);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+export const FOOTBALL_KEY_MARGINS = buildFootballKeyMargins(70);
+
 /** Margins worth paying extra juice to cross on an alternate spread. */
-export const SPREAD_GATE_KEYS: Record<Sport, number[]> = { NFL: [3, 7, 10], CFB: [3, 7, 10] };
+export const SPREAD_GATE_KEYS: Record<Sport, number[]> = {
+  NFL: FOOTBALL_KEY_MARGINS,
+  CFB: FOOTBALL_KEY_MARGINS,
+};
 
 /** Most common final combined scores — the only totals worth buying through. */
 export const TOTAL_KEY_NUMBERS: Record<Sport, number[]> = {
@@ -351,17 +372,31 @@ export function keyNumberGate(input: {
 export const ALT_SPREAD_PRICE_MIN = -180;
 export const ALT_SPREAD_PRICE_MAX = -100;
 
+/** Plus-money alternates are only allowed when they are this sharp in the sims. */
+export const ALT_SPREAD_PLUS_MIN_HIT_RATE = 0.7;
+/** Longest plus-money price an alternate spread may carry. */
+export const ALT_SPREAD_PLUS_PRICE_MAX = 199;
+
+/** True when a plus-money alternate is sharp enough (>= 35 of 50 simulated covers). */
+export function plusMoneyAltAllowed(altHits: number | null, runs: number): boolean {
+  if (altHits == null || runs <= 0) return false;
+  return altHits / runs >= ALT_SPREAD_PLUS_MIN_HIT_RATE;
+}
+
 /**
  * Direction and price rule for alternate spreads. The alternate must give the
- * bettor more protection (a higher number on the same side), cross a real key
- * margin, and be priced at negative odds between -100 and -199. Moving away
- * from the key number or into plus-money is never allowed.
+ * bettor more protection (a higher number on the same side) and cross a real
+ * football key margin. Price must be negative odds between -100 and -180, or
+ * plus money between +100 and +199 when the simulated games back it at 70% or
+ * better (35 of 50). Moving away from the key number is never allowed.
  */
 export function alternateSpreadRule(input: {
   sport: Sport;
   standardPoint: number;
   point: number;
   price: number;
+  altHits?: number | null;
+  runs?: number;
 }): { ok: boolean; keys: number[]; why: string } {
   if (!(input.point > input.standardPoint)) {
     return {
@@ -378,11 +413,35 @@ export function alternateSpreadRule(input: {
       why: `Moving from ${signedLine(input.standardPoint)} to ${signedLine(input.point)} crosses no key number, so this alternate is never used.`,
     };
   }
+  if (input.price > 0) {
+    const runs = input.runs ?? 50;
+    const hits = input.altHits ?? null;
+    if (input.price > ALT_SPREAD_PLUS_PRICE_MAX) {
+      return { ok: false, keys, why: `Priced at +${input.price} — too long for a Top 2 bet.` };
+    }
+    if (input.price < 100) {
+      return { ok: false, keys, why: `Priced at +${input.price} — not a usable alternate price.` };
+    }
+    if (!plusMoneyAltAllowed(hits, runs)) {
+      return {
+        ok: false,
+        keys,
+        why: `Priced at +${input.price}: plus money is only taken when at least ${Math.ceil(
+          runs * ALT_SPREAD_PLUS_MIN_HIT_RATE,
+        )} of ${runs} simulated games cash it${hits == null ? "" : ` (this one cashes ${hits})`}.`,
+      };
+    }
+    return {
+      ok: true,
+      keys,
+      why: `Plus money at +${input.price} with ${hits} of ${runs} simulated games cashing — sharp enough to take the extra return.`,
+    };
+  }
   if (input.price > ALT_SPREAD_PRICE_MAX || input.price < ALT_SPREAD_PRICE_MIN) {
     return {
       ok: false,
       keys,
-      why: `Priced at ${input.price > 0 ? "+" : ""}${input.price} — alternate spreads must be between -100 and ${ALT_SPREAD_PRICE_MIN}.`,
+      why: `Priced at ${input.price} — alternate spreads must be between -100 and ${ALT_SPREAD_PRICE_MIN}.`,
     };
   }
   return { ok: true, keys, why: "" };

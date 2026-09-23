@@ -31,6 +31,7 @@ import type {
 import type { AltEvaluation, ValueGrade } from "./market-math.server";
 import {
   alternateSpreadRule,
+  FOOTBALL_KEY_MARGINS,
   createAltEvaluator,
   devig,
   gradeValue,
@@ -243,24 +244,6 @@ function applyKeyGate(
   projection: GameProjection,
 ): AltEvaluation | null {
   if (!evaluation) return evaluation;
-  // Alternate spreads: more protection only, across a real key number, at
-  // negative odds between -100 and -199. Anything else is never selectable.
-  if (evaluation.market === "spread") {
-    const rule = alternateSpreadRule({
-      sport: game.sport,
-      standardPoint: evaluation.standardPoint,
-      point: evaluation.point,
-      price: evaluation.price,
-    });
-    if (!rule.ok) {
-      return {
-        ...evaluation,
-        worthIt: false,
-        keyGate: { ok: false, why: rule.why, simGain: null },
-        note: `${evaluation.note} ${rule.why}`.trim(),
-      };
-    }
-  }
   const count = (o: boolean[] | null) => (o ? o.filter(Boolean).length : null);
   let standardOutcomes: boolean[] | null = null;
   let altOutcomes: boolean[] | null = null;
@@ -274,6 +257,27 @@ function applyKeyGate(
     standardOutcomes = projection.totalOutcomes(evaluation.side, evaluation.standardPoint);
     altOutcomes = projection.totalOutcomes(evaluation.side, evaluation.point);
   }
+  const runs = altOutcomes?.length ?? standardOutcomes?.length ?? 50;
+  // Alternate spreads: more protection only, across a real football key margin,
+  // at -100 to -180 — or plus money when the simulations back it at 35 of 50.
+  if (evaluation.market === "spread") {
+    const rule = alternateSpreadRule({
+      sport: game.sport,
+      standardPoint: evaluation.standardPoint,
+      point: evaluation.point,
+      price: evaluation.price,
+      altHits: count(altOutcomes),
+      runs,
+    });
+    if (!rule.ok) {
+      return {
+        ...evaluation,
+        worthIt: false,
+        keyGate: { ok: false, why: rule.why, simGain: null },
+        note: `${evaluation.note} ${rule.why}`.trim(),
+      };
+    }
+  }
   const gate = keyNumberGate({
     market: evaluation.market,
     sport: game.sport,
@@ -282,7 +286,7 @@ function applyKeyGate(
     point: evaluation.point,
     standardHits: count(standardOutcomes),
     altHits: count(altOutcomes),
-    runs: altOutcomes?.length ?? standardOutcomes?.length ?? 50,
+    runs,
   });
   if (gate.ok && !gate.why) return evaluation;
   return {
@@ -1098,6 +1102,8 @@ function leadCheck(c: Candidate): { ok: boolean; why: string } {
 function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate {
   if (c.group !== "core" || c.market !== "spread" || c.point == null) return c;
   const standardPoint = c.point;
+  const priceOk = (p: number) =>
+    (p >= MIN_RECOMMENDED_PRICE && p <= -100) || (p >= 100 && p <= MAX_TOP_PRICE);
   const rungs = candidates
     .filter(
       (x) =>
@@ -1108,15 +1114,15 @@ function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate
         x.point > standardPoint &&
         Boolean(x.alt.keyGate?.ok) &&
         !altTooFar(x) &&
-        x.price >= MIN_RECOMMENDED_PRICE &&
-        x.price <= -100 &&
+        priceOk(x.price) &&
         hasAnyPositiveEdge(x),
     )
     .sort((a, b) => (b.point ?? 0) - (a.point ?? 0) || b.price - a.price);
-  // Standard within 1 point of a key margin (3, 7, 10): take the first posted
-  // rung that moves strictly past that key (e.g. +6.5 or +7 -> +7.5), even if
-  // the standard line grades a higher edge.
-  const nearKeys = [3, 7, 10].filter((k) => Math.abs(k - Math.abs(standardPoint)) <= 1);
+  // Standard sitting within a point of a real football scoring margin (3, 7,
+  // 10, 14, 17 …): take the first posted rung that moves strictly past that
+  // margin (e.g. +6.5 or +7 -> +7.5, -7.5 -> -6.5), even if the standard line
+  // grades a higher edge on its own.
+  const nearKeys = FOOTBALL_KEY_MARGINS.filter((k) => Math.abs(k - Math.abs(standardPoint)) <= 1);
   const passesNearKey = (point: number) => {
     const ts = -standardPoint;
     const ta = -point;
