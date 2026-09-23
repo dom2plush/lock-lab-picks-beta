@@ -456,6 +456,11 @@ export function buildCandidates(
   type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
   const scored: ScoredAlt[] = extra.alternates
     .filter((o) => o.point != null && o.price <= 1200 && o.price >= -1000)
+    // An alternate spread must name one of the two teams exactly; anything
+    // else could be mistaken for the other side's number.
+    .filter(
+      (o) => o.market !== "alternate_spreads" || o.selection === game.home_team || o.selection === game.away_team,
+    )
     .map((offer) => ({ offer, evaluation: applyKeyGate(evaluator.evaluateOffer(offer), game, projection) }));
 
   // Both rungs of the ladder matter: the cap is per market AND per side, so a
@@ -1217,7 +1222,7 @@ function leadCheck(c: Candidate): { ok: boolean; why: string } {
  * -100 to -180 and still carrying a positive edge. Never moves away from the
  * key number. Returns the standard pick unchanged when no rung qualifies.
  */
-function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate {
+export function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate {
   if (c.group !== "core" || c.market !== "spread" || c.point == null) return c;
   const standardPoint = c.point;
   const priceOk = (p: number) =>
@@ -1228,6 +1233,10 @@ function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate
         x.group === "alt" &&
         x.alt?.market === "spread" &&
         x.standardKey === c.key &&
+        // Same team, always: an alternate never switches sides.
+        x.selection === c.selection &&
+        x.alt.side === c.selection &&
+        x.alt.standardPoint === standardPoint &&
         x.point != null &&
         x.point > standardPoint &&
         Boolean(x.alt.keyGate?.ok) &&
@@ -1252,6 +1261,27 @@ function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate
   return nearRung ?? rungs[0] ?? c;
 }
 
+/**
+ * Final guard on any alternate spread headed for the Top 2: it must sit on the
+ * same team as its own standard line and give more protection than it. A rung
+ * that fails is replaced by that standard line — never by the other team.
+ */
+export function enforceAltSpreadSide(c: Candidate, byKey: Map<string, Candidate>): Candidate {
+  if (c.group !== "alt" || c.market !== "alternate_spreads") return c;
+  const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
+  const ok =
+    standard != null &&
+    standard.market === "spread" &&
+    standard.selection === c.selection &&
+    c.alt?.side === c.selection &&
+    c.point != null &&
+    standard.point != null &&
+    c.point > standard.point;
+  if (ok) return c;
+  console.warn("Lock Lab rejected an alternate spread that did not stay on its own side", c.label);
+  return standard && standard.selection === c.selection ? standard : c;
+}
+
 /** Plain reason for taking a key-number spread alternate over the standard line. */
 function keySpreadReason(c: Candidate): string {
   const why = c.alt?.keyGate?.why;
@@ -1270,6 +1300,7 @@ function bestGradedAlternate(
         x.alt != null &&
         x.alt.worthIt &&
         x.standardKey === standard.key &&
+        x.selection === standard.selection &&
         !used.has(x.key) &&
         eligibleForTop(x).ok &&
         beatsStandardEdge(x, standard),
@@ -1972,7 +2003,7 @@ export async function runLockLabFormula(
       leadIndex > 0
         ? [distinct[leadIndex]!, ...distinct.filter((_, i) => i !== leadIndex)]
         : distinct
-    ).map((c, index) => (index < 2 ? preferKeyNumberSpread(c, candidates) : c));
+    ).map((c, index) => (index < 2 ? enforceAltSpreadSide(preferKeyNumberSpread(c, candidates), byKey) : c));
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
@@ -2272,7 +2303,8 @@ export async function runLockLabFormula(
     };
   }
 
-  for (const { c, entry } of shortlist.slice(0, 2)) {
+  for (const { c: picked, entry } of shortlist.slice(0, 2)) {
+    const c = enforceAltSpreadSide(picked, byKey);
     // An alternate line always shows the standard number it beat, quoted from
     // the same snapshot, so the standard-vs-alternate decision is visible.
     const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
