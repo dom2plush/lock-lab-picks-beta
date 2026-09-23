@@ -243,24 +243,6 @@ function applyKeyGate(
   projection: GameProjection,
 ): AltEvaluation | null {
   if (!evaluation) return evaluation;
-  // Alternate spreads: more protection only, across a real key number, at
-  // negative odds between -100 and -199. Anything else is never selectable.
-  if (evaluation.market === "spread") {
-    const rule = alternateSpreadRule({
-      sport: game.sport,
-      standardPoint: evaluation.standardPoint,
-      point: evaluation.point,
-      price: evaluation.price,
-    });
-    if (!rule.ok) {
-      return {
-        ...evaluation,
-        worthIt: false,
-        keyGate: { ok: false, why: rule.why, simGain: null },
-        note: `${evaluation.note} ${rule.why}`.trim(),
-      };
-    }
-  }
   const count = (o: boolean[] | null) => (o ? o.filter(Boolean).length : null);
   let standardOutcomes: boolean[] | null = null;
   let altOutcomes: boolean[] | null = null;
@@ -274,6 +256,27 @@ function applyKeyGate(
     standardOutcomes = projection.totalOutcomes(evaluation.side, evaluation.standardPoint);
     altOutcomes = projection.totalOutcomes(evaluation.side, evaluation.point);
   }
+  const runs = altOutcomes?.length ?? standardOutcomes?.length ?? 50;
+  // Alternate spreads: more protection only, across a real football key margin,
+  // at -100 to -180 — or plus money when the simulations back it at 35 of 50.
+  if (evaluation.market === "spread") {
+    const rule = alternateSpreadRule({
+      sport: game.sport,
+      standardPoint: evaluation.standardPoint,
+      point: evaluation.point,
+      price: evaluation.price,
+      altHits: count(altOutcomes),
+      runs,
+    });
+    if (!rule.ok) {
+      return {
+        ...evaluation,
+        worthIt: false,
+        keyGate: { ok: false, why: rule.why, simGain: null },
+        note: `${evaluation.note} ${rule.why}`.trim(),
+      };
+    }
+  }
   const gate = keyNumberGate({
     market: evaluation.market,
     sport: game.sport,
@@ -282,7 +285,7 @@ function applyKeyGate(
     point: evaluation.point,
     standardHits: count(standardOutcomes),
     altHits: count(altOutcomes),
-    runs: altOutcomes?.length ?? standardOutcomes?.length ?? 50,
+    runs,
   });
   if (gate.ok && !gate.why) return evaluation;
   return {
