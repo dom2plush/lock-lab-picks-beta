@@ -2077,36 +2077,20 @@ export async function runLockLabFormula(
   }
 
   const playerProps: PropBet[] = [];
+  // The handicap read's props are not inserted directly: their lean is applied
+  // and their reasoning kept, then every prop (read-nominated or not) goes
+  // through the same edge-first selector with the 1.5% diversity window.
+  const propReasons = new Map<string, string>();
   for (const entry of handicap.props ?? []) {
     const c = byKey.get(entry.key);
     if (!c || c.group !== "prop" || used.has(c.key)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
-    // Props are a separate pool from the game picks: only the price cap gates
-    // them here, and each prop's light reports its true edge.
-    if (c.price < MIN_RECOMMENDED_PRICE) continue;
-    used.add(c.key);
-    playerProps.push({
-      key: `prop-${playerProps.length + 1}`,
-      badge: propBadge(c),
-      label: c.label,
-      player: c.player ?? "",
-      market: c.marketLabel,
-      odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
-      ...pickSource(c),
-      reason: clean(entry.reason, "Usage and matchup back this number."),
-    });
-    decisions.set(c.key, {
-      section: "prop",
-      badge: propBadge(c),
-      reason: clean(entry.reason, "Player prop."),
-    });
-    if (playerProps.length === 4) break;
+    propReasons.set(c.key, clean(entry.reason, "Usage and matchup back this number."));
   }
 
   // Sections are topped up from the ranked live board so a normal game shows
   // two props and one fun bet. Only real posted prices are ever used.
-  fillPlayerProps(candidates, used, playerProps, decisions);
+  fillPlayerProps(candidates, used, playerProps, decisions, 4, propReasons);
   fillFunBet(candidates, used, funBets, decisions);
 
 
