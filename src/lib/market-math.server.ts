@@ -256,8 +256,29 @@ function keysBetween(from: number, to: number, sport: Sport): number[] {
 // Key-number gate for alternates that BUY points
 // ---------------------------------------------------------------------------
 
+/**
+ * Every football scoring margin reachable with touchdowns (7) and field goals
+ * (3) up to 70 — 3, 6, 7, 10, 13, 14, 17, 20, 21, 24 … These are the margins
+ * worth paying extra juice to cross on an alternate spread.
+ */
+function buildFootballKeyMargins(max: number): number[] {
+  const out = new Set<number>();
+  for (let td = 0; td * 7 <= max; td += 1) {
+    for (let fg = 0; td * 7 + fg * 3 <= max; fg += 1) {
+      const margin = td * 7 + fg * 3;
+      if (margin > 0) out.add(margin);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+export const FOOTBALL_KEY_MARGINS = buildFootballKeyMargins(70);
+
 /** Margins worth paying extra juice to cross on an alternate spread. */
-export const SPREAD_GATE_KEYS: Record<Sport, number[]> = { NFL: [3, 7, 10], CFB: [3, 7, 10] };
+export const SPREAD_GATE_KEYS: Record<Sport, number[]> = {
+  NFL: FOOTBALL_KEY_MARGINS,
+  CFB: FOOTBALL_KEY_MARGINS,
+};
 
 /** Most common final combined scores — the only totals worth buying through. */
 export const TOTAL_KEY_NUMBERS: Record<Sport, number[]> = {
