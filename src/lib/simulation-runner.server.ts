@@ -268,10 +268,13 @@ export async function generateBatch(
   if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly 50 simulations");
   const described = withSimulatedReasons(fields, aggregate);
 
+  // Stored batches are immutable: a forced/engine-mismatched rerun of the same
+  // inputs is stored as its own row rather than overwriting the old one.
+  const storageFingerprint = existing?.analysis_snapshot ? `${fingerprint}~${d.now().toString(36)}` : fingerprint;
   const saved = await d.store.saveBatch({
     game_id: current.id,
     sport: current.sport,
-    input_fingerprint: fingerprint,
+    input_fingerprint: storageFingerprint,
     engine_version: SIMULATION_ENGINE_VERSION,
     runs: SIMULATION_RUNS,
     simulations,
