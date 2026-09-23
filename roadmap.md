@@ -14,9 +14,10 @@
   game script and injuries; picks only from the real posted board; passes with RED when no edge;
   bad bet's opposite side graded independently. Formula changes stay manual — no self-learning.
 - Pages: Analyze, Historical Games, Record, Leaderboard, My Bets, Auth
-- Tail flow: straight or parlay, optional wager; only the Lock Lab leg is graded
+- My Bets + Tail: required stake; exact Lock Lab line/odds/book/time locked in the database; parlays built only from own tailed bets, auto-graded; official record (singles/parlays/combined, W/L, win %, units, ROI) computed in the database
 
 ## Open
+- Player prop / TD tails stay "Awaiting grade" until a player stats feed is connected
 - ODDS_API_KEY pending — until it's saved the app shows LIVE ODDS UNAVAILABLE and sample fixtures
 - Player props require a props-enabled provider plan; shown as unavailable otherwise
 - Schedule the refresh hook (`/api/public/hooks/refresh-sports-data`) on a cron once the key is in
