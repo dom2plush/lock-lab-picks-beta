@@ -701,6 +701,12 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
 
   // An alternate several points off the market is not line shopping, it is a
   // different bet. Distance alone can never be the source of an edge.
+  // A bought point that crosses no key number, or that the simulated games do
+  // not confirm, is never a Top 2 candidate — however the edge looks on paper.
+  if (failsKeyGate(c) && c.alt?.keyGate) {
+    return { ok: false, why: `${c.label}: ${c.alt.keyGate.why}` };
+  }
+
   if (altTooFar(c) && c.alt) {
     return {
       ok: false,
@@ -853,6 +859,7 @@ function fillPlayerProps(
   playerProps: PropBet[],
   decisions: DecisionMap,
   maximum = 4,
+  reasons?: Map<string, string>,
 ): void {
   const pool = candidates
     .filter(
@@ -879,9 +886,15 @@ function fillPlayerProps(
       odds: fmtOdds(c.price),
       estimatedProbability: c.grade?.modelProb ?? null,
       ...pickSource(c),
-      reason: "The strongest remaining posted prop on this board under the model's usage and matchup read.",
+      reason:
+        reasons?.get(c.key) ??
+        "The strongest remaining posted prop on this board under the model's usage and matchup read.",
     });
-    decisions.set(c.key, { section: "prop", badge, reason: "Player prop from the ranked board." });
+    decisions.set(c.key, {
+      section: "prop",
+      badge,
+      reason: reasons?.get(c.key) ?? "Player prop from the ranked board.",
+    });
   };
 
   const remaining = pool.filter(
@@ -1028,7 +1041,8 @@ function bestGradedAlternate(
         x.alt.worthIt &&
         x.standardKey === standard.key &&
         !used.has(x.key) &&
-        eligibleForTop(x).ok,
+        eligibleForTop(x).ok &&
+        beatsStandardEdge(x, standard),
     )
     .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
 }
@@ -1834,6 +1848,7 @@ export async function runLockLabFormula(
   const sweptAlternates: Candidate[] = candidates
     .filter((c) => c.group === "alt" && c.alt != null && c.alt.worthIt && !used.has(c.key))
     .filter((c) => eligibleForTop(c).ok)
+    .filter((c) => beatsStandardEdge(c, c.standardKey ? byKey.get(c.standardKey) : undefined))
     .sort((a, b) => candidateRank(b) - candidateRank(a));
   for (const c of sweptAlternates.slice(0, 2)) {
     if (shortlist.some((s) => betIdeaKey(s.c) === betIdeaKey(c) && candidateRank(s.c) >= candidateRank(c))) {
