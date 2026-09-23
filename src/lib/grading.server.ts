@@ -7,15 +7,15 @@ export function gradePick(pick: PickBet | undefined, game: GameRow): Result {
   const totalPoints = game.home_score + game.away_score;
   const isHome = pick.selection === game.home_team;
 
-  if (pick.market === "Spread") {
-    const line = Number.parseFloat(pick.line ?? "0");
+  if (pick.market === "Spread" || pick.market === "Alternate spread") {
+    const line = pick.point ?? Number.parseFloat(pick.line ?? "0");
     const value = (isHome ? margin : -margin) + line;
     if (value === 0) return "push";
     return value > 0 ? "win" : "loss";
   }
 
-  if (pick.market === "Total") {
-    const line = Number.parseFloat(pick.line ?? "0");
+  if (pick.market === "Total" || pick.market === "Alternate total") {
+    const line = pick.point ?? Number.parseFloat(pick.line ?? "0");
     if (totalPoints === line) return "push";
     const over = pick.selection.toLowerCase() === "over";
     return (over ? totalPoints > line : totalPoints < line) ? "win" : "loss";

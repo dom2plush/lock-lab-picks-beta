@@ -81,11 +81,13 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
 
     const stored = await readStored();
 
-    // Analyze always asks the provider for the latest standard and derivative
-    // markets before running. If that request fails, the most recently verified
-    // live snapshot remains the latest available board; demo data never does.
+    // Analyze is a read of the stored card. The board is only re-pulled from
+    // the provider when the stored snapshot is older than the refresh window;
+    // a re-pull that shows no meaningful move still returns the stored card.
     const { hasProviderKey, refreshGameOdds } = await import("./ingest.server");
-    if (hasProviderKey() && !game.is_demo) {
+    const stamp = game.updated_at ?? game.odds_updated_at ?? null;
+    const stale = !stamp || Date.now() - new Date(stamp).getTime() > SNAPSHOT_TTL_MS;
+    if (stale && hasProviderKey() && !game.is_demo) {
       const refreshed = await refreshGameOdds(game);
       if (refreshed) game = refreshed;
     }

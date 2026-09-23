@@ -1,79 +1,110 @@
 /**
  * Precomputed Lock Lab batches.
  *
- * The expensive part of the formula (the handicap read) runs ONCE per set of
- * inputs. Its finished board is then settled 50 times deterministically and
- * both the analysis and the 50 runs are stored, so Analyze never pays for a
- * new run and every user sees the same numbers.
+ * The formula (including the handicap read) runs ONCE per meaningful set of
+ * inputs. Its finished card is settled against exactly 50 simulated games and
+ * the card, the 50 runs and the inputs they came from are stored together as a
+ * permanent batch. Analyze reads the current batch; every user sees the same
+ * card until a meaningful input (line, juice, material injury, sportsbook,
+ * engine version) actually changes. Older batches are never overwritten.
  */
-import { buildLiveAnalysis, verifiedExtras } from "./analysis-runner.server";
+import {
+  computeLiveAnalysis,
+  verifiedExtras,
+  type AnalysisFields,
+} from "./analysis-runner.server";
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 import {
   SIMULATION_ENGINE_VERSION,
   SIMULATION_RUNS,
   americanToProbability,
   inputFingerprint,
+  inputSnapshot,
+  meaningfulInputChange,
   picksToSimulate,
   runSimulations,
+  type InputSnapshot,
   type SimulationAggregate,
 } from "./simulation.server";
+import { supabaseSimulationStore, type SimulationStore, type StoredBatch } from "./simulation-store.server";
 
 export type SimulationBatch = {
   analysis: AnalysisRow;
   aggregate: SimulationAggregate | null;
   fingerprint: string;
   fromCache: boolean;
+  batchId: string | null;
 };
 
-type StoredBatch = {
-  id: string;
-  input_fingerprint: string;
-  engine_version: string;
-  aggregate: SimulationAggregate | null;
+/** Odds older than this are re-pulled before a new batch is generated. */
+export const ODDS_REFRESH_TTL_MS = 10 * 60 * 1000;
+/** How long one generator may hold a game before another may take over. */
+const LOCK_SECONDS = 120;
+const WAIT_STEP_MS = 1500;
+const WAIT_LIMIT_MS = 60_000;
+
+export type BatchDeps = {
+  store: SimulationStore;
+  compute: typeof computeLiveAnalysis;
+  refresh: ((game: GameRow) => Promise<GameRow | null>) | null;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
 };
 
-async function readStored(gameId: string) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const [batch, analysis] = await Promise.all([
-    supabaseAdmin
-      .from("game_simulations")
-      .select("id, input_fingerprint, engine_version, aggregate")
-      .eq("game_id", gameId)
-      .maybeSingle(),
-    supabaseAdmin.from("game_analyses").select("*").eq("game_id", gameId).maybeSingle(),
-  ]);
-  return {
-    batch: (batch.data as unknown as StoredBatch | null) ?? null,
-    analysis: (analysis.data as unknown as AnalysisRow | null) ?? null,
-  };
+async function defaultRefresh(game: GameRow) {
+  const { refreshGameOdds } = await import("./ingest.server");
+  return refreshGameOdds(game);
+}
+
+const defaultDeps: BatchDeps = {
+  store: supabaseSimulationStore,
+  compute: computeLiveAnalysis,
+  refresh: defaultRefresh,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => Date.now(),
+};
+
+/**
+ * A stored batch stands when it was produced by this engine version, holds
+ * exactly 50 runs, is the batch the displayed card came from, and no
+ * meaningful input has moved since it was generated.
+ */
+export function batchIsReusable(
+  batch: StoredBatch | null,
+  analysis: AnalysisRow | null,
+  inputs: InputSnapshot,
+): boolean {
+  if (!batch || !analysis) return false;
+  if (batch.engine_version !== SIMULATION_ENGINE_VERSION) return false;
+  if (batch.runs !== SIMULATION_RUNS) return false;
+  if (!batch.analysis_snapshot) return false;
+  if (analysis.simulation_id !== batch.id) return false;
+  return meaningfulInputChange(batch.input_snapshot, inputs) == null;
+}
+
+function cached(batch: StoredBatch, analysis: AnalysisRow, fingerprint: string): SimulationBatch {
+  return { analysis, aggregate: batch.aggregate ?? null, fingerprint, fromCache: true, batchId: batch.id };
 }
 
 /**
- * Returns the stored batch for a game, generating it only when there is none
- * or when a meaningful input (line, injury, QB status) has moved.
+ * Returns the stored batch for a game. A new 50-run batch is generated only
+ * when none exists or a meaningful input changed — never because another user,
+ * a refresh or a repeat click asked for it. Concurrent requests share one
+ * generator; the others wait for its stored result.
  */
 export async function ensureSimulationBatch(
   game: GameRow,
   options: { force?: boolean; allowGenerate?: boolean } = {},
+  deps: Partial<BatchDeps> = {},
 ): Promise<SimulationBatch | null> {
+  const d: BatchDeps = { ...defaultDeps, ...deps };
   const { force = false, allowGenerate = true } = options;
+  const inputs = inputSnapshot(game);
   const fingerprint = inputFingerprint(game);
-  const stored = await readStored(game.id);
+  const stored = await d.store.readCurrent(game.id);
 
-  const fresh =
-    !force &&
-    stored.batch != null &&
-    stored.analysis != null &&
-    stored.batch.input_fingerprint === fingerprint &&
-    stored.batch.engine_version === SIMULATION_ENGINE_VERSION;
-
-  if (fresh) {
-    return {
-      analysis: stored.analysis!,
-      aggregate: stored.batch!.aggregate ?? null,
-      fingerprint,
-      fromCache: true,
-    };
+  if (!force && batchIsReusable(stored.batch, stored.analysis, inputs)) {
+    return cached(stored.batch!, stored.analysis!, fingerprint);
   }
 
   if (!allowGenerate) {
@@ -83,20 +114,55 @@ export async function ensureSimulationBatch(
           aggregate: stored.batch?.aggregate ?? null,
           fingerprint,
           fromCache: true,
+          batchId: stored.batch?.id ?? null,
         }
       : null;
   }
 
-  return generateBatch(game, fingerprint, stored.analysis);
-}
+  const claimed = await d.store.claimLock(game.id, LOCK_SECONDS);
+  if (!claimed) {
+    // Another request is generating this game's batch: wait for its stored card.
+    const started = d.now();
+    while (d.now() - started < WAIT_LIMIT_MS) {
+      await d.sleep(WAIT_STEP_MS);
+      const next = await d.store.readCurrent(game.id);
+      if (next.batch && next.analysis && next.batch.id !== stored.batch?.id && next.analysis.simulation_id === next.batch.id) {
+        return cached(next.batch, next.analysis, fingerprint);
+      }
+    }
+    const last = await d.store.readCurrent(game.id);
+    return last.analysis
+      ? {
+          analysis: last.analysis,
+          aggregate: last.batch?.aggregate ?? null,
+          fingerprint,
+          fromCache: true,
+          batchId: last.batch?.id ?? null,
+        }
+      : null;
+  }
 
+  try {
+    // Re-check after taking the lock: a generator that just finished wins.
+    const again = await d.store.readCurrent(game.id);
+    if (!force && batchIsReusable(again.batch, again.analysis, inputs)) {
+      return cached(again.batch!, again.analysis!, fingerprint);
+    }
+    return await generateBatch(game, again, d, force);
+  } finally {
+    await d.store.releaseLock(game.id);
+  }
+}
 
 /**
  * Replaces every pick's write-up with the numbers the 50 runs actually
- * produced: simulated hit rate, the hit count, the probability the posted
- * price implies, and the resulting edge. No generic status text survives.
+ * produced, and stamps the simulated hit rate and model edge onto the pick so
+ * they are stored with it permanently.
  */
-function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggregate): AnalysisRow {
+export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" | "player_props" | "fun_bets">>(
+  analysis: T,
+  aggregate: SimulationAggregate,
+): T {
   const byKey = new Map(aggregate.picks.map((pick) => [pick.key, pick]));
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
   /**
@@ -110,10 +176,10 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
     return edge >= 0.005 ? "yellow" : "red";
   };
 
-  const describe = <T extends { key: string; odds?: string | null; reason: string; badge?: string }>(
-    pick: T,
+  const describe = <P extends { key: string; odds?: string | null; reason: string; badge?: string }>(
+    pick: P,
     { fun = false }: { fun?: boolean } = {},
-  ): T => {
+  ): P => {
     const simulated = byKey.get(pick.key);
     if (!simulated) return pick;
     const implied = americanToProbability(pick.odds ?? null);
@@ -134,12 +200,15 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
         ? "green"
         : "yellow"
       : badgeFor(edge, pick.badge ?? "yellow");
-    return { ...pick, badge, reason: `${parts.join(" · ")}.` } as T;
+    return {
+      ...pick,
+      badge,
+      simHitRate: Math.round(simulated.hitRate * 10000) / 10000,
+      modelEdge: edge == null ? null : Math.round(edge * 10000) / 10000,
+      reason: `${parts.join(" · ")}.`,
+    } as P;
   };
 
-  // Every selected pick is published with the numbers the 50 runs produced.
-  // A thin or negative simulated edge turns the light red — the pick is never
-  // dressed up — but it is not silently deleted when real prices exist.
   const topBets = (analysis.top_bets ?? [])
     .map((bet) => describe(bet))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
@@ -155,58 +224,63 @@ function withSimulatedReasons(analysis: AnalysisRow, aggregate: SimulationAggreg
   };
 }
 
-/** One handicap read + 50 deterministic settlements, persisted together. */
+function isStale(game: GameRow, now: number): boolean {
+  const stamp = game.updated_at ?? game.props_updated_at ?? game.odds_updated_at ?? null;
+  if (!stamp) return true;
+  return now - new Date(stamp).getTime() > ODDS_REFRESH_TTL_MS;
+}
+
+/** One formula run + exactly 50 simulated settlements, stored as a new permanent batch. */
 export async function generateBatch(
   game: GameRow,
-  fingerprint: string,
-  previous: AnalysisRow | null,
+  stored: { batch: StoredBatch | null; analysis: AnalysisRow | null },
+  deps: Partial<BatchDeps> = {},
+  force = false,
 ): Promise<SimulationBatch> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  // A batch is only generated when inputs moved, so pull the current board
-  // (standard lines, alternate ladders, player props, injuries) first.
-  const { refreshGameOdds } = await import("./ingest.server");
-  const current = (await refreshGameOdds(game)) ?? game;
-  const currentFingerprint = inputFingerprint(current);
-  const analysis = await buildLiveAnalysis(current, verifiedExtras(current), previous);
-  const { simulations, aggregate } = runSimulations(
-    currentFingerprint,
-    picksToSimulate(analysis),
-    SIMULATION_RUNS,
-  );
+  const d: BatchDeps = { ...defaultDeps, ...deps };
+  let current = game;
+  if (d.refresh && isStale(game, d.now())) current = (await d.refresh(game)) ?? game;
 
-  const described = withSimulatedReasons(analysis, aggregate);
-  const updated = await supabaseAdmin
-    .from("game_analyses")
-    .update({
-      top_bets: described.top_bets as unknown as never,
-      player_props: described.player_props as unknown as never,
-      fun_bets: described.fun_bets as unknown as never,
-    } as never)
-    .eq("id", analysis.id);
-  if (updated.error) console.error("simulated reasons save failed", game.id, updated.error.message);
+  const inputs = inputSnapshot(current);
+  const fingerprint = inputFingerprint(current);
 
-  const saved = await supabaseAdmin
-    .from("game_simulations")
-    .upsert(
-      {
-        game_id: current.id,
-        analysis_id: analysis.id,
-        sport: game.sport,
-        input_fingerprint: currentFingerprint,
-        engine_version: SIMULATION_ENGINE_VERSION,
-        runs: SIMULATION_RUNS,
-        generated_at: new Date().toISOString(),
-        simulations: simulations as unknown as never,
-        aggregate: aggregate as unknown as never,
-      } as never,
-      { onConflict: "game_id" },
-    )
-    .select("id")
-    .maybeSingle();
+  // The refreshed board may show the move was noise after all.
+  if (!force && batchIsReusable(stored.batch, stored.analysis, inputs)) {
+    return cached(stored.batch!, stored.analysis!, fingerprint);
+  }
 
-  if (saved.error) console.error("simulation batch save failed", game.id, saved.error.message);
+  // Inputs returned to a state an earlier batch already answered: reuse that
+  // exact stored card instead of running the formula again.
+  const existing = await d.store.findBatch(current.id, fingerprint);
+  if (
+    !force &&
+    existing?.analysis_snapshot &&
+    existing.engine_version === SIMULATION_ENGINE_VERSION &&
+    existing.runs === SIMULATION_RUNS
+  ) {
+    await d.store.activateBatch(current.id, existing.id);
+    const analysis = await d.store.writeAnalysis(current.id, existing.analysis_snapshot, existing.id);
+    return { analysis, aggregate: existing.aggregate, fingerprint, fromCache: true, batchId: existing.id };
+  }
 
-  return { analysis: described, aggregate, fingerprint: currentFingerprint, fromCache: false };
+  const fields = await d.compute(current, verifiedExtras(current), stored.analysis?.odds_snapshot ?? null);
+  const { simulations, aggregate } = runSimulations(fingerprint, picksToSimulate(fields), SIMULATION_RUNS);
+  if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly 50 simulations");
+  const described = withSimulatedReasons(fields, aggregate);
+
+  const saved = await d.store.saveBatch({
+    game_id: current.id,
+    sport: current.sport,
+    input_fingerprint: fingerprint,
+    engine_version: SIMULATION_ENGINE_VERSION,
+    runs: SIMULATION_RUNS,
+    simulations,
+    aggregate,
+    analysis_snapshot: described,
+    input_snapshot: inputs,
+  });
+  const analysis = await d.store.writeAnalysis(current.id, described, saved.id);
+  return { analysis, aggregate, fingerprint, fromCache: false, batchId: saved.id };
 }
 
 /**

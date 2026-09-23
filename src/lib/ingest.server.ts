@@ -351,22 +351,40 @@ export async function syncSportsData(): Promise<SyncReport> {
     report.analysesGraded += 1;
   }
 
+  // Tails grade on their own locked snapshot (market, side, line), never on
+  // whatever the game's current Lock Lab card happens to say.
   const { data: openTails } = await supabaseAdmin
     .from("tails")
-    .select("id, pick_key, analysis_id, games!inner(*), game_analyses!inner(top_bets)")
+    .select("id, market, selection, line_point, games!inner(*)")
     .eq("lock_leg_result", "pending")
     .eq("games.status", "final");
 
   for (const tail of (openTails ?? []) as unknown as {
     id: string;
-    pick_key: string;
+    market: string | null;
+    selection: string | null;
+    line_point: number | null;
     games: GameRow;
-    game_analyses: { top_bets: AnalysisRow["top_bets"] };
   }[]) {
-    const pick = tail.game_analyses.top_bets?.find((p) => p.key === tail.pick_key);
-    const result = gradePick(pick, tail.games);
+    if (!tail.market || !tail.selection) continue;
+    const result = gradePick(
+      {
+        key: tail.id,
+        badge: "yellow",
+        label: "",
+        reason: "",
+        market: tail.market,
+        selection: tail.selection,
+        line: tail.line_point != null ? String(tail.line_point) : null,
+        point: tail.line_point,
+      },
+      tail.games,
+    );
     if (result === "pending") continue;
-    await supabaseAdmin.from("tails").update({ lock_leg_result: result }).eq("id", tail.id);
+    await supabaseAdmin
+      .from("tails")
+      .update({ lock_leg_result: result, graded_at: new Date().toISOString() })
+      .eq("id", tail.id);
     report.tailsGraded += 1;
   }
 

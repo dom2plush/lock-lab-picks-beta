@@ -71,6 +71,7 @@ export type GameRow = {
   odds_updated_at?: string | null;
   props?: MarketOffer[];
   props_updated_at?: string | null;
+  updated_at?: string | null;
 };
 
 /** Exact price provenance stored with every pick Lock Lab makes. */
@@ -89,6 +90,10 @@ export type PickSource = {
   simRuns?: number | null;
   /** Run numbers (1-based) this pick won in those simulated games. */
   simHits?: number[] | null;
+  /** Share of the 50 simulated games this pick won, stored with the pick. */
+  simHitRate?: number | null;
+  /** Simulated hit rate minus the probability the stored price implies. */
+  modelEdge?: number | null;
 };
 
 export type PickBet = PickSource & {
@@ -156,6 +161,8 @@ export type AnalysisRow = {
   candidate_audit?: { alternateMarketsReceived?: number | null } | null;
   top_pick_result: Result;
   graded_at: string | null;
+  /** The stored 50-run batch this card came from. */
+  simulation_id?: string | null;
 };
 
 export const BADGE_LABEL: Record<Badge, string> = {
