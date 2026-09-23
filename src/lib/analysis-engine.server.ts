@@ -622,6 +622,18 @@ function gradeBoard(
 const MIN_RECOMMENDED_PRICE = -180;
 
 /**
+ * Longest price allowed in the Top 2. Those two slots are normal bets, so a
+ * +200 or longer underdog price never sits there — when the model likes one it
+ * is published as the fun bet instead.
+ */
+const MAX_TOP_PRICE = 199;
+
+/** True when a game price is long enough to belong in the fun bet, not the Top 2. */
+function isLongshotPrice(price: number): boolean {
+  return price > MAX_TOP_PRICE;
+}
+
+/**
  * THE edge thresholds. Every section — Top 2, props, fun bet, fallback fills —
  * reads these and nothing else, so a selection can never be playable in one
  * part of the board and a pass in another.
