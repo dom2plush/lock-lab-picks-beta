@@ -33,7 +33,11 @@ const ALT_MARKETS = ["alternate_spreads", "alternate_totals", "team_totals"];
 const PROP_MARKETS = [
   "player_pass_yds",
   "player_pass_tds",
+  "player_pass_completions",
+  "player_pass_attempts",
+  "player_pass_interceptions",
   "player_rush_yds",
+  "player_rush_attempts",
   "player_reception_yds",
   "player_receptions",
   "player_1st_td",
