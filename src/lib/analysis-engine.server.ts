@@ -1975,6 +1975,7 @@ export async function runLockLabFormula(
         c.group !== "prop" &&
         // Never fill a slot with a price we would not recommend.
         c.price >= MIN_RECOMMENDED_PRICE &&
+        !isLongshotPrice(c.price) &&
         // Pick #2 only needs a measurable positive edge; its light shows the size.
         hasAnyPositiveEdge(c) &&
         !selectedIds.has(c.key) &&
