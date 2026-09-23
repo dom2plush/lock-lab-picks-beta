@@ -72,6 +72,6 @@ export async function computeLiveAnalysis(
     fun_bets: audited.output.fun_bets,
     player_props: audited.output.player_props,
     verdict: finished.notes.verdict,
-    candidate_audit: finished.candidateAudit as AnalysisRow["candidate_audit"],
+    candidate_audit: (finished.candidateAudit ?? null) as AnalysisRow["candidate_audit"],
   };
 }
