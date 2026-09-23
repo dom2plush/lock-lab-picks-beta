@@ -1084,6 +1084,39 @@ function leadCheck(c: Candidate): { ok: boolean; why: string } {
  * alternate curve is searched by the formula itself, on both sides of a market,
  * rather than only when the handicap read happens to nominate one.
  */
+/**
+ * The most-protected posted alternate for a standard spread pick: same side,
+ * more points, crosses a key number the simulated games confirm, priced from
+ * -100 to -180 and still carrying a positive edge. Never moves away from the
+ * key number. Returns the standard pick unchanged when no rung qualifies.
+ */
+function preferKeyNumberSpread(c: Candidate, candidates: Candidate[]): Candidate {
+  if (c.group !== "core" || c.market !== "spread" || c.point == null) return c;
+  const standardPoint = c.point;
+  const rungs = candidates
+    .filter(
+      (x) =>
+        x.group === "alt" &&
+        x.alt?.market === "spread" &&
+        x.standardKey === c.key &&
+        x.point != null &&
+        x.point > standardPoint &&
+        Boolean(x.alt.keyGate?.ok) &&
+        !altTooFar(x) &&
+        x.price >= MIN_RECOMMENDED_PRICE &&
+        x.price <= -100 &&
+        hasAnyPositiveEdge(x),
+    )
+    .sort((a, b) => (b.point ?? 0) - (a.point ?? 0) || b.price - a.price);
+  return rungs[0] ?? c;
+}
+
+/** Plain reason for taking a key-number spread alternate over the standard line. */
+function keySpreadReason(c: Candidate): string {
+  const why = c.alt?.keyGate?.why;
+  return `Lock Lab takes the extra protection at a negative price.${why ? ` ${why}` : ""}`;
+}
+
 function bestGradedAlternate(
   standard: Candidate,
   candidates: Candidate[],
@@ -1794,10 +1827,11 @@ export async function runLockLabFormula(
       return true;
     });
     const leadIndex = distinct.findIndex((c) => eligibleForTop(c).ok);
-    const ranked =
+    const ranked = (
       leadIndex > 0
         ? [distinct[leadIndex]!, ...distinct.filter((_, i) => i !== leadIndex)]
-        : distinct;
+        : distinct
+    ).map((c, index) => (index < 2 ? preferKeyNumberSpread(c, candidates) : c));
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
@@ -2074,6 +2108,25 @@ export async function runLockLabFormula(
       selectedIds.add(c.key);
       selectedIdeas.add(betIdeaKey(c));
     }
+  }
+
+  // A standard spread pick always takes the most-protected key-number
+  // alternate on the same side when one is posted at -100 to -180.
+  for (let i = 0; i < Math.min(2, shortlist.length); i += 1) {
+    const s = shortlist[i]!;
+    const alt = preferKeyNumberSpread(s.c, candidates);
+    if (alt === s.c) continue;
+    used.add(alt.key);
+    decisions.set(s.c.key, {
+      section: null,
+      badge: "red",
+      reason: `Passed over for more protection across the key number: ${alt.label}.`,
+    });
+    const reason = keySpreadReason(alt);
+    shortlist[i] = {
+      c: alt,
+      entry: { ...s.entry, key: alt.key, standardKey: alt.standardKey ?? null, standardComparison: reason },
+    };
   }
 
   for (const { c, entry } of shortlist.slice(0, 2)) {
