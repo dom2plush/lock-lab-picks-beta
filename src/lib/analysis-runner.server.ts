@@ -1,7 +1,7 @@
-/** Runs the current Lock Lab formula once against a verified live board and stores the exact priced result. */
+/** Runs the current Lock Lab formula once against a verified live board and returns the exact priced result. */
 import type { ExtraOffers } from "./analysis-engine.server";
 import { runLockLabFormula } from "./analysis-engine.server";
-import type { AnalysisRow, GameRow, MarketOffer } from "./lock-lab-types";
+import type { AnalysisRow, GameOdds, GameRow, MarketOffer } from "./lock-lab-types";
 import { hasLiveOdds } from "./lock-lab-types";
 import { enforceAuditIntegrity } from "./odds-audit";
 import { verifyAlternateOffers, verifyPropOffers } from "./prop-integrity";
@@ -20,13 +20,30 @@ export function verifiedExtras(game: GameRow): ExtraOffers {
   };
 }
 
-export async function buildLiveAnalysis(
+/** Everything a Lock Lab card stores, before it is tied to a saved row. */
+export type AnalysisFields = Pick<
+  AnalysisRow,
+  | "sport"
+  | "odds_snapshot"
+  | "odds_captured_at"
+  | "odds_book"
+  | "is_live_odds"
+  | "generated_at"
+  | "top_bets"
+  | "bad_bet"
+  | "fun_bets"
+  | "player_props"
+  | "verdict"
+  | "candidate_audit"
+> & { engine_version: string };
+
+/** Runs the formula once. Pure with respect to storage: nothing is written here. */
+export async function computeLiveAnalysis(
   game: GameRow,
   extra: ExtraOffers,
-  previous: AnalysisRow | null,
-): Promise<AnalysisRow> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const finished = await runLockLabFormula(game, game.odds, extra, previous?.odds_snapshot ?? null);
+  previousOdds: GameOdds | null,
+): Promise<AnalysisFields> {
+  const finished = await runLockLabFormula(game, game.odds, extra, previousOdds);
   const audited = enforceAuditIntegrity(
     {
       odds_snapshot: game.odds,
@@ -42,34 +59,19 @@ export async function buildLiveAnalysis(
     console.warn("Lock Lab audit dropped unverifiable picks", game.id, audited.dropped);
   }
 
-  const currentCapture = game.odds.capturedAt ?? game.odds_updated_at ?? null;
-  const result = await supabaseAdmin
-    .from("game_analyses")
-    .upsert(
-      {
-        game_id: game.id,
-        sport: game.sport,
-        engine_version: "direct-v3",
-        odds_snapshot: game.odds as unknown as never,
-        odds_captured_at: currentCapture,
-        odds_book: game.odds.bookmaker ?? null,
-        is_live_odds: hasLiveOdds(game.odds) && !game.is_demo,
-        generated_at: new Date().toISOString(),
-        top_bets: audited.output.top_bets as unknown as never,
-        bad_bet: null,
-        fun_bets: audited.output.fun_bets as unknown as never,
-        player_props: audited.output.player_props as unknown as never,
-        verdict: finished.notes.verdict,
-        candidate_audit: finished.candidateAudit as unknown as never,
-        top_pick_result: "pending",
-        graded_at: null,
-      } as never,
-      { onConflict: "game_id" },
-    )
-    .select("*")
-    .maybeSingle();
-
-  if (result.error) throw new Error(result.error.message);
-  if (!result.data) throw new Error("The analysis could not be saved.");
-  return result.data as unknown as AnalysisRow;
+  return {
+    sport: game.sport,
+    engine_version: "direct-v3",
+    odds_snapshot: game.odds,
+    odds_captured_at: game.odds.capturedAt ?? game.odds_updated_at ?? null,
+    odds_book: game.odds.bookmaker ?? null,
+    is_live_odds: hasLiveOdds(game.odds) && !game.is_demo,
+    generated_at: new Date().toISOString(),
+    top_bets: audited.output.top_bets,
+    bad_bet: null,
+    fun_bets: audited.output.fun_bets,
+    player_props: audited.output.player_props,
+    verdict: finished.notes.verdict,
+    candidate_audit: (finished.candidateAudit ?? null) as NonNullable<AnalysisRow["candidate_audit"]> | null,
+  };
 }

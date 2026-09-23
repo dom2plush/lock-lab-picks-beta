@@ -22,6 +22,8 @@ import { createTail } from "@/lib/tails.functions";
 export type TailTarget = {
   gameId: string;
   analysisId: string;
+  /** The stored batch the displayed card came from, so the exact shown bet is saved. */
+  simulationId: string | null;
   pickKey: string;
   pickLabel: string;
   pickOdds: string | null;
@@ -61,7 +63,12 @@ export function TailDialog({
     setSaving(true);
     try {
       await submit({
-        data: { analysisId: target.analysisId, pickKey: target.pickKey, stake: stakeValue },
+        data: {
+          analysisId: target.analysisId,
+          simulationId: target.simulationId,
+          pickKey: target.pickKey,
+          stake: stakeValue,
+        },
       });
       await queryClient.invalidateQueries({ queryKey: ["my-bets"] });
       toast.success("Tailed — tracking in My Bets");

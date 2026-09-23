@@ -5,7 +5,7 @@
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v25";
+export const SIMULATION_ENGINE_VERSION = "sim-v26";
 export const SIMULATION_RUNS = 50;
 
 /** Rounds a price so tiny juice wiggles do not invalidate a stored batch. */
@@ -36,6 +36,87 @@ export function inputFingerprint(game: GameRow): string {
     injuries,
   ].join("::");
   return hash(payload);
+}
+
+/**
+ * The meaningful inputs a stored batch was generated from. Kept alongside the
+ * batch so a later Analyze can tell a real market/injury move apart from noise.
+ */
+export type InputSnapshot = {
+  bookKey: string | null;
+  spread: { home: number; homePrice: number; awayPrice: number } | null;
+  total: { points: number; overPrice: number; underPrice: number } | null;
+  moneyline: { home: number; away: number } | null;
+  /** Material injury entries only: "team|player|status". */
+  injuries: string[];
+};
+
+/** Spread points must move at least this far (any half point) to matter. */
+export const SPREAD_POINT_MOVE = 0.5;
+/** Totals must move a full point to matter. */
+export const TOTAL_POINT_MOVE = 1;
+/** A price must move this much implied probability (about 15 cents at -110). */
+export const PRICE_PROB_MOVE = 0.03;
+
+const MATERIAL_INJURY = /\b(out|doubtful|ir|injured reserve|reserve|suspended|pup|nfi|inactive)\b/i;
+
+export function inputSnapshot(game: GameRow): InputSnapshot {
+  const odds = game.odds ?? {};
+  return {
+    bookKey: odds.bookmakerKey ?? odds.bookmaker ?? null,
+    spread: odds.spread
+      ? { home: odds.spread.home, homePrice: odds.spread.homePrice, awayPrice: odds.spread.awayPrice }
+      : null,
+    total: odds.total
+      ? { points: odds.total.points, overPrice: odds.total.overPrice, underPrice: odds.total.underPrice }
+      : null,
+    moneyline: odds.moneyline ? { home: odds.moneyline.home, away: odds.moneyline.away } : null,
+    injuries: (game.injuries ?? [])
+      .filter((injury) => MATERIAL_INJURY.test(injury.status ?? ""))
+      .map((injury) => `${injury.team}|${injury.player}|${String(injury.status).toLowerCase()}`)
+      .sort(),
+  };
+}
+
+function implied(price: number | null | undefined): number | null {
+  if (price == null || !Number.isFinite(price) || price === 0) return null;
+  return price > 0 ? 100 / (price + 100) : -price / (-price + 100);
+}
+
+function priceMoved(a: number | null | undefined, b: number | null | undefined): boolean {
+  const pa = implied(a);
+  const pb = implied(b);
+  if (pa == null || pb == null) return pa !== pb;
+  return Math.abs(pa - pb) >= PRICE_PROB_MOVE - 1e-9;
+}
+
+/**
+ * Why the current inputs call for a new batch, or null when the stored batch
+ * still stands. Capture timestamps, unchanged re-pulls, juice wiggles under
+ * ~15 cents and non-material injury tags (questionable/probable) never count.
+ */
+export function meaningfulInputChange(prev: InputSnapshot | null, next: InputSnapshot): string | null {
+  if (!prev) return "no stored input snapshot";
+  if ((prev.bookKey ?? null) !== (next.bookKey ?? null)) return "sportsbook changed";
+  if (Boolean(prev.spread) !== Boolean(next.spread)) return "spread market appeared or disappeared";
+  if (prev.spread && next.spread) {
+    if (Math.abs(prev.spread.home - next.spread.home) >= SPREAD_POINT_MOVE) return "spread moved";
+    if (priceMoved(prev.spread.homePrice, next.spread.homePrice) || priceMoved(prev.spread.awayPrice, next.spread.awayPrice))
+      return "spread price moved";
+  }
+  if (Boolean(prev.total) !== Boolean(next.total)) return "total market appeared or disappeared";
+  if (prev.total && next.total) {
+    if (Math.abs(prev.total.points - next.total.points) >= TOTAL_POINT_MOVE) return "total moved";
+    if (priceMoved(prev.total.overPrice, next.total.overPrice) || priceMoved(prev.total.underPrice, next.total.underPrice))
+      return "total price moved";
+  }
+  if (Boolean(prev.moneyline) !== Boolean(next.moneyline)) return "moneyline appeared or disappeared";
+  if (prev.moneyline && next.moneyline) {
+    if (priceMoved(prev.moneyline.home, next.moneyline.home) || priceMoved(prev.moneyline.away, next.moneyline.away))
+      return "moneyline moved";
+  }
+  if (prev.injuries.join(";") !== next.injuries.join(";")) return "material injury change";
+  return null;
 }
 
 /** Stable, dependency-free 32-bit string hash rendered as hex. */

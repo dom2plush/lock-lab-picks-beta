@@ -29,6 +29,13 @@
       "when": 1790137122683,
       "tag": "0003_ensure_profile_on_tail",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790137911708,
+      "tag": "0004_immutable_simulation_batches",
+      "breakpoints": true
     }
   ]
 }

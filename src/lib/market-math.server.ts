@@ -488,6 +488,8 @@ export function createAltEvaluator(
 
   function evaluateSpread(team: string, point: number, price: number): AltEvaluation | null {
     if (!spread || marginHome == null) return null;
+    // An alternate is only ever compared with its own team's standard line.
+    if (team !== teams.home && team !== teams.away) return null;
     const standardPoint = team === teams.home ? spread.home : spread.away;
     const standardPrice = team === teams.home ? spread.homePrice : spread.awayPrice;
     if (point === standardPoint) return null;

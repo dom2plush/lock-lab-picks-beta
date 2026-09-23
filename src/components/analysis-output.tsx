@@ -59,6 +59,7 @@ export function AnalysisOutput({
   ): TailTarget => ({
     gameId: game.id,
     analysisId: analysis.id,
+    simulationId: analysis.simulation_id ?? null,
     pickKey,
     pickLabel,
     pickOdds,

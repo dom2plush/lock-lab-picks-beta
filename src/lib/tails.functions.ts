@@ -18,17 +18,21 @@ const CreateTailInput = z.object({
   analysisId: z.string().uuid(),
   pickKey: z.string().min(1).max(40),
   stake: Stake,
+  /** The stored 50-run batch whose card the user was looking at. */
+  simulationId: z.string().uuid().nullable().optional(),
 });
 
 export const createTail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => CreateTailInput.parse(input))
   .handler(async ({ data, context }) => {
-    const { data: id, error } = await context.supabase.rpc("tail_pick", {
+    const args: { _analysis_id: string; _pick_key: string; _stake: number; _simulation_id?: string } = {
       _analysis_id: data.analysisId,
       _pick_key: data.pickKey,
       _stake: data.stake,
-    });
+    };
+    if (data.simulationId) args._simulation_id = data.simulationId;
+    const { data: id, error } = await context.supabase.rpc("tail_pick", args);
     if (error) throw new Error(error.message);
     return { id: id as string };
   });
