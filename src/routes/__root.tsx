@@ -112,8 +112,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
  * The published build has no access to the .env file (it is gitignored), so
  * Vite cannot inline VITE_SUPABASE_* into the browser bundle. The worker DOES
  * have the values at runtime, so the server hands the publishable config to the
- * browser here. The generated client falls back to `process.env`, which this
- * shim populates before any app code runs. Only public values are exposed.
+ * browser here, on `globalThis.__LOVABLE_PUBLIC_ENV__`. A Vite plugin points the
+ * generated Supabase client's env fallback at that object. Only public values
+ * (the project URL and the publishable key) are exposed.
  */
 function runtimePublicConfigScript() {
   if (typeof window !== "undefined") return null;
@@ -123,10 +124,11 @@ function runtimePublicConfigScript() {
       process.env["SUPABASE_PUBLISHABLE_KEY"] ?? process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ?? "",
   };
   if (!config.SUPABASE_URL || !config.SUPABASE_PUBLISHABLE_KEY) return null;
-  return `globalThis.process=globalThis.process||{};globalThis.process.env=Object.assign({},globalThis.process.env,${JSON.stringify(
+  return `globalThis.__LOVABLE_PUBLIC_ENV__=Object.assign({},globalThis.__LOVABLE_PUBLIC_ENV__,${JSON.stringify(
     config,
   )});`;
 }
+
 
 function RootShell({ children }: { children: ReactNode }) {
   const runtimeConfig = runtimePublicConfigScript();
