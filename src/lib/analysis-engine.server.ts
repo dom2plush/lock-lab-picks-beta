@@ -1725,7 +1725,8 @@ export async function runLockLabFormula(
           c.group !== "prop" &&
           c.price >= MIN_RECOMMENDED_PRICE &&
           c.grade?.modelProb != null &&
-          !altTooFar(c),
+          !altTooFar(c) &&
+          !failsKeyGate(c),
       )
       .sort((a, b) => candidateRank(b) - candidateRank(a));
     const seenIdeas = new Set<string>();
@@ -1993,6 +1994,7 @@ export async function runLockLabFormula(
           c.price >= MIN_RECOMMENDED_PRICE &&
           c.grade?.modelProb != null &&
           !altTooFar(c) &&
+          !failsKeyGate(c) &&
           !selectedIds.has(c.key) &&
           !selectedIdeas.has(betIdeaKey(c)),
       )
