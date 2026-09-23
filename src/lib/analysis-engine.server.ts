@@ -1852,12 +1852,12 @@ export async function runLockLabFormula(
               standardPrice: standard.price,
               standardBook: standard.book,
               standardCapturedAt: standard.capturedAt,
-              standardComparison: altPreferenceReason(c),
+              standardComparison: c.alt?.market === "spread" ? keySpreadReason(c) : altPreferenceReason(c),
             }
           : {}),
         reason: eligible
           ? c.alt
-            ? altPreferenceReason(c)
+            ? c.alt.market === "spread" ? keySpreadReason(c) : altPreferenceReason(c)
             : "The posted price carries a measurable edge under the existing market grade."
           : "This is the next-best posted option, but its estimated edge remains inside the model's uncertainty band.",
       };
