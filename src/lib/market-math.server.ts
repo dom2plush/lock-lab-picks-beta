@@ -348,7 +348,7 @@ export function keyNumberGate(input: {
 }
 
 /** Alternate spread prices must sit in this negative-odds window. */
-export const ALT_SPREAD_PRICE_MIN = -199;
+export const ALT_SPREAD_PRICE_MIN = -180;
 export const ALT_SPREAD_PRICE_MAX = -100;
 
 /**
@@ -382,7 +382,7 @@ export function alternateSpreadRule(input: {
     return {
       ok: false,
       keys,
-      why: `Priced at ${input.price > 0 ? "+" : ""}${input.price} — alternate spreads must be between -100 and -199.`,
+      why: `Priced at ${input.price > 0 ? "+" : ""}${input.price} — alternate spreads must be between -100 and ${ALT_SPREAD_PRICE_MIN}.`,
     };
   }
   return { ok: true, keys, why: "" };
