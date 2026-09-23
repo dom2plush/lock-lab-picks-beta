@@ -8,25 +8,41 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import type { Plugin } from "vite";
 
 /**
- * The generated Supabase client reads its config with bracket notation
- * (`import.meta.env['VITE_SUPABASE_URL']`). Vite's VITE_* define injection only
- * replaces dot-notation access, so the production browser bundle shipped with
- * no credentials and every client-side Supabase call threw at runtime.
+ * The published build does not have access to .env (it is gitignored), so Vite
+ * cannot inline VITE_SUPABASE_* into the browser bundle, and the client build
+ * rewrites `process.env` to `{}`. The result was a browser Supabase client that
+ * threw "Missing Supabase environment variable(s)" on the live site.
  *
- * Rewriting the bracket form to the dot form before define runs lets the
- * standard injection inline the values as intended.
+ * The worker DOES hold the values at runtime, so the root shell publishes the
+ * public config on `globalThis.__LOVABLE_PUBLIC_ENV__`. This plugin points the
+ * generated client's `process.env` fallback at that runtime object instead of
+ * the compile-time stub. Only public (publishable) values ever travel this way.
  */
-function normalizeImportMetaEnvAccess(): Plugin {
-  const pattern = /import\.meta\.env\[\s*(['"`])([A-Za-z_$][\w$]*)\1\s*\]/g;
+const RUNTIME_ENV_GLOBAL = "__LOVABLE_PUBLIC_ENV__";
+
+function runtimePublicEnvFallback(): Plugin {
+  const processEnv = /process\.env\[\s*(['"`])([A-Za-z_$][\w$]*)\1\s*\]/g;
+  const importMetaEnv = /import\.meta\.env\[\s*(['"`])([A-Za-z_$][\w$]*)\1\s*\]/g;
+
   return {
-    name: "lock-lab:normalize-import-meta-env-access",
+    name: "lock-lab:runtime-public-env-fallback",
     enforce: "pre",
     transform(code, id) {
-      if (!id.includes("/src/")) return null;
-      if (!code.includes("import.meta.env[")) return null;
-      const next = code.replace(pattern, (_match, _quote, key) => `import.meta.env.${key}`);
-      if (next === code) return null;
-      return { code: next, map: null };
+      if (this.environment?.name !== "client") return null;
+      if (!id.includes("integrations/supabase/client")) return null;
+      if (id.includes(".server")) return null;
+
+      let next = code.replace(
+        importMetaEnv,
+        (_match, _quote, key: string) => `import.meta.env.${key}`,
+      );
+      next = next.replace(
+        processEnv,
+        (_match, _quote, key: string) =>
+          `(globalThis.${RUNTIME_ENV_GLOBAL}||{})[${JSON.stringify(key)}]`,
+      );
+
+      return next === code ? null : { code: next, map: null };
     },
   };
 }
@@ -37,5 +53,5 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  plugins: [normalizeImportMetaEnvAccess()],
+  plugins: [runtimePublicEnvFallback()],
 });
