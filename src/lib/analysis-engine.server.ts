@@ -73,6 +73,7 @@ const PROP_MARKET_LABEL: Record<string, string> = {
   player_receptions: "Receptions",
   player_1st_td: "First TD scorer",
   player_anytime_td: "Anytime TD",
+  player_tds_over: "Player TDs",
 };
 
 /**
@@ -522,7 +523,12 @@ export function buildCandidates(
     const side = offer.selection.toLowerCase();
     if (!["over", "under", "yes", "no"].includes(side)) return;
     if (!offer.player) return;
-    const id = `${offer.market}:${offer.player}:${side}`;
+    // Player TD rungs (Over 0.5 / 1.5 / 2.5) are distinct bets, so each posted
+    // rung is kept; every other market keeps one rung per player and side.
+    const id =
+      offer.market === "player_tds_over"
+        ? `${offer.market}:${offer.player}:${side}:${offer.point}`
+        : `${offer.market}:${offer.player}:${side}`;
     if (seen.has(id) || propCount >= 400) return;
     const marketCount = perMarket.get(offer.market) ?? 0;
     if (marketCount >= 30) return;
@@ -890,8 +896,28 @@ function funBadge(c: Candidate): Badge {
   return g.modelProb >= 0.1 ? "yellow" : "red";
 }
 
+/**
+ * 0 First TD, 1 Anytime TD, 1.5 multi-TD (2+), 2 every non-touchdown market.
+ * Anything below 2 is a touchdown market reserved for the fun bet.
+ */
 function propMarketPriority(market: string): number {
-  return market === "player_1st_td" ? 0 : market === "player_anytime_td" ? 1 : 2;
+  return market === "player_1st_td"
+    ? 0
+    : market === "player_anytime_td"
+      ? 1
+      : market === "player_tds_over"
+        ? 1.5
+        : 2;
+}
+
+/** A multi-touchdown rung only counts as a TD fun bet at 2+ (Over 1.5 or higher). */
+function isMultiTdRung(c: Candidate): boolean {
+  return (
+    c.market === "player_tds_over" &&
+    propDirection(c) === "over" &&
+    c.point != null &&
+    c.point >= 1.5
+  );
 }
 
 type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
@@ -1019,6 +1045,7 @@ function fillPlayerProps(
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
         c.market !== "player_1st_td" &&
+        c.market !== "player_tds_over" &&
         c.grade?.modelProb != null &&
         !playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel),
     )
@@ -1055,11 +1082,27 @@ function fillPlayerProps(
 }
 
 
+/** Edge a +200 or longer moneyline needs before it is shown as a bonus fun bet. */
+const BONUS_ML_MIN_EDGE = 0.03;
+
+function isTdFunCandidate(c: Candidate): boolean {
+  if (c.group !== "prop") return false;
+  const priority = propMarketPriority(c.market);
+  if (priority >= 2) return false;
+  if (c.market === "player_tds_over") return isMultiTdRung(c);
+  // Scorer markets: only the "Yes" side is a touchdown bet.
+  const side = propDirection(c);
+  return side === "yes" || side === "over";
+}
+
 /**
- * Exactly one higher-variance play. A +200 or longer game price the model
- * genuinely likes leads here — it is held out of the Top 2 on price alone, so
- * this is where it belongs. Otherwise it is a scoring play: First TD, then
- * Anytime TD.
+ * Fun bets, in two independent slots:
+ *  1. The primary TD fun bet — always present when any verified sportsbook
+ *     posts a touchdown market for this game: First TD, then Anytime TD, then
+ *     2+ TDs. It is never replaced.
+ *  2. An optional Bonus fun bet — a +200 or longer moneyline, added alongside
+ *     the TD bet only when the model shows meaningful positive edge on it.
+ *     Such prices never sit in the Top 2.
  */
 function fillFunBet(
   candidates: Candidate[],
@@ -1067,42 +1110,71 @@ function fillFunBet(
   funBets: FunBet[],
   decisions: DecisionMap,
 ): void {
-  if (funBets.length) return;
-  const funPriority = (c: Candidate): number => {
-    // A long game price only qualifies on real modelled value, never on payout.
-    if (c.group !== "prop") return (c.grade?.edge ?? 0) >= TARGET_EDGE ? 0 : 3;
-    return propMarketPriority(c.market) + 1;
+  const push = (c: Candidate, reason: string, decisionReason: string) => {
+    const badge = funBadge(c);
+    used.add(c.key);
+    funBets.push({
+      key: `fun-${funBets.length + 1}`,
+      badge,
+      label: c.label,
+      market: c.marketLabel,
+      odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
+      ...pickSource(c),
+      reason,
+    });
+    decisions.set(c.key, { section: "fun", badge, reason: decisionReason });
   };
-  const pool = candidates
-    .filter((c) => {
-      if (used.has(c.key)) return false;
-      if (c.group === "prop") return propMarketPriority(c.market) < 2;
-      return (
+
+  // ---- 1. Primary TD fun bet ------------------------------------------------
+  const byKey = new Map(candidates.map((c) => [c.key, c]));
+  const hasTd = funBets.some((f) => {
+    const c = candidates.find((x) => x.label === f.label);
+    return c ? isTdFunCandidate(c) : false;
+  });
+  if (!hasTd) {
+    const tdPool = candidates
+      .filter((c) => !used.has(c.key) && isTdFunCandidate(c))
+      .sort(
+        (a, b) =>
+          propMarketPriority(a.market) - propMarketPriority(b.market) ||
+          candidateRank(b) - candidateRank(a),
+      );
+    const td = tdPool[0];
+    if (td) {
+      push(
+        td,
+        "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units.",
+        "Primary TD fun bet from the ranked board.",
+      );
+    }
+  }
+  void byKey;
+
+  // ---- 2. Optional Bonus fun bet: a +200 or longer moneyline ---------------
+  const hasBonus = funBets.some((f) => {
+    const c = candidates.find((x) => x.label === f.label);
+    return c ? c.group !== "prop" : false;
+  });
+  if (hasBonus) return;
+  const bonus = candidates
+    .filter(
+      (c) =>
+        !used.has(c.key) &&
+        c.group !== "prop" &&
         c.market === "moneyline" &&
         isLongshotPrice(c.price) &&
-        hasPositiveEdge(c)
-      );
-    })
-    .filter((c) => funPriority(c) < 3)
-    .sort((a, b) => funPriority(a) - funPriority(b) || candidateRank(b) - candidateRank(a));
-  const c = pool[0];
-  if (!c) return;
-  const badge = funBadge(c);
-  used.add(c.key);
-  funBets.push({
-    key: "fun-1",
-    badge,
-    label: c.label,
-    market: c.marketLabel,
-    odds: fmtOdds(c.price),
-    estimatedProbability: c.grade?.modelProb ?? null,
-    ...pickSource(c),
-    reason:
-      c.group === "prop"
-        ? "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units."
-        : "The model's win estimate beats this long price, but it pays too long for a normal top bet. For fun only — keep it to smaller units.",
-  });
-  decisions.set(c.key, { section: "fun", badge, reason: "Fun bet from the ranked board." });
+        hasPositiveEdge(c) &&
+        (c.grade?.edge ?? 0) >= BONUS_ML_MIN_EDGE,
+    )
+    .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
+  if (bonus) {
+    push(
+      bonus,
+      "Bonus fun bet: the model's win estimate clearly beats this long price, but it pays too long for a normal top bet. For fun only — keep it to smaller units.",
+      "Bonus fun bet: +200 or longer moneyline with meaningful model edge.",
+    );
+  }
 }
 
 /** How reliable a candidate's probability estimate is (0-1). */
@@ -2257,14 +2329,13 @@ export async function runLockLabFormula(
   const funEntries = [...(handicap.funBets ?? [])].sort((a, b) => {
     const marketA = byKey.get(a.key)?.market ?? "";
     const marketB = byKey.get(b.key)?.market ?? "";
-    const priority = (marketName: string) => marketName === "player_1st_td" ? 0 : marketName === "player_anytime_td" ? 1 : 2;
-    return priority(marketA) - priority(marketB);
+    return propMarketPriority(marketA) - propMarketPriority(marketB);
   });
   for (const entry of funEntries) {
     const c = byKey.get(entry.key);
     if (!c || used.has(c.key) || c.group !== "prop") continue;
-    // Fun bet is a touchdown-scorer market only.
-    if (propMarketPriority(c.market) === 2) continue;
+    // The primary fun bet is a verified touchdown market only.
+    if (!isTdFunCandidate(c)) continue;
     applyLean(c, entry.probabilityLean, entry.evidenceStrength);
     used.add(c.key);
     funBets.push({
