@@ -279,6 +279,53 @@ export async function fetchEventMarkets(
     }
 
     for (const marketKey of marketKeys) {
+      // Player props: every player is taken from the highest-priority book
+      // that actually posts him, so one book missing a player (or a whole
+      // market) never hides the prices another book posts.
+      if (marketKey.startsWith("player_")) {
+        const ordered = [
+          ...BOOK_PRIORITY.map((key) => event.bookmakers!.find((b) => b.key === key)).filter(
+            (b): b is ProviderBookmaker => Boolean(b),
+          ),
+          ...event.bookmakers!.filter((b) => !BOOK_PRIORITY.includes(b.key)),
+        ];
+        const claimed = new Set<string>();
+        const titles = new Set<string>();
+        let count = 0;
+        for (const book of ordered) {
+          const market = (book.markets ?? []).find((m) => m.key === marketKey);
+          if (!market?.outcomes?.length) continue;
+          const fromThisBook = new Set<string>();
+          for (const outcome of market.outcomes) {
+            const player = (outcome.description ?? "").trim().toLowerCase();
+            if (!player || claimed.has(player)) continue;
+            fromThisBook.add(player);
+            offers.push({
+              market: marketKey,
+              selection: outcome.name,
+              player: outcome.description!,
+              point: outcome.point ?? null,
+              price: outcome.price,
+              book: book.title,
+              bookKey: book.key,
+              capturedAt: market.last_update ?? book.last_update ?? capturedAt,
+              eventId: providerGameId,
+              isAlternate: false,
+            });
+            count += 1;
+          }
+          if (fromThisBook.size) titles.add(book.title);
+          for (const player of fromThisBook) claimed.add(player);
+        }
+        if (!count) {
+          coverage.missing.push(marketKey);
+          continue;
+        }
+        coverage.books[marketKey] = [...titles].join(", ");
+        coverage.received[marketKey] = count;
+        continue;
+      }
+
       const book = bookForMarket(event, marketKey);
       if (!book) {
         coverage.missing.push(marketKey);
