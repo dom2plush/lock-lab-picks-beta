@@ -33,6 +33,7 @@ import {
   createAltEvaluator,
   devig,
   gradeValue,
+  keyNumberGate,
   robustnessScore,
   riskAdjustedScore,
   canLeadBoard,
@@ -229,6 +230,61 @@ function teamTag(game: GameRow, team: string) {
   return team;
 }
 
+/**
+ * Key-number gate for alternates that buy points: the move must cross a
+ * recognised football key number, and the existing 50 simulated games must show
+ * it cashes meaningfully more often than the standard line. A failing rung is
+ * never treated as better than its standard number.
+ */
+function applyKeyGate(
+  evaluation: AltEvaluation | null,
+  game: GameRow,
+  projection: GameProjection,
+): AltEvaluation | null {
+  if (!evaluation) return evaluation;
+  const count = (o: boolean[] | null) => (o ? o.filter(Boolean).length : null);
+  let standardOutcomes: boolean[] | null = null;
+  let altOutcomes: boolean[] | null = null;
+  if (evaluation.market === "spread") {
+    const side = evaluation.side === game.home_team ? "home" : evaluation.side === game.away_team ? "away" : null;
+    if (side) {
+      standardOutcomes = projection.spreadOutcomes(side, evaluation.standardPoint);
+      altOutcomes = projection.spreadOutcomes(side, evaluation.point);
+    }
+  } else if (evaluation.side === "Over" || evaluation.side === "Under") {
+    standardOutcomes = projection.totalOutcomes(evaluation.side, evaluation.standardPoint);
+    altOutcomes = projection.totalOutcomes(evaluation.side, evaluation.point);
+  }
+  const gate = keyNumberGate({
+    market: evaluation.market,
+    sport: game.sport,
+    side: evaluation.side,
+    standardPoint: evaluation.standardPoint,
+    point: evaluation.point,
+    standardHits: count(standardOutcomes),
+    altHits: count(altOutcomes),
+    runs: altOutcomes?.length ?? standardOutcomes?.length ?? 50,
+  });
+  if (gate.ok && !gate.why) return evaluation;
+  return {
+    ...evaluation,
+    worthIt: gate.ok ? evaluation.worthIt : false,
+    keyGate: { ok: gate.ok, why: gate.why, simGain: gate.simGain },
+    note: `${evaluation.note} ${gate.why}`.trim(),
+  };
+}
+
+/** True when an alternate buys points without crossing a key number the simulations confirm. */
+function failsKeyGate(c: Candidate): boolean {
+  return Boolean(c.alt?.keyGate && !c.alt.keyGate.ok);
+}
+
+/** An alternate must match or beat its own standard line's edge before it can replace it. */
+function beatsStandardEdge(alt: Candidate, standard: Candidate | undefined): boolean {
+  if (!standard?.grade || standard.grade.edge == null) return true;
+  return (alt.grade?.edge ?? -Infinity) >= standard.grade.edge;
+}
+
 function buildCandidates(
   game: GameRow,
   odds: GameOdds,
@@ -370,7 +426,7 @@ function buildCandidates(
   type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
   const scored: ScoredAlt[] = extra.alternates
     .filter((o) => o.point != null && o.price <= 1200 && o.price >= -1000)
-    .map((offer) => ({ offer, evaluation: evaluator.evaluateOffer(offer) }));
+    .map((offer) => ({ offer, evaluation: applyKeyGate(evaluator.evaluateOffer(offer), game, projection) }));
 
   // Both rungs of the ladder matter: the cap is per market AND per side, so a
   // long favourite ladder can never crowd the other side's numbers off the board.
