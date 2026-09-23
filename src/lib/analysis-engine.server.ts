@@ -304,7 +304,7 @@ function beatsStandardEdge(alt: Candidate, standard: Candidate | undefined): boo
   return (alt.grade?.edge ?? -Infinity) >= standard.grade.edge;
 }
 
-function buildCandidates(
+export function buildCandidates(
   game: GameRow,
   odds: GameOdds,
   extra: ExtraOffers,
