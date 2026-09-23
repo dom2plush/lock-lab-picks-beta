@@ -17,8 +17,13 @@ const Input = z.object({ sport: z.enum(["NFL", "CFB"]) });
 export const getUpcomingGames = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => Input.parse(input))
   .handler(async ({ data }): Promise<{ games: GameRow[] }> => {
-    const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
-    const supabasePublic = createClient<Database>(process.env["SUPABASE_URL"]!, key, {
+    const url = process.env["SUPABASE_URL"] ?? process.env["VITE_SUPABASE_URL"];
+    const key =
+      process.env["SUPABASE_PUBLISHABLE_KEY"] ?? process.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
+    if (!url || !key) {
+      throw new Error("Supabase is not configured on the server; cannot load the games board.");
+    }
+    const supabasePublic = createClient<Database>(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: {
         fetch: (input, init) => {
