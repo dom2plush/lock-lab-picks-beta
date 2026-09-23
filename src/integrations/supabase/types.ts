@@ -273,6 +273,139 @@ export type Database = {
         }
         Relationships: []
       }
+      parlay_legs: {
+        Row: {
+          created_at: string
+          game_id: string
+          id: string
+          leg_index: number
+          line_point: number | null
+          market: string | null
+          odds_book: string | null
+          odds_captured_at: string | null
+          parlay_id: string
+          pick_label: string
+          pick_odds: string | null
+          player: string | null
+          price: number
+          selection: string | null
+          tail_id: string
+        }
+        Insert: {
+          created_at?: string
+          game_id: string
+          id?: string
+          leg_index: number
+          line_point?: number | null
+          market?: string | null
+          odds_book?: string | null
+          odds_captured_at?: string | null
+          parlay_id: string
+          pick_label: string
+          pick_odds?: string | null
+          player?: string | null
+          price: number
+          selection?: string | null
+          tail_id: string
+        }
+        Update: {
+          created_at?: string
+          game_id?: string
+          id?: string
+          leg_index?: number
+          line_point?: number | null
+          market?: string | null
+          odds_book?: string | null
+          odds_captured_at?: string | null
+          parlay_id?: string
+          pick_label?: string
+          pick_odds?: string | null
+          player?: string | null
+          price?: number
+          selection?: string | null
+          tail_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "parlay_legs_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "parlay_legs_parlay_id_fkey"
+            columns: ["parlay_id"]
+            isOneToOne: false
+            referencedRelation: "parlays"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "parlay_legs_tail_id_fkey"
+            columns: ["tail_id"]
+            isOneToOne: false
+            referencedRelation: "tails"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      parlays: {
+        Row: {
+          actual_odds: number | null
+          actual_payout: number | null
+          computed_odds: number
+          created_at: string
+          graded_at: string | null
+          id: string
+          leg_count: number
+          result: string
+          settled_payout: number | null
+          stake: number
+          user_id: string
+        }
+        Insert: {
+          actual_odds?: number | null
+          actual_payout?: number | null
+          computed_odds: number
+          created_at?: string
+          graded_at?: string | null
+          id?: string
+          leg_count: number
+          result?: string
+          settled_payout?: number | null
+          stake: number
+          user_id: string
+        }
+        Update: {
+          actual_odds?: number | null
+          actual_payout?: number | null
+          computed_odds?: number
+          created_at?: string
+          graded_at?: string | null
+          id?: string
+          leg_count?: number
+          result?: string
+          settled_payout?: number | null
+          stake?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "parlays_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "parlays_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -301,12 +434,20 @@ export type Database = {
           created_at: string
           extra_legs: Json
           game_id: string
+          graded_at: string | null
           id: string
+          line_point: number | null
           lock_leg_result: string
+          market: string | null
+          odds_book: string | null
+          odds_captured_at: string | null
           pick_key: string
           pick_label: string
           pick_odds: string | null
           pick_section: string
+          player: string | null
+          price: number | null
+          selection: string | null
           user_id: string
           wager: number | null
         }
@@ -316,12 +457,20 @@ export type Database = {
           created_at?: string
           extra_legs?: Json
           game_id: string
+          graded_at?: string | null
           id?: string
+          line_point?: number | null
           lock_leg_result?: string
+          market?: string | null
+          odds_book?: string | null
+          odds_captured_at?: string | null
           pick_key: string
           pick_label: string
           pick_odds?: string | null
           pick_section?: string
+          player?: string | null
+          price?: number | null
+          selection?: string | null
           user_id: string
           wager?: number | null
         }
@@ -331,12 +480,20 @@ export type Database = {
           created_at?: string
           extra_legs?: Json
           game_id?: string
+          graded_at?: string | null
           id?: string
+          line_point?: number | null
           lock_leg_result?: string
+          market?: string | null
+          odds_book?: string | null
+          odds_captured_at?: string | null
           pick_key?: string
           pick_label?: string
           pick_odds?: string | null
           pick_section?: string
+          player?: string | null
+          price?: number | null
+          selection?: string | null
           user_id?: string
           wager?: number | null
         }
@@ -399,7 +556,34 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      american_to_decimal: { Args: { _price: number }; Returns: number }
+      create_parlay: {
+        Args: {
+          _actual_odds?: number
+          _actual_payout?: number
+          _stake: number
+          _tail_ids: string[]
+        }
+        Returns: string
+      }
+      grade_tail_result: {
+        Args: {
+          _as: number
+          _away: string
+          _home: string
+          _hs: number
+          _market: string
+          _point: number
+          _selection: string
+        }
+        Returns: string
+      }
+      my_bet_record: { Args: never; Returns: Json }
+      regrade_parlay: { Args: { _parlay_id: string }; Returns: undefined }
+      tail_pick: {
+        Args: { _analysis_id: string; _pick_key: string; _stake: number }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
