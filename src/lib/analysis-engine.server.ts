@@ -443,9 +443,31 @@ function buildCandidates(
   // can sensibly bet (deep buy-outs and lottery numbers); it is not a value
   // filter — value is decided later, on probability against price.
   type ScoredAlt = { offer: MarketOffer; evaluation: AltEvaluation | null };
-  const scored: ScoredAlt[] = extra.alternates
+  const gatedAlts: ScoredAlt[] = extra.alternates
     .filter((o) => o.point != null && o.price <= 1200 && o.price >= -1000)
     .map((offer) => ({ offer, evaluation: applyKeyGate(evaluator.evaluateOffer(offer), game, projection) }));
+
+  // Alternate spreads: when a qualifying key-number rung on a side costs no
+  // more than that side's standard line, the pricier rungs on that side step
+  // aside — the cheaper protection is always preferred when it exists.
+  const passesSpreadGates = (e: AltEvaluation | null): e is AltEvaluation =>
+    Boolean(e && e.market === "spread" && !(e.keyGate && !e.keyGate.ok));
+  const sidesWithCheaperAlt = new Set(
+    gatedAlts
+      .map((s) => s.evaluation)
+      .filter(passesSpreadGates)
+      .filter((e) => e.price >= e.standardPrice)
+      .map((e) => e.side),
+  );
+  const scored: ScoredAlt[] = gatedAlts.map((s) => {
+    const e = s.evaluation;
+    if (!passesSpreadGates(e) || !sidesWithCheaperAlt.has(e.side) || e.price >= e.standardPrice) return s;
+    const why = "A cheaper key-number alternate is posted on this side, so this pricier rung is not used.";
+    return {
+      offer: s.offer,
+      evaluation: { ...e, worthIt: false, keyGate: { ok: false, why, simGain: null }, note: `${e.note} ${why}`.trim() },
+    };
+  });
 
   // Both rungs of the ladder matter: the cap is per market AND per side, so a
   // long favourite ladder can never crowd the other side's numbers off the board.
