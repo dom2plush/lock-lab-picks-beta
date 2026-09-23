@@ -460,9 +460,14 @@ function buildCandidates(
 
   ordered.forEach(({ offer, evaluation }, index) => {
     const ladder = `${offer.market}|${offer.player ?? offer.selection}`;
+    // Rungs inside the allowed alternate distance (e.g. +7.5 next to a +7
+    // standard) are always graded; only far-off rungs count toward the cap.
+    const inRange =
+      evaluation != null &&
+      Math.abs(evaluation.point - evaluation.standardPoint) <= (MAX_ALT_DISTANCE[evaluation.market] ?? 3);
     const count = perLadder.get(ladder) ?? 0;
-    if (count >= 24) return;
-    perLadder.set(ladder, count + 1);
+    if (!inRange && count >= 24) return;
+    if (!inRange) perLadder.set(ladder, count + 1);
 
 
     const standardKey = standardKeyFor(offer.market, offer.selection);
