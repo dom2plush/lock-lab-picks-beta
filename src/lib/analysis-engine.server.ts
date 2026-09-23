@@ -700,6 +700,15 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
     };
   }
 
+  // The Top 2 are normal bets. A +200 or longer game price — usually an
+  // underdog moneyline — belongs in the fun bet, never in these two slots.
+  if (c.group !== "prop" && isLongshotPrice(c.price)) {
+    return {
+      ok: false,
+      why: `${c.label}: pays longer than +${MAX_TOP_PRICE} — held out of the Top 2 and considered for the fun bet instead.`,
+    };
+  }
+
   if (g.modelProb == null) {
     return { ok: false, why: `${c.label}: no supported probability estimate to justify this price.` };
   }
