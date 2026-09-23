@@ -2034,6 +2034,7 @@ export async function runLockLabFormula(
         c.price >= MIN_RECOMMENDED_PRICE &&
         !isLongshotPrice(c.price) &&
         // Pick #2 only needs a measurable positive edge; its light shows the size.
+        !failsKeyGate(c) &&
         hasAnyPositiveEdge(c) &&
         !selectedIds.has(c.key) &&
         !selectedIdeas.has(betIdeaKey(c)),
