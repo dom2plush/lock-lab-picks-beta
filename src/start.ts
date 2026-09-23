@@ -1,7 +1,21 @@
 import { createStart, createCsrfMiddleware, createMiddleware } from "@tanstack/react-start";
 
-import { attachSupabaseAuth } from "./integrations/supabase/auth-attacher";
 import { renderErrorPage } from "./lib/error-page";
+
+// Attaches the Supabase bearer token to serverFn RPCs. Wrapped defensively:
+// if the browser Supabase client cannot initialise, public server functions
+// (e.g. the games board read) must still be callable rather than failing
+// before the request is ever sent.
+const attachSupabaseAuth = createMiddleware({ type: "function" }).client(async ({ next }) => {
+  try {
+    const { supabase } = await import("./integrations/supabase/client");
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return next({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    return next({ headers: {} });
+  }
+});
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
