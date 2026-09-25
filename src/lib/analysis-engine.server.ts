@@ -2007,7 +2007,17 @@ export async function runLockLabFormula(
       leadIndex > 0
         ? [distinct[leadIndex]!, ...distinct.filter((_, i) => i !== leadIndex)]
         : distinct
-    ).map((c, index) => (index < 2 ? enforceAltSpreadSide(preferKeyNumberSpread(c, candidates), byKey) : c));
+    ).map((c, index) =>
+      index < 2
+        ? requireSimulatedAltValue(
+            enforceAltSpreadSide(preferKeyNumberSpread(c, candidates), byKey),
+            byKey,
+            game,
+            projection,
+            players,
+          )
+        : c,
+    );
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
@@ -2257,6 +2267,41 @@ export async function runLockLabFormula(
   // value gates left a slot open, the strongest remaining distinct market
   // still posts — its light says exactly how thin the edge is rather than
   // the board showing NO BET with real prices available.
+  // Last resort: Lock Lab always posts two Top Bets. When the gated pools run
+  // dry, the next-best posted standard market fills the slot with its real,
+  // unaltered edge (the light and write-up then show how thin it is).
+  for (const strict of [true, false]) {
+    if (shortlist.length >= 2) break;
+    const pool = candidates
+      .filter(
+        (c) =>
+          c.group !== "prop" &&
+          c.price >= MIN_RECOMMENDED_PRICE &&
+          !isLongshotPrice(c.price) &&
+          !selectedIds.has(c.key) &&
+          !selectedIdeas.has(betIdeaKey(c)) &&
+          (strict
+            ? c.grade?.modelProb != null && !altTooFar(c) && !failsKeyGate(c)
+            : c.group === "core"),
+      )
+      .sort((a, b) => candidateRank(b) - candidateRank(a));
+    for (const c of pool) {
+      if (shortlist.length >= 2) break;
+      shortlist.push({
+        c,
+        entry: {
+          key: c.key,
+          badge: softBadge(c),
+          reason:
+            "The strongest remaining posted market on this board; the light reflects how thin the modelled edge is.",
+          standardKey: c.standardKey ?? null,
+          standardComparison: c.alt ? altPreferenceReason(c) : null,
+        },
+      });
+      selectedIds.add(c.key);
+      selectedIdeas.add(betIdeaKey(c));
+    }
+  }
   if (shortlist.length < 2) {
     for (const c of candidates
       .filter(
@@ -2308,7 +2353,10 @@ export async function runLockLabFormula(
   }
 
   for (const { c: picked, entry } of shortlist.slice(0, 2)) {
-    const c = enforceAltSpreadSide(picked, byKey);
+    const c = requireSimulatedAltValue(enforceAltSpreadSide(picked, byKey), byKey, game, projection, players);
+    if (c !== picked && c.group === "core") {
+      entry = { ...entry, reason: "", standardKey: null, standardComparison: null };
+    }
     // An alternate line always shows the standard number it beat, quoted from
     // the same snapshot, so the standard-vs-alternate decision is visible.
     const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
