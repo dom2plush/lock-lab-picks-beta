@@ -1417,7 +1417,7 @@ export function requireSimulatedAltValue(
 }
 
 /** Stable re-order: a positive-edge Top Bet always sits above a non-positive one. */
-export function orderTopBetsByValue<T extends { simHits?: number[]; simRuns?: number; odds?: string | null; key: string; rank?: number }>(
+export function orderTopBetsByValue<T extends { simHits?: number[] | null | undefined; simRuns?: number | null | undefined; odds?: string | null | undefined; key: string }>(
   bets: T[],
 ): T[] {
   const edgeOf = (b: T): number | null => {
@@ -1432,7 +1432,7 @@ export function orderTopBetsByValue<T extends { simHits?: number[]; simRuns?: nu
   return bets
     .map((b, i) => ({ b, i }))
     .sort((x, y) => positive(y.b) - positive(x.b) || x.i - y.i)
-    .map(({ b }, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 }));
+    .map(({ b }, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 }) as T & { rank: number });
 }
 
 function attachSimulatedOutcomes(
