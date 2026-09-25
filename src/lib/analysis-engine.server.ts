@@ -1342,6 +1342,99 @@ function pickSource(c: Candidate) {
  * lines drawn inside those same games. A pick with no simulated settlement is
  * left untouched and falls back to the existing price-based settlement.
  */
+/** The 50 stored simulated results for a candidate, or null when it cannot be settled. */
+function candidateOutcomes(
+  c: Candidate,
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+): boolean[] | null {
+  const sideOf = (team: string): "home" | "away" | null =>
+    team === game.home_team ? "home" : team === game.away_team ? "away" : null;
+  if (c.group === "prop") {
+    return players.outcomes({ market: c.market, player: c.player, selection: c.selection, point: c.point });
+  }
+  const market = c.market.toLowerCase();
+  if (market.includes("spread")) {
+    const side = sideOf(c.selection);
+    return side && c.point != null ? projection.spreadOutcomes(side, c.point) : null;
+  }
+  if (market.includes("total") && !market.includes("team_total")) {
+    const side = c.selection === "Over" || c.selection === "Under" ? c.selection : null;
+    return side && c.point != null ? projection.totalOutcomes(side, c.point) : null;
+  }
+  if (market === "moneyline" || market === "h2h") {
+    const side = sideOf(c.selection);
+    return side ? projection.moneylineOutcomes(side) : null;
+  }
+  return null;
+}
+
+function impliedFromAmerican(price: number): number {
+  return price < 0 ? -price / (-price + 100) : 100 / (price + 100);
+}
+
+/** Simulated hit rate minus the price's implied probability — the exact edge published on the card. */
+export function simulatedEdge(hits: number, runs: number, price: number): number {
+  return hits / runs - impliedFromAmerican(price);
+}
+
+function candidateSimEdge(
+  c: Candidate,
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+): number | null {
+  const o = candidateOutcomes(c, game, projection, players);
+  if (!o || !o.length) return null;
+  return simulatedEdge(o.filter(Boolean).length, o.length, c.price);
+}
+
+/**
+ * An alternate is only posted when its own simulated value holds up: a
+ * positive edge at its real price and — for non-spread alternates — at least
+ * the edge of the standard line it replaces. Otherwise the standard line of
+ * the same selection is posted instead. Extra points alone never qualify.
+ */
+export function requireSimulatedAltValue(
+  c: Candidate,
+  byKey: Map<string, Candidate>,
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+): Candidate {
+  if (c.group !== "alt") return c;
+  const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
+  if (!standard || standard.selection !== c.selection) return c;
+  const altEdge = candidateSimEdge(c, game, projection, players);
+  if (altEdge == null) return standard;
+  if (altEdge <= 0) return standard;
+  if (c.market !== "alternate_spreads" && c.alt?.market !== "spread") {
+    const stdEdge = candidateSimEdge(standard, game, projection, players);
+    if (stdEdge != null && altEdge < stdEdge) return standard;
+  }
+  return c;
+}
+
+/** Stable re-order: a positive-edge Top Bet always sits above a non-positive one. */
+export function orderTopBetsByValue<T extends { simHits?: number[]; simRuns?: number; odds?: string | null; key: string; rank?: number }>(
+  bets: T[],
+): T[] {
+  const edgeOf = (b: T): number | null => {
+    const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
+    if (!b.simRuns || !Number.isFinite(price)) return null;
+    return simulatedEdge(b.simHits?.length ?? 0, b.simRuns, price);
+  };
+  const positive = (b: T) => {
+    const e = edgeOf(b);
+    return e != null && e > 0 ? 1 : 0;
+  };
+  return bets
+    .map((b, i) => ({ b, i }))
+    .sort((x, y) => positive(y.b) - positive(x.b) || x.i - y.i)
+    .map(({ b }, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 }));
+}
+
 function attachSimulatedOutcomes(
   output: EngineOutput,
   candidates: Candidate[],
@@ -1350,37 +1443,10 @@ function attachSimulatedOutcomes(
   players: PlayerProjection,
 ): EngineOutput {
   const byKey = new Map(candidates.map((c) => [c.key, c]));
-  const sideOf = (team: string): "home" | "away" | null =>
-    team === game.home_team ? "home" : team === game.away_team ? "away" : null;
-
-  const outcomesFor = (c: Candidate): boolean[] | null => {
-    if (c.group === "prop") {
-      return players.outcomes({
-        market: c.market,
-        player: c.player,
-        selection: c.selection,
-        point: c.point,
-      });
-    }
-    const market = c.market.toLowerCase();
-    if (market.includes("spread")) {
-      const side = sideOf(c.selection);
-      return side && c.point != null ? projection.spreadOutcomes(side, c.point) : null;
-    }
-    if (market.includes("total") && !market.includes("team_total")) {
-      const side = c.selection === "Over" || c.selection === "Under" ? c.selection : null;
-      return side && c.point != null ? projection.totalOutcomes(side, c.point) : null;
-    }
-    if (market === "moneyline" || market === "h2h") {
-      const side = sideOf(c.selection);
-      return side ? projection.moneylineOutcomes(side) : null;
-    }
-    return null;
-  };
 
   const settle = <T extends { candidateKey?: string | null }>(pick: T): T => {
     const c = pick.candidateKey ? byKey.get(pick.candidateKey) : undefined;
-    const result = c ? outcomesFor(c) : null;
+    const result = c ? candidateOutcomes(c, game, projection, players) : null;
     if (!result || !result.length) return pick;
     const hits: number[] = [];
     result.forEach((won, index) => {
@@ -1391,7 +1457,7 @@ function attachSimulatedOutcomes(
 
   return {
     ...output,
-    topBets: output.topBets.map(settle),
+    topBets: orderTopBetsByValue(output.topBets.map(settle)),
     playerProps: output.playerProps.map(settle),
     funBets: output.funBets.map(settle),
   };
@@ -2352,7 +2418,8 @@ export async function runLockLabFormula(
     };
   }
 
-  for (const { c: picked, entry } of shortlist.slice(0, 2)) {
+  for (const { c: picked, entry: pickedEntry } of shortlist.slice(0, 2)) {
+    let entry = pickedEntry;
     const c = requireSimulatedAltValue(enforceAltSpreadSide(picked, byKey), byKey, game, projection, players);
     if (c !== picked && c.group === "core") {
       entry = { ...entry, reason: "", standardKey: null, standardComparison: null };
