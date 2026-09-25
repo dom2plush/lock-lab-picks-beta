@@ -1419,7 +1419,7 @@ export function requireSimulatedAltValue(
 /** Stable re-order: a positive-edge Top Bet always sits above a non-positive one. */
 export function orderTopBetsByValue<T extends { simHits?: number[] | null | undefined; simRuns?: number | null | undefined; odds?: string | null | undefined; key: string }>(
   bets: T[],
-): T[] {
+): (T & { rank: number })[] {
   const edgeOf = (b: T): number | null => {
     const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
     if (!b.simRuns || !Number.isFinite(price)) return null;
