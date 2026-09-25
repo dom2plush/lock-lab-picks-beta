@@ -193,6 +193,9 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
         `${edge >= 0 ? "+" : ""}${(edge * 100).toFixed(1)}% edge`,
       );
     }
+    // Honest labelling: a non-positive edge is never described as value.
+    const valueNote =
+      edge == null ? "" : edge <= 0 ? " No positive value at this price — weak board, lowest-confidence play." : edge < 0.01 ? " Thin edge — weak value." : "";
     // The fun bet is a long shot by design, so it is never promoted to green
     // on a thin edge, but it is not marked red for being a long shot either.
     const badge = fun
@@ -205,7 +208,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
       badge,
       simHitRate: Math.round(simulated.hitRate * 10000) / 10000,
       modelEdge: edge == null ? null : Math.round(edge * 10000) / 10000,
-      reason: `${parts.join(" · ")}.`,
+      reason: `${parts.join(" · ")}.${valueNote}`,
     } as P;
   };
 
