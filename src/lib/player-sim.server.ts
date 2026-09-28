@@ -409,9 +409,18 @@ export function simulatePlayers(
     return clamp(wins / result.length, 0.02, 0.98);
   }
 
+  const limited = [...models.values()].filter((m) => m.availability < 1);
   const notes = [
     `Player stats simulated inside the same ${runs} game scores for ${models.size} posted player${models.size === 1 ? "" : "s"}: workload calibrated to the posted line, then scaled by each simulated game's team score and game script. Prop hit rates are counts out of those ${runs} runs, not independent coin flips.`,
   ];
+  if (limited.length) {
+    notes.push(
+      `Verified availability applied: ${limited
+        .map((m) => `${m.player} at ${(m.availability * 100).toFixed(0)}% workload`)
+        .join(", ")}.`,
+    );
+  }
+
 
   return { runs, available: true, notes, outcomes, probability };
 }
