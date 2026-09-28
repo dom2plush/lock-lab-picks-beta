@@ -50,6 +50,8 @@ export function AnalysisOutput({
 }) {
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
   const tailable = status === "pregame";
+  const touchdownPicks = (analysis.player_props ?? []).filter(isTouchdownPick);
+  const standardProps = (analysis.player_props ?? []).filter((p) => !isTouchdownPick(p));
 
   const tailTarget = (
     pickKey: string,
