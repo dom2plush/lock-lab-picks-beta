@@ -19,7 +19,7 @@
  */
 import type { FairModel } from "./fair-model.server";
 import type { GameRow, Sport } from "./lock-lab-types";
-import { SIMULATION_RUNS, mulberry32, seedFrom } from "./simulation.server";
+import { SIMULATION_RUNS, mulberry32, seedFrom, simulationSeedKey } from "./simulation.server";
 
 /** Scatter of final margins around the fair spread. */
 const MARGIN_SIGMA: Record<Sport, number> = { NFL: 13.2, CFB: 16.0 };
