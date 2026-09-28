@@ -363,7 +363,8 @@ export async function precomputeUpcoming(
 
   for (const game of games) {
     try {
-      const batch = await ensureSimulationBatch(game);
+      const { attachPublicBetting } = await import("./public-betting.server");
+      const batch = await ensureSimulationBatch(await attachPublicBetting(game));
       if (!batch) continue;
       if (batch.fromCache) report.cached += 1;
       else report.generated += 1;
