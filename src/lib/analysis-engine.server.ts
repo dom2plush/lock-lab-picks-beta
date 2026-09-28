@@ -1455,12 +1455,116 @@ function attachSimulatedOutcomes(
     return { ...pick, simRuns: result.length, simHits: hits };
   };
 
+  const playerProps = output.playerProps.map(settle);
+  const funBets = output.funBets.map(settle);
+  const reserved = new Set(
+    [...playerProps, ...funBets].map((p) => p.candidateKey).filter((k): k is string => Boolean(k)),
+  );
+  const topBets = simulationFirstTop2(output.topBets.map(settle), candidates, byKey, reserved, game, projection, players);
+
   return {
     ...output,
-    topBets: orderTopBetsByValue(output.topBets.map(settle)),
-    playerProps: output.playerProps.map(settle),
-    funBets: output.funBets.map(settle),
+    topBets: orderTopBetsByValue(topBets),
+    playerProps,
+    funBets,
   };
+}
+
+/**
+ * Composite strength of a bet after the full 50-game simulation:
+ * simulated model edge first, then simulated hit rate, then model confidence.
+ */
+export function simulationStrength(hitRate: number, edge: number, tier: string | null | undefined): number {
+  const confidence = tier === "strong" ? 1 : tier === "playable" ? 0.5 : 0;
+  return edge * 100 + (hitRate - 0.5) * 20 + confidence;
+}
+
+/**
+ * Simulation-first Top 2. Every eligible posted game bet (standard and
+ * alternate, -180 to +199, key/side rules intact, not already used by props or
+ * the fun bet) is settled against the same 50 simulated games, ranked by
+ * edge, hit rate and confidence, and the two strongest distinct bets post.
+ */
+function simulationFirstTop2(
+  current: PickBet[],
+  candidates: Candidate[],
+  byKey: Map<string, Candidate>,
+  reserved: Set<string>,
+  game: GameRow,
+  projection: GameProjection,
+  players: PlayerProjection,
+): PickBet[] {
+  type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; score: number };
+  const scored: Scored[] = [];
+  for (const raw of candidates) {
+    if (raw.group === "prop" || reserved.has(raw.key)) continue;
+    if (raw.price < MIN_RECOMMENDED_PRICE || isLongshotPrice(raw.price)) continue;
+    if (failsKeyGate(raw) || altTooFar(raw)) continue;
+    const c = raw.group === "alt"
+      ? requireSimulatedAltValue(enforceAltSpreadSide(raw, byKey), byKey, game, projection, players)
+      : raw;
+    if (c !== raw) continue; // the standard line is scored on its own
+    const outcomes = candidateOutcomes(c, game, projection, players);
+    if (!outcomes || !outcomes.length) continue;
+    const hits: number[] = [];
+    outcomes.forEach((won, i) => won && hits.push(i + 1));
+    const hitRate = hits.length / outcomes.length;
+    const edge = simulatedEdge(hits.length, outcomes.length, c.price);
+    scored.push({ c, hits, runs: outcomes.length, edge, score: simulationStrength(hitRate, edge, c.grade?.tier) });
+  }
+  if (scored.length < 2 && current.length >= 2) return current;
+
+  scored.sort((a, b) => Number(b.edge > 0) - Number(a.edge > 0) || b.score - a.score);
+  const picked: Scored[] = [];
+  const ideas = new Set<string>();
+  for (const s of scored) {
+    if (picked.length >= 2) break;
+    const idea = betIdeaKey(s.c);
+    if (ideas.has(idea)) continue;
+    ideas.add(idea);
+    picked.push(s);
+  }
+  // Keep any existing bet the board had if the pool could not supply two.
+  const out: PickBet[] = [];
+  const existingByKey = new Map(current.map((b) => [b.candidateKey, b]));
+  for (const s of picked) {
+    const prior = existingByKey.get(s.c.key);
+    if (prior) {
+      out.push({ ...prior, simHits: s.hits, simRuns: s.runs });
+      continue;
+    }
+    const standard = s.c.standardKey ? byKey.get(s.c.standardKey) : undefined;
+    const comparison = s.c.alt ? (s.c.alt.market === "spread" ? keySpreadReason(s.c) : altPreferenceReason(s.c)) : null;
+    out.push({
+      key: `top${out.length + 1}`,
+      rank: out.length + 1,
+      badge: softBadge(s.c),
+      label: s.c.label,
+      market: s.c.marketLabel,
+      selection: s.c.player ?? s.c.selection,
+      line: s.c.line,
+      odds: fmtOdds(s.c.price),
+      ...pickSource(s.c),
+      ...(standard
+        ? {
+            standardLabel: standard.label,
+            standardPoint: standard.point,
+            standardPrice: standard.price,
+            standardBook: standard.book,
+            standardCapturedAt: standard.capturedAt,
+            standardComparison: comparison,
+          }
+        : {}),
+      reason: comparison ?? "Ranked among the two strongest bets after the full 50-game simulation.",
+      simHits: s.hits,
+      simRuns: s.runs,
+    } as PickBet);
+  }
+  for (const b of current) {
+    if (out.length >= 2) break;
+    if (!out.some((o) => o.candidateKey === b.candidateKey)) out.push(b);
+  }
+  return out;
 }
 
 const CORE_OPPOSITE: Record<string, string> = {
