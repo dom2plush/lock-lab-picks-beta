@@ -218,13 +218,46 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
   const scores: SimulatedScore[] = [];
   if (fairMargin != null && fairTotal != null) {
     for (let run = 1; run <= runs; run += 1) {
-      const margin = fairMargin + gaussian(rand) * marginSigma;
-      const total = Math.max(17, fairTotal + gaussian(rand) * totalSigma);
-      const home = snapScore((total + margin) / 2);
-      const away = snapScore((total - margin) / 2);
-      scores.push({ run, home, away, margin: home - away, total: home + away });
+      // Two scoring regimes: most games are ordinary, a minority are explosive
+      // shootouts or blowouts. This keeps the tails populated instead of
+      // stacking every run on the posted number.
+      const wide = rand() < WIDE_REGIME_SHARE;
+      const scale = wide ? WIDE_REGIME_SCALE : BASE_REGIME_SCALE;
+      const margin = fairMargin + gaussian(rand) * marginSigma * scale;
+      const total = Math.max(10, fairTotal + gaussian(rand) * totalSigma * scale);
+
+      let home = (total + margin) / 2;
+      let away = (total - margin) / 2;
+
+      // Defensive / special-teams touchdowns: points scored without an
+      // offensive drive, which the margin-and-total draw cannot produce.
+      if (rand() < DEFENSIVE_TD_CHANCE) home += 7;
+      if (rand() < DEFENSIVE_TD_CHANCE) away += 7;
+
+      // Turnovers and failed drives inside scoring range remove points.
+      if (rand() < DRIVE_KILL_CHANCE) home -= rand() < 0.5 ? 3 : 7;
+      if (rand() < DRIVE_KILL_CHANCE) away -= rand() < 0.5 ? 3 : 7;
+
+      // Game state: a team down two scores late plays faster and often adds
+      // one more touchdown, which lifts the total without flipping the game.
+      const gap = home - away;
+      if (Math.abs(gap) >= 11 && rand() < COMEBACK_CHANCE) {
+        if (gap > 0) away += rand() < 0.35 ? 8 : 7;
+        else home += rand() < 0.35 ? 8 : 7;
+      }
+
+      const homeScore = snapScore(home);
+      const awayScore = snapScore(away);
+      scores.push({
+        run,
+        home: homeScore,
+        away: awayScore,
+        margin: homeScore - awayScore,
+        total: homeScore + awayScore,
+      });
     }
   }
+
 
   const analyticSpread = (teamMargin: number, point: number) =>
     normalCdf((teamMargin + point) / marginSigma);
