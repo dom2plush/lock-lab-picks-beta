@@ -184,9 +184,20 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
     if (!simulated) return pick;
     const implied = americanToProbability(pick.odds ?? null);
     const edge = implied != null ? simulated.hitRate - implied : null;
+    // Expected return per unit staked at the exact posted price — the number
+    // the board ranks on. A +160 price and a -110 price cannot be compared on
+    // percentage-point edge alone, so that stays a secondary read.
+    const priceNumber = Number(String(pick.odds ?? "").replace("+", ""));
+    const roi =
+      Number.isFinite(priceNumber) && priceNumber !== 0
+        ? simulated.hitRate * ((priceNumber > 0 ? priceNumber / 100 : 100 / Math.abs(priceNumber)) + 1) - 1
+        : null;
     const parts = [
       `Simulated hit rate ${pct(simulated.hitRate)} (${simulated.wins} of ${aggregate.runs} Lock Lab runs)`,
     ];
+    if (roi != null) {
+      parts.push(`${roi >= 0 ? "+" : ""}${(roi * 100).toFixed(1)}% expected return at this price`);
+    }
     if (implied != null && edge != null) {
       parts.push(
         `price implies ${pct(implied)}`,
