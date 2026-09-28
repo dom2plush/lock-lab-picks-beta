@@ -43,6 +43,13 @@
       "when": 1790624750273,
       "tag": "0005_create_public_betting_inputs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790625303741,
+      "tag": "0006_public_betting_splits_readonly",
+      "breakpoints": true
     }
   ]
 }
