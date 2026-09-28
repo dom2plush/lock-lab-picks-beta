@@ -299,6 +299,19 @@ export async function fetchEventMarkets(
     }
   };
 
+  /**
+   * Stable identity for one player across books: punctuation, casing, accents
+   * and generational suffixes differ between sportsbooks, so "A.J. Brown" and
+   * "AJ Brown" must resolve to the same player rather than two markets.
+   */
+  const playerKey = (name: string): string =>
+    name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
   /** Best book for one market key: first in priority order that posted it. */
   const bookForMarket = (event: ProviderEvent, marketKey: string) => {
     const withMarket = (event.bookmakers ?? []).filter((b) =>
