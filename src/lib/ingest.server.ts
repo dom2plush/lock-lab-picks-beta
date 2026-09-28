@@ -131,6 +131,18 @@ export async function syncSportsData(): Promise<SyncReport> {
     errors: [],
   };
 
+  // Games whose kickoff was more than 6 hours ago are over: take them off the
+  // upcoming board. Scores still attach (and grade tails) when the feed sends them.
+  {
+    const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    const { error } = await supabaseAdmin
+      .from("games")
+      .update({ status: "final", updated_at: new Date().toISOString() })
+      .eq("status", "scheduled")
+      .lt("commence_time", cutoff);
+    if (error) report.errors.push(`retire past games: ${error.message}`);
+  }
+
   const creditsOk = (reserve: number) => {
     const left = getCreditsRemaining();
     return left == null || left > reserve;
