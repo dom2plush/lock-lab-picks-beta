@@ -921,8 +921,19 @@ const DIVERSITY_EDGE_TOLERANCE = 0.015;
 const PLUS_MONEY_PROP_MIN_HIT = 0.45;
 const propHit = (c: Candidate) => c.grade?.modelProb ?? 0;
 /** Props rank by simulated hit probability first; EV only breaks ties. */
+const isUnder = (c: Candidate) => propDirection(c).includes("under");
+/**
+ * Prop strength: simulated hit rate leads; projected volume (a starter-level
+ * posted line) and EV support it. Unders need strong simulation support
+ * (60%+) or they are marked down, so weak unders are not forced.
+ */
+const propStrength = (c: Candidate) =>
+  propHit(c) +
+  (meaningfulPropLine(c) ? 0.06 : 0) +
+  0.25 * Math.max(-0.1, Math.min(0.2, c.grade?.edge ?? 0)) -
+  (isUnder(c) && propHit(c) < 0.6 ? 0.08 : 0);
 const propRankCmp = (a: Candidate, b: Candidate) =>
-  propHit(b) - propHit(a) || candidateRank(b) - candidateRank(a);
+  propStrength(b) - propStrength(a) || candidateRank(b) - candidateRank(a);
 const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
 /**
  * Minimum posted line that marks a starter/high-usage role in each standard
@@ -968,9 +979,9 @@ function fillPlayerProps(
     .sort(propRankCmp);
   // Established, high-usage players on meaningful lines lead; fringe players
   // and tiny lines are only used when too few meaningful props qualify.
-  const meaningful = pool.filter(meaningfulPropLine);
-  if (meaningful.length >= 3) pool.splice(0, pool.length, ...meaningful);
-  else pool.sort((a, b) => Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)));
+  // Low-volume players/tiny lines stay only when the simulation strongly backs them.
+  const meaningful = pool.filter((c) => meaningfulPropLine(c) || propHit(c) >= 0.65);
+  if (meaningful.length >= 4) pool.splice(0, pool.length, ...meaningful);
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
@@ -1002,9 +1013,8 @@ function fillPlayerProps(
   while (playerProps.length < maximum && remaining.length) {
     // Hit probability leads: the most likely remaining +EV prop defines the bar.
     const best = remaining[0]!;
-    const bestHit = propHit(best);
     // Contenders are only those whose hit rate is genuinely close to the leader.
-    const contenders = remaining.filter((c) => propHit(c) >= bestHit - DIVERSITY_EDGE_TOLERANCE);
+    const contenders = remaining.filter((c) => propStrength(c) >= propStrength(best) - DIVERSITY_EDGE_TOLERANCE);
 
     const chosenPlayers = new Set(playerProps.map((p) => p.player));
     const chosenMarkets = new Set(playerProps.map((p) => p.market));
@@ -1053,7 +1063,7 @@ function fillPlayerProps(
   // ones (by the same 100-run simulated probabilities) are shown with an honest
   // badge rather than reporting props as unavailable. The -180 limit holds,
   // Touchdown markets never enter the standard player-prop floor.
-  const MIN_PROPS = 3;
+  const MIN_PROPS = 4;
   if (playerProps.length >= MIN_PROPS) return;
   const floor = candidates
     .filter(
@@ -1730,7 +1740,7 @@ function simulationFirstTop2(
         : {}),
       reason:
         comparison ??
-        `Ranked among the two strongest bets by expected return at this price across the full ${s.runs}-game simulation.`,
+        `Won ${s.hits.length} of ${s.runs} simulated games — among the two strongest bets by simulated frequency, supported by the price and matchup read.`,
       simHits: s.hits,
       simRuns: s.runs,
     } as PickBet);
@@ -2412,7 +2422,7 @@ export async function runLockLabFormula(
     const fallbackProps: PropBet[] = [];
     const fallbackTd: PropBet[] = [];
     fillTouchdownBets(game, candidates, usedFallback, fallbackTd, decisions);
-    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
+    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions, 4);
     return attachSimulatedOutcomes(
       {
         topBets,
@@ -2429,6 +2439,8 @@ export async function runLockLabFormula(
       game,
       projection,
       players,
+      odds,
+      previousOdds ?? null,
     );
   }
 
@@ -2796,6 +2808,8 @@ export async function runLockLabFormula(
     game,
     projection,
     players,
+    odds,
+    previousOdds ?? null,
   );
 }
 
