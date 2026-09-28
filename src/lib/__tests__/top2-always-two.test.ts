@@ -25,15 +25,15 @@ describe("Top 2 always has two bets, ordered and labelled honestly", () => {
   });
 
   it("ranks by expected return, so a long price beats a short one with a bigger raw edge", () => {
-    // +160 at 42% -> +9.2% expected return; -110 at 54% -> +3.1% expected return.
+    // +160 at 42% -> +9.2% expected return; -110 at 56% -> +6.9% expected return.
     const dog = expectedRoi(42, 100, 160);
-    const fav = expectedRoi(54, 100, -110);
+    const fav = expectedRoi(56, 100, -110);
     expect(dog).toBeGreaterThan(fav);
     // ...even though the favourite's percentage-point edge is the larger one.
-    expect(simulatedEdge(54, 100, -110)).toBeGreaterThan(simulatedEdge(42, 100, 160));
-    expect(simulationStrength(dog, 0.42, null)).toBeGreaterThan(simulationStrength(fav, 0.54, null));
+    expect(simulatedEdge(56, 100, -110)).toBeGreaterThan(simulatedEdge(42, 100, 160));
+    expect(simulationStrength(dog, 0.42, null)).toBeGreaterThan(simulationStrength(fav, 0.56, null));
     const out = orderTopBetsByValue([
-      { key: "fav", odds: "-110", simHits: hits(54), simRuns: 100 },
+      { key: "fav", odds: "-110", simHits: hits(56), simRuns: 100 },
       { key: "dog", odds: "+160", simHits: hits(42), simRuns: 100 },
     ]);
     expect(out[0]!.odds).toBe("+160");
