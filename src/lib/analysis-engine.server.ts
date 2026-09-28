@@ -2755,6 +2755,10 @@ export async function runLockLabFormula(
   // Sections are topped up from the ranked live board so a normal game shows
   // two props and one fun bet. Only real posted prices are ever used.
   fillFunBet(candidates, used, funBets, decisions);
+  const touchdownBets: PropBet[] = [];
+  // One Anytime TD and one First TD per team, in their own section, before the
+  // standard props are filled so the two pools never take the same price.
+  fillTouchdownBets(game, candidates, used, touchdownBets, decisions);
   fillPlayerProps(candidates, used, playerProps, decisions, 4, propReasons);
 
 
@@ -2768,7 +2772,7 @@ export async function runLockLabFormula(
     {
       topBets,
       funBets,
-      playerProps,
+      playerProps: [...playerProps, ...touchdownBets],
       notes: {
         propsAvailable: extra.props.length > 0,
         altMarketsAvailable: extra.alternates.length > 0,
