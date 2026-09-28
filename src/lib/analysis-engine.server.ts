@@ -1379,6 +1379,23 @@ export function simulatedEdge(hits: number, runs: number, price: number): number
   return hits / runs - impliedFromAmerican(price);
 }
 
+/** Profit per unit staked when the bet wins, from the exact American price. */
+export function payoutMultiplier(price: number): number {
+  return price > 0 ? price / 100 : 100 / Math.abs(price);
+}
+
+/**
+ * Expected return per unit staked at the exact sportsbook price, using the
+ * simulated hit rate: p * profit - (1 - p). This is the ranking metric, because
+ * a percentage-point edge cannot compare a +160 underdog with a -110 favourite
+ * — the same edge pays very differently at the two prices.
+ */
+export function expectedRoi(hits: number, runs: number, price: number): number {
+  if (!runs) return 0;
+  const p = hits / runs;
+  return p * (payoutMultiplier(price) + 1) - 1;
+}
+
 function candidateSimEdge(
   c: Candidate,
   game: GameRow,
