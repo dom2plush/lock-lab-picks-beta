@@ -141,7 +141,16 @@ export type PropBet = PickSource & {
   /** Formula-estimated probability used to validate the posted price. */
   estimatedProbability?: number | null;
   reason: string;
+  /** Set on touchdown picks, which are shown in their own section. */
+  touchdown?: boolean;
+  /** Team this touchdown pick belongs to, when the report can prove it. */
+  team?: string | null;
 };
+
+/** Touchdown picks are stored inside player_props and split out by key. */
+export function isTouchdownPick(pick: { key: string; touchdown?: boolean }): boolean {
+  return pick.touchdown === true || String(pick.key).startsWith("td-");
+}
 
 export type AnalysisRow = {
   id: string;
