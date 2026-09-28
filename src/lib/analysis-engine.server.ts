@@ -1433,22 +1433,31 @@ export function requireSimulatedAltValue(
   return c;
 }
 
-/** Stable re-order: a positive-edge Top Bet always sits above a non-positive one. */
+/**
+ * Stable re-order by expected return: a Top Bet with positive expected ROI at
+ * its posted price always sits above one without, and among two positive bets
+ * the higher expected return leads.
+ */
 export function orderTopBetsByValue<T extends { simHits?: number[] | null | undefined; simRuns?: number | null | undefined; odds?: string | null | undefined; key: string }>(
   bets: T[],
 ): (T & { rank: number })[] {
-  const edgeOf = (b: T): number | null => {
+  const roiOf = (b: T): number | null => {
     const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
     if (!b.simRuns || !Number.isFinite(price)) return null;
-    return simulatedEdge(b.simHits?.length ?? 0, b.simRuns, price);
+    return expectedRoi(b.simHits?.length ?? 0, b.simRuns, price);
   };
   const positive = (b: T) => {
-    const e = edgeOf(b);
-    return e != null && e > 0 ? 1 : 0;
+    const r = roiOf(b);
+    return r != null && r > 0 ? 1 : 0;
   };
   return bets
     .map((b, i) => ({ b, i }))
-    .sort((x, y) => positive(y.b) - positive(x.b) || x.i - y.i)
+    .sort(
+      (x, y) =>
+        positive(y.b) - positive(x.b) ||
+        (roiOf(y.b) ?? -Infinity) - (roiOf(x.b) ?? -Infinity) ||
+        x.i - y.i,
+    )
     .map(({ b }, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 }) as T & { rank: number });
 }
 
