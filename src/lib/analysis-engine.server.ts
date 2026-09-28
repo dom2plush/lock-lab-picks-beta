@@ -1570,9 +1570,11 @@ export function sportsbookSideSignal(
   c: Pick<Candidate, "key" | "standardKey" | "group">,
   odds: GameOdds | null | undefined,
   previous: GameOdds | null | undefined,
+  publicBetting?: PublicBetting | null,
 ): number {
-  if (!odds) return 0;
   const side = c.group === "alt" ? c.standardKey : c.key;
+  const publicSignal = publicSideSignal(side, publicBetting);
+  if (!odds) return publicSignal ?? 0;
   let juice = 0;
   let move = 0;
   const diff = (own: number | undefined, opp: number | undefined) => {
