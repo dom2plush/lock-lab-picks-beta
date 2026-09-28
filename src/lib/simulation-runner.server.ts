@@ -166,6 +166,7 @@ export type BadgeMarketContext = {
   publicBetting: PublicBetting | null | undefined;
   odds: GameOdds | null | undefined;
   previousOdds: GameOdds | null | undefined;
+  teams?: { home_team?: string | null; away_team?: string | null };
 };
 
 /** Opposite side must hold at least this share of public tickets/money. */
@@ -429,6 +430,7 @@ export async function generateBatch(
     publicBetting: current.public_betting ?? null,
     odds: current.odds ?? null,
     previousOdds: stored.analysis?.odds_snapshot ?? null,
+    teams: { home_team: current.home_team, away_team: current.away_team },
   });
 
   // Stored batches are immutable: a forced/engine-mismatched rerun of the same

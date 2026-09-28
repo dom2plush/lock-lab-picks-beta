@@ -47,3 +47,21 @@ describe("split badge", () => {
     expect(applySplitBadge(bears, { publicBetting: splits, odds, previousOdds: null }).badge).toBe("green");
   });
 });
+
+describe("final displayed Top 2 badge", () => {
+  it("shows GREEN for the stored Bears +3.5 card even without a saved sideKey", async () => {
+    const { withDisplayBadges } = await import("../simulation-runner.server");
+    const card = {
+      top_bets: [
+        { key: "top1", badge: "red", label: "BEARS +3.5 (-110)", market: "Spread", selection: "Chicago Bears", odds: "-110", modelEdge: -0.0038, simHitRate: 0.52, reason: "r." },
+      ],
+    };
+    const shown = withDisplayBadges(card, {
+      home_team: "Chicago Bears",
+      away_team: "Philadelphia Eagles",
+      public_betting: { spreadBetPct: 23, spreadMoneyPct: 35, mlBetPct: 8, mlMoneyPct: 9 } as never,
+      odds: odds,
+    });
+    expect((shown.top_bets as { badge: string }[])[0].badge).toBe("green");
+  });
+});
