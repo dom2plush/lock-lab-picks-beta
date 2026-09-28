@@ -5,8 +5,8 @@
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v28";
-export const SIMULATION_RUNS = 50;
+export const SIMULATION_ENGINE_VERSION = "sim-v29";
+export const SIMULATION_RUNS = 100;
 
 /** Rounds a price so tiny juice wiggles do not invalidate a stored batch. */
 function priceBucket(price: number | null | undefined): number | null {

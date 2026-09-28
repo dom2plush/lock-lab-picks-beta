@@ -286,8 +286,17 @@ export const TOTAL_KEY_NUMBERS: Record<Sport, number[]> = {
   CFB: [45, 48, 51, 52, 55, 58, 59],
 };
 
-/** Minimum extra covers out of the simulated games before a bought point counts. */
+/**
+ * Minimum extra covers before a bought point counts. Expressed against the
+ * 50-run baseline and scaled with the batch size, so the 100-run engine needs
+ * the same real improvement (2 of 100) rather than a noisier single run.
+ */
 export const MIN_SIM_COVER_GAIN = 1;
+
+export function minSimCoverGain(runs: number): number {
+  if (!Number.isFinite(runs) || runs <= 0) return MIN_SIM_COVER_GAIN;
+  return Math.max(MIN_SIM_COVER_GAIN, Math.round((runs / 50) * MIN_SIM_COVER_GAIN));
+}
 
 /** Recognised spread key margins swept when moving from `from` to `to`. */
 export function spreadGateKeysBetween(from: number, to: number, sport: Sport): number[] {
