@@ -49,6 +49,25 @@ export type InputSnapshot = {
   moneyline: { home: number; away: number } | null;
   /** Material injury entries only: "team|player|status". */
   injuries: string[];
+  /**
+   * The exact dataset the batch was computed from, frozen alongside it: the
+   * full sportsbook snapshot, the complete availability report and the seed
+   * the runs came from. Read-only record — batch reuse is still decided by the
+   * meaningful fields above.
+   */
+  dataset?: DatasetSnapshot;
+};
+
+/** Everything the 100 runs actually saw, stored so every user shares one dataset. */
+export type DatasetSnapshot = {
+  seedKey: string;
+  engineVersion: string;
+  runs: number;
+  capturedAt: string | null;
+  book: string | null;
+  odds: unknown;
+  availability: { team: string; player: string; status: string }[];
+  availabilityReported: boolean;
 };
 
 /** Spread points must move at least this far (any half point) to matter. */
