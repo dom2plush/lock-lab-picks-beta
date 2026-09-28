@@ -110,6 +110,9 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     // so clicking Analyze does not spend a new run.
     const { verifiedExtras } = await import("./analysis-runner.server");
     const { ensureSimulationBatch } = await import("./simulation-runner.server");
+    const { attachPublicBetting } = await import("./public-betting.server");
+    // Manually entered public-betting splits, when present, join the inputs.
+    game = await attachPublicBetting(game);
     const extra = verifiedExtras(game);
     const batch = await ensureSimulationBatch(game);
     return {
