@@ -217,8 +217,8 @@ export function AnalysisOutput({
 
       <Section
         step={3}
-        title="Touchdown picks"
-        subtitle="One anytime and one first touchdown scorer per team, from verified posted prices."
+        title="TD scorers"
+        subtitle="The fun-bet board: one anytime and one first touchdown scorer per team, from verified posted prices."
       >
         {touchdownPicks.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2">
@@ -256,42 +256,6 @@ export function AnalysisOutput({
             No verified touchdown scorer price was posted for this game.
           </p>
         )}
-      </Section>
-
-      <Section step={4} title="Fun bet" subtitle="One higher-risk scoring play for smaller units.">
-
-        {analysis.fun_bets.length === 0 && (
-          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
-            No verified first-touchdown or anytime-touchdown price was available for a legitimate fun play.
-          </p>
-        )}
-        <div className="grid gap-3 md:grid-cols-3">
-          {analysis.fun_bets.map((bet) => (
-            <article key={bet.key} className="rounded-lg border border-hairline bg-card p-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className="eyebrow">{bet.market}</span>
-                <BadgePill badge={bet.badge} />
-              </div>
-              <p className="mt-2 font-display text-lg leading-tight font-semibold">{bet.label}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{bet.reason}</p>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Logged {bet.point != null ? `${bet.point} ` : ""}{bet.odds ?? "—"}
-                {bet.book ? ` · ${bet.book}` : ""}
-                {bet.capturedAt ? ` · ${formatCapturedAt(bet.capturedAt)}` : ""}
-              </p>
-              {tailable && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() => onTail(tailTarget(bet.key, bet.label, bet.odds ?? null, "fun_bets"))}
-                >
-                  Tail
-                </Button>
-              )}
-            </article>
-          ))}
-        </div>
       </Section>
 
     </div>

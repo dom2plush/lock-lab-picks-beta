@@ -86,11 +86,11 @@ export type PickSource = {
   capturedAt?: string | null;
   /** Internal: the graded board selection this pick was published from. */
   candidateKey?: string | null;
-  /** Number of simulated games this pick was settled against (always 50). */
+  /** Number of simulated games this pick was settled against (always 100). */
   simRuns?: number | null;
   /** Run numbers (1-based) this pick won in those simulated games. */
   simHits?: number[] | null;
-  /** Share of the 50 simulated games this pick won, stored with the pick. */
+  /** Share of the 100 simulated games this pick won, stored with the pick. */
   simHitRate?: number | null;
   /** Simulated hit rate minus the probability the stored price implies. */
   modelEdge?: number | null;
@@ -166,13 +166,14 @@ export type AnalysisRow = {
   top_bets: PickBet[];
   /** Legacy column retained for old saved rows; new analyses always store null. */
   bad_bet: null;
+  /** Legacy storage field retained for old saved cards; new analyses store []. */
   fun_bets: FunBet[];
   player_props: PropBet[];
   /** Internal calibration record; only the line-shopping counts are read by the UI. */
   candidate_audit?: { alternateMarketsReceived?: number | null } | null;
   top_pick_result: Result;
   graded_at: string | null;
-  /** The stored 50-run batch this card came from. */
+  /** The stored 100-run batch this card came from. */
   simulation_id?: string | null;
 };
 

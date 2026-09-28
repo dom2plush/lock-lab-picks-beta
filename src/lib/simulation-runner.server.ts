@@ -2,8 +2,8 @@
  * Precomputed Lock Lab batches.
  *
  * The formula (including the handicap read) runs ONCE per meaningful set of
- * inputs. Its finished card is settled against exactly 50 simulated games and
- * the card, the 50 runs and the inputs they came from are stored together as a
+ * inputs. Its finished card is settled against exactly 100 simulated games and
+ * the card, the 100 runs and the inputs they came from are stored together as a
  * permanent batch. Analyze reads the current batch; every user sees the same
  * card until a meaningful input (line, juice, material injury, sportsbook,
  * engine version) actually changes. Older batches are never overwritten.
@@ -66,7 +66,7 @@ const defaultDeps: BatchDeps = {
 
 /**
  * A stored batch stands when it was produced by this engine version, holds
- * exactly 50 runs, is the batch the displayed card came from, and no
+ * exactly 100 runs, is the batch the displayed card came from, and no
  * meaningful input has moved since it was generated.
  */
 export function batchIsReusable(
@@ -87,7 +87,7 @@ function cached(batch: StoredBatch, analysis: AnalysisRow, fingerprint: string):
 }
 
 /**
- * Returns the stored batch for a game. A new 50-run batch is generated only
+ * Returns the stored batch for a game. A new 100-run batch is generated only
  * when none exists or a meaningful input changed — never because another user,
  * a refresh or a repeat click asked for it. Concurrent requests share one
  * generator; the others wait for its stored result.
@@ -155,7 +155,7 @@ export async function ensureSimulationBatch(
 }
 
 /**
- * Replaces every pick's write-up with the numbers the 50 runs actually
+ * Replaces every pick's write-up with the numbers the 100 runs actually
  * produced, and stamps the simulated hit rate and model edge onto the pick so
  * they are stored with it permanently.
  */
@@ -216,8 +216,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
           : edge < 0.01
             ? " Thin edge — weak value."
             : "";
-    // The fun bet is a long shot by design, so it is never promoted to green
-    // on a thin edge, but it is not marked red for being a long shot either.
+    // Legacy support for old stored fun bets; new analyses keep that field empty.
     const badge = fun
       ? edge != null && edge >= 0.01
         ? "green"
@@ -251,7 +250,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
     ...analysis,
     top_bets: topBets,
     player_props: props,
-    fun_bets: (analysis.fun_bets ?? []).map((bet) => describe(bet, { fun: true })),
+    fun_bets: [],
   };
 }
 
@@ -261,7 +260,7 @@ function isStale(game: GameRow, now: number): boolean {
   return now - new Date(stamp).getTime() > ODDS_REFRESH_TTL_MS;
 }
 
-/** One formula run + exactly 50 simulated settlements, stored as a new permanent batch. */
+/** One formula run + exactly 100 simulated settlements, stored as a new permanent batch. */
 export async function generateBatch(
   game: GameRow,
   stored: { batch: StoredBatch | null; analysis: AnalysisRow | null },

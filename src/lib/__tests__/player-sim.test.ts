@@ -1,6 +1,6 @@
 /**
  * Player props are settled inside the same 100 simulated games as the game
- * picks: every published prop carries 50 real outcomes, never a coin flip.
+ * picks: every published prop carries 100 real outcomes, never a coin flip.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -74,7 +74,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("player props come out of the 50 simulated games", () => {
+describe("player props come out of the 100 simulated games", () => {
   it("produces exactly 100 outcomes per prop, consistent with the score model", async () => {
     const fair = await buildFairModel(game, odds);
     const projection = simulateGame(game, fair);
@@ -129,9 +129,12 @@ describe("player props come out of the 50 simulated games", () => {
     const result = await runLockLabFormula(game, odds, { alternates: [], props });
 
     expect(result.playerProps.length).toBeGreaterThan(0);
-    expect(result.playerProps.length).toBeLessThanOrEqual(4);
-    const players = result.playerProps.map((p) => `${p.player}|${p.market}`);
-    expect(new Set(players).size).toBe(players.length);
+    const standardProps = result.playerProps.filter((pick) => !pick.touchdown);
+    const touchdownProps = result.playerProps.filter((pick) => pick.touchdown);
+    expect(standardProps.length).toBeLessThanOrEqual(4);
+    expect(touchdownProps.length).toBeLessThanOrEqual(4);
+    const publishedPlayers = result.playerProps.map((p) => `${p.player}|${p.market}`);
+    expect(new Set(publishedPlayers).size).toBe(publishedPlayers.length);
     for (const pick of [...result.playerProps, ...result.funBets]) {
       expect(pick.simRuns).toBe(100);
       expect(Array.isArray(pick.simHits)).toBe(true);
@@ -140,5 +143,32 @@ describe("player props come out of the 50 simulated games", () => {
     for (const pick of result.topBets) {
       expect(pick.simRuns).toBe(100);
     }
+  });
+
+  it("keeps TD rates realistic when only a small scorer pool is posted", async () => {
+    const fair = await buildFairModel(game, odds);
+    const projection = simulateGame(game, fair);
+    const tdOffers = [
+      prop("player_anytime_td", "Kyren Williams", "Yes", null, -500),
+      prop("player_1st_td", "Kyren Williams", "Yes", null, 250),
+    ];
+    const players = simulatePlayers(game, projection, tdOffers);
+    const anytime = players.probability({
+      market: "player_anytime_td",
+      player: "Kyren Williams",
+      selection: "Yes",
+      point: null,
+    });
+    const first = players.probability({
+      market: "player_1st_td",
+      player: "Kyren Williams",
+      selection: "Yes",
+      point: null,
+    });
+
+    expect(anytime).not.toBeNull();
+    expect(first).not.toBeNull();
+    expect(anytime!).toBeLessThan(0.8);
+    expect(first!).toBeLessThanOrEqual(anytime!);
   });
 });
