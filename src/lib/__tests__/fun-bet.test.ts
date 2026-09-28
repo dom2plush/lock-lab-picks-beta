@@ -76,7 +76,7 @@ describe("TD Scorers replaces Fun Bet", () => {
       expect(teamPicks.map((pick) => pick.market).sort()).toEqual(["Anytime TD", "First TD scorer"]);
     }
     expect(touchdowns.every((pick) => pick.simRuns === 100)).toBe(true);
-    expect(touchdowns.every((pick) => (pick.simHitRate ?? 1) < 0.8)).toBe(true);
+    expect(touchdowns.every((pick) => (pick.simHits?.length ?? 100) / (pick.simRuns ?? 100) < 0.8)).toBe(true);
   });
 
   it("does not create a separate longshot moneyline Fun Bet", async () => {
