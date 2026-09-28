@@ -57,6 +57,13 @@
       "when": 1790627513053,
       "tag": "0007_restrict_public_betting_inputs",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790627614112,
+      "tag": "0008_tighten_public_read_policies",
+      "breakpoints": true
     }
   ]
 }
