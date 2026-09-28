@@ -62,6 +62,6 @@ describe("final displayed Top 2 badge", () => {
       public_betting: { spreadBetPct: 23, spreadMoneyPct: 35, mlBetPct: 8, mlMoneyPct: 9 } as never,
       odds: odds,
     });
-    expect((shown.top_bets as { badge: string }[])[0].badge).toBe("green");
+    expect((shown.top_bets as { badge: string }[])[0]?.badge).toBe("green");
   });
 });
