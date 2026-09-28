@@ -1067,6 +1067,7 @@ function fillPlayerProps(
       (a, b) =>
         Number(propMarketPriority(a.market) !== 2) - Number(propMarketPriority(b.market) !== 2) ||
         Number(propPriceOk(b)) - Number(propPriceOk(a)) ||
+        Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)) ||
         propRankCmp(a, b),
     );
   for (const c of floor) {
