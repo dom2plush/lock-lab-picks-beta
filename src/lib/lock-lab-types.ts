@@ -133,6 +133,8 @@ export type PickSource = {
 export type PickBet = PickSource & {
   key: string;
   rank?: number;
+  /** Standard-market side (e.g. spread-home, total-over); used only for the split-based badge read. */
+  sideKey?: string | null;
   badge: Badge;
   label: string;
   market: string;
