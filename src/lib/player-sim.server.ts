@@ -241,7 +241,9 @@ export function simulatePlayers(
   const expHome = fairTotal != null && fairMargin != null ? (fairTotal + fairMargin) / 2 : null;
   const expAway = fairTotal != null && fairMargin != null ? (fairTotal - fairMargin) / 2 : null;
 
-  const seedBase = `${game.id}:${game.odds?.capturedAt ?? game.odds_updated_at ?? ""}:players`;
+  // Same rule as the score model: seeded from the game plus the model version
+  // only, so player draws are reproducible run after run and user after user.
+  const seedBase = `${simulationSeedKey(game)}:players`;
 
   // ---- One stat line per player per simulated game -------------------------
   type Stats = { value: Map<string, number>; anyTd: boolean; firstTd: boolean };
