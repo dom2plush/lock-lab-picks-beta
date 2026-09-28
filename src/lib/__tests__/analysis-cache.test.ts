@@ -4,7 +4,7 @@ import type { AnalysisFields } from "../analysis-runner.server";
 import type { AnalysisRow, GameRow } from "../lock-lab-types";
 import { ensureSimulationBatch, type BatchDeps } from "../simulation-runner.server";
 import type { NewBatch, SimulationStore, StoredBatch } from "../simulation-store.server";
-import { SIMULATION_ENGINE_VERSION, SIMULATION_RUNS, meaningfulInputChange, inputSnapshot } from "../simulation.server";
+import { STORED_BATCH_VERSION, SIMULATION_RUNS, meaningfulInputChange, inputSnapshot } from "../simulation.server";
 
 type Row = StoredBatch & { simulations: unknown[] };
 
@@ -176,7 +176,7 @@ describe("precomputed 100-run analysis cache", () => {
     expect(batches[0]!.runs).toBe(SIMULATION_RUNS);
     expect(SIMULATION_RUNS).toBe(100);
     expect(batches[0]!.simulations).toHaveLength(SIMULATION_RUNS);
-    expect(batches[0]!.engine_version).toBe(SIMULATION_ENGINE_VERSION);
+    expect(batches[0]!.engine_version).toBe(STORED_BATCH_VERSION);
     const pick = res!.analysis.top_bets[0]!;
     expect(pick.simHitRate).toBe(0.6);
     expect(pick.modelEdge).toBeCloseTo(0.6 - 115 / 215, 3);

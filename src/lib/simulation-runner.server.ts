@@ -16,6 +16,7 @@ import {
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 import {
   SIMULATION_ENGINE_VERSION,
+  STORED_BATCH_VERSION,
   SIMULATION_RUNS,
   americanToProbability,
   inputFingerprint,
@@ -76,7 +77,7 @@ export function batchIsReusable(
   inputs: InputSnapshot,
 ): boolean {
   if (!batch || !analysis) return false;
-  if (batch.engine_version !== SIMULATION_ENGINE_VERSION) return false;
+  if (batch.engine_version !== STORED_BATCH_VERSION) return false;
   if (batch.runs !== SIMULATION_RUNS) return false;
   if (!batch.analysis_snapshot) return false;
   if (analysis.simulation_id !== batch.id) return false;
@@ -286,7 +287,7 @@ export async function generateBatch(
   if (
     !force &&
     existing?.analysis_snapshot &&
-    existing.engine_version === SIMULATION_ENGINE_VERSION &&
+    existing.engine_version === STORED_BATCH_VERSION &&
     existing.runs === SIMULATION_RUNS
   ) {
     await d.store.activateBatch(current.id, existing.id);
@@ -312,7 +313,7 @@ export async function generateBatch(
     game_id: current.id,
     sport: current.sport,
     input_fingerprint: storageFingerprint,
-    engine_version: SIMULATION_ENGINE_VERSION,
+    engine_version: STORED_BATCH_VERSION,
     runs: SIMULATION_RUNS,
     simulations,
     aggregate,
