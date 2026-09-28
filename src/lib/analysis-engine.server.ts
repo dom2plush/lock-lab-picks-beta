@@ -921,8 +921,19 @@ const DIVERSITY_EDGE_TOLERANCE = 0.015;
 const PLUS_MONEY_PROP_MIN_HIT = 0.45;
 const propHit = (c: Candidate) => c.grade?.modelProb ?? 0;
 /** Props rank by simulated hit probability first; EV only breaks ties. */
+const isUnder = (c: Candidate) => propDirection(c).includes("under");
+/**
+ * Prop strength: simulated hit rate leads; projected volume (a starter-level
+ * posted line) and EV support it. Unders need strong simulation support
+ * (60%+) or they are marked down, so weak unders are not forced.
+ */
+const propStrength = (c: Candidate) =>
+  propHit(c) +
+  (meaningfulPropLine(c) ? 0.06 : 0) +
+  0.25 * Math.max(-0.1, Math.min(0.2, c.grade?.edge ?? 0)) -
+  (isUnder(c) && propHit(c) < 0.6 ? 0.08 : 0);
 const propRankCmp = (a: Candidate, b: Candidate) =>
-  propHit(b) - propHit(a) || candidateRank(b) - candidateRank(a);
+  propStrength(b) - propStrength(a) || candidateRank(b) - candidateRank(a);
 const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
 /**
  * Minimum posted line that marks a starter/high-usage role in each standard
@@ -968,9 +979,9 @@ function fillPlayerProps(
     .sort(propRankCmp);
   // Established, high-usage players on meaningful lines lead; fringe players
   // and tiny lines are only used when too few meaningful props qualify.
-  const meaningful = pool.filter(meaningfulPropLine);
-  if (meaningful.length >= 3) pool.splice(0, pool.length, ...meaningful);
-  else pool.sort((a, b) => Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)));
+  // Low-volume players/tiny lines stay only when the simulation strongly backs them.
+  const meaningful = pool.filter((c) => meaningfulPropLine(c) || propHit(c) >= 0.65);
+  if (meaningful.length >= 4) pool.splice(0, pool.length, ...meaningful);
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
@@ -1002,9 +1013,8 @@ function fillPlayerProps(
   while (playerProps.length < maximum && remaining.length) {
     // Hit probability leads: the most likely remaining +EV prop defines the bar.
     const best = remaining[0]!;
-    const bestHit = propHit(best);
     // Contenders are only those whose hit rate is genuinely close to the leader.
-    const contenders = remaining.filter((c) => propHit(c) >= bestHit - DIVERSITY_EDGE_TOLERANCE);
+    const contenders = remaining.filter((c) => propStrength(c) >= propStrength(best) - DIVERSITY_EDGE_TOLERANCE);
 
     const chosenPlayers = new Set(playerProps.map((p) => p.player));
     const chosenMarkets = new Set(playerProps.map((p) => p.market));
@@ -1053,7 +1063,7 @@ function fillPlayerProps(
   // ones (by the same 100-run simulated probabilities) are shown with an honest
   // badge rather than reporting props as unavailable. The -180 limit holds,
   // Touchdown markets never enter the standard player-prop floor.
-  const MIN_PROPS = 3;
+  const MIN_PROPS = 4;
   if (playerProps.length >= MIN_PROPS) return;
   const floor = candidates
     .filter(
@@ -1469,30 +1479,22 @@ export function requireSimulatedAltValue(
 }
 
 /**
- * Stable re-order by expected return: a Top Bet with positive expected ROI at
- * its posted price always sits above one without, and among two positive bets
- * the higher expected return leads.
+ * Stable re-order by the same composite as selection: simulated hit rate
+ * first, expected return at the posted price as support. Near-ties keep the
+ * selection order (which already applied the sportsbook-side tiebreaker).
  */
 export function orderTopBetsByValue<T extends { simHits?: number[] | null | undefined; simRuns?: number | null | undefined; odds?: string | null | undefined; key: string }>(
   bets: T[],
 ): (T & { rank: number })[] {
-  const roiOf = (b: T): number | null => {
+  const scoreOf = (b: T): number => {
     const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
-    if (!b.simRuns || !Number.isFinite(price)) return null;
-    return expectedRoi(b.simHits?.length ?? 0, b.simRuns, price);
-  };
-  const positive = (b: T) => {
-    const r = roiOf(b);
-    return r != null && r > 0 ? 1 : 0;
+    if (!b.simRuns || !Number.isFinite(price)) return -Infinity;
+    const hits = b.simHits?.length ?? 0;
+    return simulationStrength(expectedRoi(hits, b.simRuns, price), hits / b.simRuns, null);
   };
   return bets
-    .map((b, i) => ({ b, i }))
-    .sort(
-      (x, y) =>
-        positive(y.b) - positive(x.b) ||
-        (roiOf(y.b) ?? -Infinity) - (roiOf(x.b) ?? -Infinity) ||
-        x.i - y.i,
-    )
+    .map((b, i) => ({ b, i, s: scoreOf(b) }))
+    .sort((x, y) => (Math.abs(y.s - x.s) < CLOSE_SCORE ? x.i - y.i : y.s - x.s))
     .map(({ b }, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 }) as T & { rank: number });
 }
 
@@ -1502,6 +1504,8 @@ function attachSimulatedOutcomes(
   game: GameRow,
   projection: GameProjection,
   players: PlayerProjection,
+  odds: GameOdds | null = null,
+  previousOdds: GameOdds | null = null,
 ): EngineOutput {
   const byKey = new Map(candidates.map((c) => [c.key, c]));
 
@@ -1520,7 +1524,7 @@ function attachSimulatedOutcomes(
   const reserved = new Set(
     playerProps.map((p) => p.candidateKey).filter((k): k is string => Boolean(k)),
   );
-  const topBets = simulationFirstTop2(output.topBets.map(settle), candidates, byKey, reserved, game, projection, players);
+  const topBets = simulationFirstTop2(output.topBets.map(settle), candidates, byKey, reserved, game, projection, players, odds, previousOdds);
 
   return {
     ...output,
@@ -1531,10 +1535,11 @@ function attachSimulatedOutcomes(
 }
 
 /**
- * Composite strength of a bet after the full simulation. Expected return at the
- * exact posted price leads by two orders of magnitude, so a long price with a
- * genuinely better expected return always outranks a short one; simulated hit
- * rate and model confidence only break near-ties.
+ * Composite strength of a bet after the full simulation. How often the bet
+ * wins in the 100 simulated games leads; expected return at the exact posted
+ * price is a meaningful supporting factor (so a heavily juiced favourite does
+ * not win on frequency alone), and model confidence (injuries, matchup) adds a
+ * small nudge.
  */
 export function simulationStrength(
   roi: number,
@@ -1542,16 +1547,77 @@ export function simulationStrength(
   tier: string | null | undefined,
 ): number {
   const confidence = tier === "strong" ? 1 : tier === "playable" ? 0.5 : 0;
-  return roi * 1000 + hitRate * 2 + confidence;
+  return hitRate + 0.5 * Math.max(-0.3, Math.min(0.3, roi)) + 0.01 * confidence;
+}
+
+/** Two bets within this composite gap are "very close" in the simulation. */
+const CLOSE_SCORE = 0.02;
+
+const impliedOf = (price: number | null | undefined): number | null => {
+  if (price == null || !Number.isFinite(price) || price === 0) return null;
+  return price > 0 ? 100 / (price + 100) : -price / (-price + 100);
+};
+const clip1 = (v: number) => Math.max(-1, Math.min(1, v));
+
+/**
+ * Which outcome the sportsbook is positioned to prefer, read only from real
+ * posted odds: the side carrying the heavier juice at the same number, and the
+ * side whose number has worsened since the last snapshot, is where the money
+ * is. The book benefits when the OTHER side wins. Returns -1..+1 (+ = this
+ * side is the book-favourable outcome). Secondary signal / tiebreaker only.
+ */
+export function sportsbookSideSignal(
+  c: Pick<Candidate, "key" | "standardKey" | "group">,
+  odds: GameOdds | null | undefined,
+  previous: GameOdds | null | undefined,
+): number {
+  if (!odds) return 0;
+  const side = c.group === "alt" ? c.standardKey : c.key;
+  let juice = 0;
+  let move = 0;
+  const diff = (own: number | undefined, opp: number | undefined) => {
+    const a = impliedOf(own);
+    const b = impliedOf(opp);
+    return a == null || b == null ? 0 : -clip1((a - b) / 0.05);
+  };
+  switch (side) {
+    case "spread-home":
+      juice = diff(odds.spread?.homePrice, odds.spread?.awayPrice);
+      if (previous?.spread && odds.spread) move = clip1((odds.spread.home - previous.spread.home) / 1);
+      break;
+    case "spread-away":
+      juice = diff(odds.spread?.awayPrice, odds.spread?.homePrice);
+      if (previous?.spread && odds.spread) move = clip1((odds.spread.away - previous.spread.away) / 1);
+      break;
+    case "total-over":
+      juice = diff(odds.total?.overPrice, odds.total?.underPrice);
+      if (previous?.total && odds.total) move = clip1(-(odds.total.points - previous.total.points) / 1.5);
+      break;
+    case "total-under":
+      juice = diff(odds.total?.underPrice, odds.total?.overPrice);
+      if (previous?.total && odds.total) move = clip1((odds.total.points - previous.total.points) / 1.5);
+      break;
+    case "ml-home":
+    case "ml-away": {
+      const k = side === "ml-home" ? "home" : "away";
+      const now = impliedOf(odds.moneyline?.[k]);
+      const then = impliedOf(previous?.moneyline?.[k]);
+      // Own implied chance rising = money on this side = book prefers the other.
+      if (now != null && then != null) move = clip1(-(now - then) / 0.04);
+      break;
+    }
+    default:
+      return 0;
+  }
+  return 0.6 * juice + 0.4 * move;
 }
 
 /**
  * Simulation-first Top 2. Every eligible posted game bet (standard and
  * alternate, -180 to +199, key/side rules intact, not already used by props or
- * TD Scorers) is settled against the same simulated games and ranked by
- * EXPECTED RETURN at its exact price. A moneyline and a spread on the same team
- * both enter this ranking, so the one with the better expected return wins the
- * slot; the percentage-point edge is still published, as a secondary read.
+ * TD Scorers) is settled against the same simulated games and ranked by how
+ * often it wins, supported by expected return at its exact price and model
+ * confidence. The sportsbook-favourable side only breaks near-ties.
  */
 function simulationFirstTop2(
   current: PickBet[],
@@ -1561,6 +1627,8 @@ function simulationFirstTop2(
   game: GameRow,
   projection: GameProjection,
   players: PlayerProjection,
+  odds: GameOdds | null = null,
+  previousOdds: GameOdds | null = null,
 ): PickBet[] {
   type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; roi: number; score: number };
   const scored: Scored[] = [];
@@ -1590,7 +1658,21 @@ function simulationFirstTop2(
   }
   if (scored.length < 2 && current.length >= 2) return current;
 
-  scored.sort((a, b) => Number(b.roi > 0) - Number(a.roi > 0) || b.score - a.score);
+  // Simulation frequency leads; price/EV and model confidence support it. Only
+  // when two bets are genuinely close does the sportsbook-favourable signal
+  // (juice shading + line movement) decide the order.
+  scored.sort((a, b) => b.score - a.score);
+  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds);
+  for (let pass = 0; pass < scored.length; pass += 1) {
+    for (let i = 0; i + 1 < scored.length; i += 1) {
+      const a = scored[i]!;
+      const b = scored[i + 1]!;
+      if (a.score - b.score < CLOSE_SCORE && signal(b) > signal(a) + 0.1) {
+        scored[i] = b;
+        scored[i + 1] = a;
+      }
+    }
+  }
   const picked: Scored[] = [];
   const ideas = new Set<string>();
   // A plus-money alternate whose simulated edge is under 1% ("thin") is not
@@ -1658,7 +1740,7 @@ function simulationFirstTop2(
         : {}),
       reason:
         comparison ??
-        `Ranked among the two strongest bets by expected return at this price across the full ${s.runs}-game simulation.`,
+        `Won ${s.hits.length} of ${s.runs} simulated games — among the two strongest bets by simulated frequency, supported by the price and matchup read.`,
       simHits: s.hits,
       simRuns: s.runs,
     } as PickBet);
@@ -2340,7 +2422,7 @@ export async function runLockLabFormula(
     const fallbackProps: PropBet[] = [];
     const fallbackTd: PropBet[] = [];
     fillTouchdownBets(game, candidates, usedFallback, fallbackTd, decisions);
-    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
+    fillPlayerProps(candidates, usedFallback, fallbackProps, decisions, 4);
     return attachSimulatedOutcomes(
       {
         topBets,
@@ -2357,6 +2439,8 @@ export async function runLockLabFormula(
       game,
       projection,
       players,
+      odds,
+      previousOdds ?? null,
     );
   }
 
@@ -2724,6 +2808,8 @@ export async function runLockLabFormula(
     game,
     projection,
     players,
+    odds,
+    previousOdds ?? null,
   );
 }
 
