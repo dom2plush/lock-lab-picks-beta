@@ -40,3 +40,12 @@
 ## Selection refinements (done, sim-v16)
 - All player props (including ones the handicap read nominates) go through one edge-first selector: max 4, 1.5% soft diversity window.
 - Alternate spreads that buy points must cross 3, 7 or 10 and gain 2+ covers of 50 simulated games; alternate totals must cross a sport-specific key total (NFL 37/40/41/43/44/47/51, CFB 45/48/51/52/55/58/59) with the same simulated check; alternates must match or beat the standard line's edge.
+
+## 100-run simulation engine (done, sim-v29)
+- Simulation scale raised from 50 to 100 independent runs. Every moneyline, spread, total, alternate line and player prop is settled against the exact same 100 simulated scorelines — no separate analytic probability path.
+- Scoring distribution is fat-tailed: two-regime margin/total draws plus defensive/special-teams scores, turnover drive kills and late comeback swings, snapped to plausible football scores, so totals no longer cluster on the posted number.
+- Player props are drawn inside each of those 100 games from that trial's script (team score, deficit, pass/rush split), with verified availability scaling workload (out = 0, doubtful = 0.3, questionable = 0.85). No independent prop model.
+- Fair model reduces confidence when no verified injury report exists (×0.7) or only one side is reported (×0.85), instead of assuming health.
+- Second Top 2 slot with edge <= 0 is labelled "Fallback — No Positive Edge".
+- Simulation diagnostics (avg/median scores and totals, variance, std dev, ranges, ML win counts, total distribution bands) stored on the projection for audit.
+- Player props/TD markets matched across books by a normalized player identifier (accents, punctuation, suffixes) under the provider event id.

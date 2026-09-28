@@ -35,6 +35,10 @@ const CONFIDENCE_GAMES = 4;
 const SHRINK = 3;
 /** Points charged for a quarterback ruled out; other contributors are worth far less. */
 const QB_OUT_POINTS: Record<Sport, number> = { NFL: 4.5, CFB: 4 };
+/** Confidence retained when no verified availability report exists at all. */
+const UNVERIFIED_INJURY_CONFIDENCE = 0.7;
+/** Confidence retained when only one side has a verified availability report. */
+const PARTIAL_INJURY_CONFIDENCE = 0.85;
 
 type FinalGame = {
   home_team: string;
@@ -245,8 +249,26 @@ export async function buildFairModel(game: GameRow, odds: GameOdds): Promise<Fai
       "TEAM STRENGTH UNAVAILABLE: not enough stored completed results for these teams, so the fair line is the posted market line. No team-strength deviation is claimed.",
     );
   }
+  // Availability is a first-order input. When no verified injury/QB report
+  // exists for this game, the model does NOT assume everyone is healthy: it
+  // keeps the fair line where the market has it and cuts its own confidence.
+  const report = game.injuries ?? [];
+  const homeReported = report.some((injury) => injury.team === game.home_team);
+  const awayReported = report.some((injury) => injury.team === game.away_team);
+  if (!report.length) {
+    confidence *= UNVERIFIED_INJURY_CONFIDENCE;
+    notes.push(
+      "INJURY DATA UNAVAILABLE: no verified availability report was supplied for either side, so no player is treated as confirmed healthy and model confidence is reduced.",
+    );
+  } else if (!homeReported || !awayReported) {
+    confidence *= PARTIAL_INJURY_CONFIDENCE;
+    notes.push(
+      `INJURY DATA PARTIAL: no verified availability report for ${!homeReported ? game.home_team : game.away_team}, so model confidence is reduced rather than assuming a clean bill of health.`,
+    );
+  }
 
   const weight = MODEL_WEIGHT * confidence;
+
 
   let fairMargin: number | null = marketMargin;
   if (marketMargin != null && modelMargin != null) {

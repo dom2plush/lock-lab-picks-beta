@@ -130,6 +130,8 @@ type PlayerMarketBaseline = {
 type PlayerModel = {
   player: string;
   team: string | null;
+  /** 0-1 workload share from the verified injury report. */
+  availability: number;
   markets: Map<string, PlayerMarketBaseline>;
 };
 
@@ -145,10 +147,34 @@ function teamOf(game: GameRow, player: string): string | null {
   return null;
 }
 
+const OUT_STATUS = /\bout\b|injured reserve|\bir\b|suspend|inactive|\bpup\b|\bnfi\b/i;
+const DOUBTFUL_STATUS = /doubtful/i;
+const QUESTIONABLE_STATUS = /questionable|game[- ]time/i;
+
+/**
+ * Workload multiplier from the VERIFIED injury report only. A player who is
+ * ruled out does not accumulate stats in any simulated game; a doubtful or
+ * questionable player carries reduced snaps. A player who is not on the report
+ * is simulated at full workload, and the absence of a report is handled by the
+ * fair model's confidence, never by silently assuming health here.
+ */
+function availabilityFactor(game: GameRow, player: string): number {
+  const wanted = player.trim().toLowerCase();
+  for (const injury of game.injuries ?? []) {
+    if ((injury.player ?? "").trim().toLowerCase() !== wanted) continue;
+    const status = String(injury.status ?? "");
+    if (OUT_STATUS.test(status)) return 0;
+    if (DOUBTFUL_STATUS.test(status)) return 0.3;
+    if (QUESTIONABLE_STATUS.test(status)) return 0.85;
+  }
+  return 1;
+}
+
 /** Touchdowns a team plausibly scored given its simulated points. */
 function touchdownsFor(points: number): number {
   return Math.max(0, Math.round((points - 2.5) / 7.4));
 }
+
 
 export function simulatePlayers(
   game: GameRow,
@@ -173,7 +199,12 @@ export function simulatePlayers(
       yesPrices.set(id, [...(yesPrices.get(id) ?? []), offer.price]);
     }
     if (!models.has(player)) {
-      models.set(player, { player, team: teamOf(game, player), markets: new Map() });
+      models.set(player, {
+        player,
+        team: teamOf(game, player),
+        availability: availabilityFactor(game, player),
+        markets: new Map(),
+      });
     }
     models.get(player)!.markets.set(offer.market, { line: null, yesProbability: null });
   }
@@ -241,7 +272,13 @@ export function simulatePlayers(
           : PASS_SCRIPT_MARKETS.has(market)
             ? passFactor
             : 1;
-        const mean = line * scoreFactor * script;
+        // Verified availability scales the workload: a player ruled out scores
+        // nothing in any simulated game, a doubtful one plays limited snaps.
+        const mean = line * scoreFactor * script * model.availability;
+        if (model.availability <= 0) {
+          value.set(market, 0);
+          continue;
+        }
         if (COUNT_MARKETS.has(market)) {
           const lambda = market === "player_pass_tds" ? mean + 0.15 : mean + 0.1;
           value.set(market, poisson(lambda, u));
@@ -279,15 +316,18 @@ export function simulatePlayers(
       const order: string[] = [];
       for (const group of groups) {
         const rand = mulberry32(seedFrom(`${seedBase}:td:${group.players[0]!.player}:${run}`));
-        const remaining = group.players.map((m) => ({
-          player: m.player,
-          weight: Math.max(
-            0.01,
-            m.markets.get("player_anytime_td")?.yesProbability ??
-              m.markets.get("player_1st_td")?.yesProbability ??
-              0.05,
-          ),
-        }));
+        const remaining = group.players
+          .filter((m) => m.availability > 0)
+          .map((m) => ({
+            player: m.player,
+            weight:
+              Math.max(
+                0.01,
+                m.markets.get("player_anytime_td")?.yesProbability ??
+                  m.markets.get("player_1st_td")?.yesProbability ??
+                  0.05,
+              ) * m.availability,
+          }));
         // Draw distinct scorers without replacement, weighted by the market's
         // own read of how likely each player is to find the end zone.
         const slots = Math.min(group.touchdowns, remaining.length);
@@ -369,9 +409,18 @@ export function simulatePlayers(
     return clamp(wins / result.length, 0.02, 0.98);
   }
 
+  const limited = [...models.values()].filter((m) => m.availability < 1);
   const notes = [
     `Player stats simulated inside the same ${runs} game scores for ${models.size} posted player${models.size === 1 ? "" : "s"}: workload calibrated to the posted line, then scaled by each simulated game's team score and game script. Prop hit rates are counts out of those ${runs} runs, not independent coin flips.`,
   ];
+  if (limited.length) {
+    notes.push(
+      `Verified availability applied: ${limited
+        .map((m) => `${m.player} at ${(m.availability * 100).toFixed(0)}% workload`)
+        .join(", ")}.`,
+    );
+  }
+
 
   return { runs, available: true, notes, outcomes, probability };
 }
