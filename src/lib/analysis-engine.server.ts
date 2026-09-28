@@ -1119,6 +1119,12 @@ function propTeam(game: GameRow, player: string | undefined): string | null {
  * for, the pick is still posted from the real market and says so, rather than
  * guessing at a roster.
  */
+/** First TD cards state only the simulated count — no price, edge or status read. */
+export function firstTdReason(wins: number, runs: number): string {
+  const pct = runs > 0 ? Math.round((wins / runs) * 1000) / 10 : 0;
+  return `Scored the first touchdown for his team's side in ${wins}/${runs} simulated games (${pct}%) — the most of any posted scorer on this team.`;
+}
+
 function fillTouchdownBets(
   game: GameRow,
   candidates: Candidate[],
