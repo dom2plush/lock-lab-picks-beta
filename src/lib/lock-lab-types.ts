@@ -102,6 +102,8 @@ export type GameRow = {
   props?: MarketOffer[];
   props_updated_at?: string | null;
   updated_at?: string | null;
+  /** Optional manual public-betting split; absent/blank means "ignore". */
+  public_betting?: PublicBetting | null;
 };
 
 /** Exact price provenance stored with every pick Lock Lab makes. */
