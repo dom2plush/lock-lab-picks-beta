@@ -11,3 +11,4 @@
 
 ## Simulation architecture
 - Every market (ML, spread, total, alternate, player prop) is settled against the exact same 100 simulated scorelines produced by `simulateGame`; player outcomes are drawn inside those same trials. Rationale: one distribution keeps standard and alternate prices internally consistent and prevents a separate prop model from contradicting the game script.
+- TD Scorers is the only fun-bet surface; separate Fun Bet output is legacy-empty. Touchdown scorers include an unlisted-field share and allow repeat scorers so a partial sportsbook player pool cannot inflate probabilities.

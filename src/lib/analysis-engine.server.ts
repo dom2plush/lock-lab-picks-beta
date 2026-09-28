@@ -21,7 +21,6 @@
 import type {
   AnalysisRow,
   Badge,
-  FunBet,
   GameOdds,
   GameRow,
   MarketOffer,
@@ -218,7 +217,8 @@ export type CandidateAudit = {
 
 export type EngineOutput = {
   topBets: PickBet[];
-  funBets: FunBet[];
+  /** Legacy storage field. Separate Fun Bets are no longer produced. */
+  funBets: [];
   playerProps: PropBet[];
   notes: {
     propsAvailable: boolean;
@@ -903,7 +903,7 @@ function funBadge(c: Candidate): Badge {
 
 /**
  * 0 First TD, 1 Anytime TD, 1.5 multi-TD (2+), 2 every non-touchdown market.
- * Anything below 2 is a touchdown market reserved for the fun bet.
+ * Anything below 2 is a touchdown market reserved for TD Scorers.
  */
 function propMarketPriority(market: string): number {
   return market === "player_1st_td"
@@ -953,7 +953,7 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
-        // Touchdown markets stay reserved for the fun bet.
+        // Touchdown markets stay reserved for TD Scorers.
         propMarketPriority(c.market) === 2 &&
         c.grade?.modelProb != null &&
         (c.grade?.edge ?? 0) >= MIN_EDGE,
@@ -1038,9 +1038,9 @@ function fillPlayerProps(
 
   // Availability floor: when the feed has at least two real posted player
   // markets but fewer than two cleared the edge bar, the strongest remaining
-  // ones (by the same 50-run simulated probabilities) are shown with an honest
+  // ones (by the same 100-run simulated probabilities) are shown with an honest
   // badge rather than reporting props as unavailable. The -180 limit holds,
-  // and any touchdown market left here is one the fun bet did not take.
+  // Touchdown markets never enter the standard player-prop floor.
   const MIN_PROPS = 2;
   if (playerProps.length >= MIN_PROPS) return;
   const floor = candidates
@@ -1049,8 +1049,7 @@ function fillPlayerProps(
         c.group === "prop" &&
         !used.has(c.key) &&
         c.price >= MIN_RECOMMENDED_PRICE &&
-        c.market !== "player_1st_td" &&
-        c.market !== "player_tds_over" &&
+        propMarketPriority(c.market) === 2 &&
         c.grade?.modelProb != null &&
         !playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel),
     )
@@ -1069,7 +1068,7 @@ function fillPlayerProps(
     const reason =
       reasons?.get(c.key) ??
       (thin
-        ? "Thin edge — the strongest remaining posted prop in the 50 simulated games, shown so you can compare it; the model sees little value at this price."
+        ? "Thin edge — the strongest remaining posted prop in the 100 simulated games, shown so you can compare it; the model sees little value at this price."
         : "The strongest remaining posted prop on this board under the model's usage and matchup read.");
     playerProps.push({
       key: `prop-${playerProps.length + 1}`,
@@ -1086,93 +1085,6 @@ function fillPlayerProps(
   }
 }
 
-
-/** Edge a +200 or longer moneyline needs before it is shown as a bonus fun bet. */
-const BONUS_ML_MIN_EDGE = 0.03;
-
-function isTdFunCandidate(c: Candidate): boolean {
-  if (c.group !== "prop") return false;
-  const priority = propMarketPriority(c.market);
-  if (priority >= 2) return false;
-  if (c.market === "player_tds_over") return isMultiTdRung(c);
-  // Scorer markets: only the "Yes" side is a touchdown bet.
-  const side = propDirection(c);
-  return side === "yes" || side === "over";
-}
-
-/**
- * Fun bets, in two independent slots:
- *  1. The primary TD fun bet — always present when any verified sportsbook
- *     posts a touchdown market for this game: First TD, then Anytime TD, then
- *     2+ TDs. It is never replaced.
- *  2. An optional Bonus fun bet — a +200 or longer moneyline, added alongside
- *     the TD bet only when the model shows meaningful positive edge on it.
- *     Such prices never sit in the Top 2.
- */
-function fillFunBet(
-  candidates: Candidate[],
-  used: Set<string>,
-  funBets: FunBet[],
-  decisions: DecisionMap,
-): void {
-  const push = (c: Candidate, reason: string, decisionReason: string) => {
-    const badge = funBadge(c);
-    used.add(c.key);
-    funBets.push({
-      key: `fun-${funBets.length + 1}`,
-      badge,
-      label: c.label,
-      market: c.marketLabel,
-      odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
-      ...pickSource(c),
-      reason,
-    });
-    decisions.set(c.key, { section: "fun", badge, reason: decisionReason });
-  };
-
-  // ---- 1. Primary TD fun bet ------------------------------------------------
-  const chosen = candidates.filter((c) => decisions.get(c.key)?.section === "fun");
-  const hasTd = chosen.some(isTdFunCandidate);
-  if (!hasTd) {
-    const tdPool = candidates
-      .filter((c) => !used.has(c.key) && isTdFunCandidate(c))
-      .sort(
-        (a, b) =>
-          propMarketPriority(a.market) - propMarketPriority(b.market) ||
-          candidateRank(b) - candidateRank(a),
-      );
-    const td = tdPool[0];
-    if (td) {
-      push(
-        td,
-        "A posted scoring price the board likes as a swing play. For fun only — keep it to smaller units.",
-        "Primary TD fun bet from the ranked board.",
-      );
-    }
-  }
-
-  // ---- 2. Optional Bonus fun bet: a +200 or longer moneyline ---------------
-  if (chosen.some((c) => c.group !== "prop")) return;
-  const bonus = candidates
-    .filter(
-      (c) =>
-        !used.has(c.key) &&
-        c.group !== "prop" &&
-        c.market === "moneyline" &&
-        isLongshotPrice(c.price) &&
-        hasPositiveEdge(c) &&
-        (c.grade?.edge ?? 0) >= BONUS_ML_MIN_EDGE,
-    )
-    .sort((a, b) => candidateRank(b) - candidateRank(a))[0];
-  if (bonus) {
-    push(
-      bonus,
-      "Bonus fun bet: the model's win estimate clearly beats this long price, but it pays too long for a normal top bet. For fun only — keep it to smaller units.",
-      "Bonus fun bet: +200 or longer moneyline with meaningful model edge.",
-    );
-  }
-}
 
 /** The team a prop belongs to, taken only from the verified availability report. */
 function propTeam(game: GameRow, player: string | undefined): string | null {
@@ -1573,9 +1485,8 @@ function attachSimulatedOutcomes(
   };
 
   const playerProps = output.playerProps.map(settle);
-  const funBets = output.funBets.map(settle);
   const reserved = new Set(
-    [...playerProps, ...funBets].map((p) => p.candidateKey).filter((k): k is string => Boolean(k)),
+    playerProps.map((p) => p.candidateKey).filter((k): k is string => Boolean(k)),
   );
   const topBets = simulationFirstTop2(output.topBets.map(settle), candidates, byKey, reserved, game, projection, players);
 
@@ -1583,7 +1494,7 @@ function attachSimulatedOutcomes(
     ...output,
     topBets: orderTopBetsByValue(topBets),
     playerProps,
-    funBets,
+    funBets: [],
   };
 }
 
@@ -2364,16 +2275,12 @@ export async function runLockLabFormula(
     });
     const fallbackProps: PropBet[] = [];
     const fallbackTd: PropBet[] = [];
-    const fallbackFun: FunBet[] = [];
-    // Fun bet claims its touchdown/longshot pick first so the props floor can
-    // never take it; props themselves never draw from those markets otherwise.
-    fillFunBet(candidates, usedFallback, fallbackFun, decisions);
     fillTouchdownBets(game, candidates, usedFallback, fallbackTd, decisions);
     fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
     return attachSimulatedOutcomes(
       {
         topBets,
-        funBets: fallbackFun,
+        funBets: [],
         playerProps: [...fallbackProps, ...fallbackTd],
         notes: {
           propsAvailable: extra.props.length > 0,
@@ -2709,37 +2616,6 @@ export async function runLockLabFormula(
     });
   }
 
-  const funBets: FunBet[] = [];
-  const funEntries = [...(handicap.funBets ?? [])].sort((a, b) => {
-    const marketA = byKey.get(a.key)?.market ?? "";
-    const marketB = byKey.get(b.key)?.market ?? "";
-    return propMarketPriority(marketA) - propMarketPriority(marketB);
-  });
-  for (const entry of funEntries) {
-    const c = byKey.get(entry.key);
-    if (!c || used.has(c.key) || c.group !== "prop") continue;
-    // The primary fun bet is a verified touchdown market only.
-    if (!isTdFunCandidate(c)) continue;
-    applyLean(c, entry.probabilityLean, entry.evidenceStrength);
-    used.add(c.key);
-    funBets.push({
-      key: `fun-${funBets.length + 1}`,
-      badge: funBadge(c),
-      label: c.label,
-      market: c.marketLabel,
-      odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
-      ...pickSource(c),
-      reason: `${clean(entry.reason, "A posted scoring price with a real matchup reason behind it.")} For fun only — keep it to smaller units.`,
-    });
-    decisions.set(c.key, {
-      section: "fun",
-      badge: funBadge(c),
-      reason: clean(entry.reason, "Fun bet."),
-    });
-    break;
-  }
-
   const playerProps: PropBet[] = [];
   // The handicap read's props are not inserted directly: their lean is applied
   // and their reasoning kept, then every prop (read-nominated or not) goes
@@ -2753,8 +2629,8 @@ export async function runLockLabFormula(
   }
 
   // Sections are topped up from the ranked live board so a normal game shows
-  // two props and one fun bet. Only real posted prices are ever used.
-  fillFunBet(candidates, used, funBets, decisions);
+  // standard props plus the dedicated TD scorer section. Only real posted
+  // prices are ever used.
   const touchdownBets: PropBet[] = [];
   // One Anytime TD and one First TD per team, in their own section, before the
   // standard props are filled so the two pools never take the same price.
@@ -2771,7 +2647,7 @@ export async function runLockLabFormula(
   return attachSimulatedOutcomes(
     {
       topBets,
-      funBets,
+      funBets: [],
       playerProps: [...playerProps, ...touchdownBets],
       notes: {
         propsAvailable: extra.props.length > 0,

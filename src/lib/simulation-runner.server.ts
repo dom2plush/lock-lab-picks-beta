@@ -155,7 +155,7 @@ export async function ensureSimulationBatch(
 }
 
 /**
- * Replaces every pick's write-up with the numbers the 50 runs actually
+ * Replaces every pick's write-up with the numbers the 100 runs actually
  * produced, and stamps the simulated hit rate and model edge onto the pick so
  * they are stored with it permanently.
  */
@@ -251,7 +251,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
     ...analysis,
     top_bets: topBets,
     player_props: props,
-    fun_bets: (analysis.fun_bets ?? []).map((bet) => describe(bet, { fun: true })),
+    fun_bets: [],
   };
 }
 
@@ -261,7 +261,7 @@ function isStale(game: GameRow, now: number): boolean {
   return now - new Date(stamp).getTime() > ODDS_REFRESH_TTL_MS;
 }
 
-/** One formula run + exactly 50 simulated settlements, stored as a new permanent batch. */
+/** One formula run + exactly 100 simulated settlements, stored as a new permanent batch. */
 export async function generateBatch(
   game: GameRow,
   stored: { batch: StoredBatch | null; analysis: AnalysisRow | null },

@@ -1,9 +1,9 @@
 /**
- * Player-level outcomes inside the SAME 50 simulated games.
+ * Player-level outcomes inside the SAME 100 simulated games.
  *
- * The 50 game scores produced by {@link simulateGame} are the only source of
+ * The 100 game scores produced by {@link simulateGame} are the only source of
  * game state here. For every verified posted player prop, this module draws a
- * stat line inside each of those 50 games, correlated with that game's team
+ * stat line inside each of those 100 games, correlated with that game's team
  * score, total and margin (game script), so a player's markets can never
  * contradict each other or the score the game was simulated at.
  *
@@ -175,6 +175,17 @@ function touchdownsFor(points: number): number {
   return Math.max(0, Math.round((points - 2.5) / 7.4));
 }
 
+/**
+ * Convert an Anytime-TD game probability into a per-touchdown scorer chance.
+ * Repeated touchdown opportunities then reproduce the posted baseline without
+ * forcing every team touchdown onto the small set of players whose markets
+ * happened to be returned by the sportsbook.
+ */
+function scorerChancePerTouchdown(gameProbability: number, expectedTouchdowns: number): number {
+  const chances = Math.max(1, expectedTouchdowns);
+  return clamp(1 - Math.pow(1 - clamp(gameProbability, 0.01, 0.85), 1 / chances), 0.001, 0.85);
+}
+
 
 export function simulatePlayers(
   game: GameRow,
@@ -300,64 +311,80 @@ export function simulatePlayers(
     // ---- Touchdown allocation: scorers come out of the simulated score -----
     const scorerPool = [...models.values()].filter((m) => m.markets.has("player_anytime_td") || m.markets.has("player_1st_td"));
     if (scorerPool.length) {
-      const groups: { players: PlayerModel[]; touchdowns: number }[] = [];
+      const groups: { id: string; players: PlayerModel[]; touchdowns: number; expectedTouchdowns: number }[] = [];
       const homePool = scorerPool.filter((m) => m.team === game.home_team);
       const awayPool = scorerPool.filter((m) => m.team === game.away_team);
       const unknown = scorerPool.filter((m) => m.team == null);
-      if (homePool.length) groups.push({ players: homePool, touchdowns: touchdownsFor(score.home) });
-      if (awayPool.length) groups.push({ players: awayPool, touchdowns: touchdownsFor(score.away) });
+      if (homePool.length) groups.push({
+        id: "home",
+        players: homePool,
+        touchdowns: touchdownsFor(score.home),
+        expectedTouchdowns: touchdownsFor(expHome ?? score.home),
+      });
+      if (awayPool.length) groups.push({
+        id: "away",
+        players: awayPool,
+        touchdowns: touchdownsFor(score.away),
+        expectedTouchdowns: touchdownsFor(expAway ?? score.away),
+      });
       if (unknown.length) {
         groups.push({
+          id: "unknown",
           players: unknown,
           touchdowns: touchdownsFor(score.home) + touchdownsFor(score.away),
+          expectedTouchdowns: touchdownsFor((expHome ?? score.home) + (expAway ?? score.away)),
         });
       }
 
-      const order: string[] = [];
-      for (const group of groups) {
-        const rand = mulberry32(seedFrom(`${seedBase}:td:${group.players[0]!.player}:${run}`));
-        const remaining = group.players
+      const touchdownSlots = groups.flatMap((group) =>
+        Array.from({ length: group.touchdowns }, (_, slot) => ({ group, slot })),
+      );
+      const orderRand = mulberry32(seedFrom(`${seedBase}:td-order:${run}`));
+      for (let i = touchdownSlots.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(orderRand() * (i + 1));
+        [touchdownSlots[i], touchdownSlots[j]] = [touchdownSlots[j]!, touchdownSlots[i]!];
+      }
+
+      let firstTouchdownAssigned = false;
+      for (const { group, slot } of touchdownSlots) {
+        const rand = mulberry32(seedFrom(`${seedBase}:td:${group.id}:${run}:${slot}`));
+        const available = group.players
           .filter((m) => m.availability > 0)
           .map((m) => ({
             player: m.player,
-            weight:
-              Math.max(
-                0.01,
+            chance:
+              scorerChancePerTouchdown(
                 m.markets.get("player_anytime_td")?.yesProbability ??
                   m.markets.get("player_1st_td")?.yesProbability ??
                   0.05,
+                group.expectedTouchdowns,
               ) * m.availability,
           }));
-        // Draw distinct scorers without replacement, weighted by the market's
-        // own read of how likely each player is to find the end zone.
-        const slots = Math.min(group.touchdowns, remaining.length);
-        for (let slot = 0; slot < slots; slot += 1) {
-          const total = remaining.reduce((sum, r) => sum + r.weight, 0);
-          if (total <= 0) break;
-          let ticket = rand() * total;
-          let chosen = remaining.length - 1;
-          for (let i = 0; i < remaining.length; i += 1) {
-            ticket -= remaining[i]!.weight;
-            if (ticket <= 0) {
-              chosen = i;
-              break;
-            }
-          }
-          const [winner] = remaining.splice(chosen, 1);
-          if (!winner) break;
-          const stats = runStats.get(winner.player);
-          if (stats) stats.anyTd = true;
-          order.push(winner.player);
-        }
-      }
 
-      if (order.length) {
-        // First touchdown of the game: one scorer, drawn from the players who
-        // actually scored in this simulated game.
-        const rand = mulberry32(seedFrom(`${seedBase}:firsttd:${run}`));
-        const first = order[Math.min(order.length - 1, Math.floor(rand() * order.length))]!;
-        const stats = runStats.get(first);
-        if (stats) stats.firstTd = true;
+        // The unlisted field keeps a small sportsbook subset from absorbing
+        // every simulated touchdown. If listed chances exceed one slot, scale
+        // them together rather than inflating any individual player.
+        const listedTotal = available.reduce((sum, player) => sum + player.chance, 0);
+        const scale = listedTotal > 0.92 ? 0.92 / listedTotal : 1;
+        let ticket = rand();
+        let winner: string | null = null;
+        for (const player of available) {
+          ticket -= player.chance * scale;
+          if (ticket <= 0) {
+            winner = player.player;
+            break;
+          }
+        }
+        if (winner) {
+          const stats = runStats.get(winner);
+          if (stats) {
+            stats.anyTd = true;
+            if (!firstTouchdownAssigned) stats.firstTd = true;
+          }
+        }
+        // The first touchdown can belong to the unlisted field. In that case,
+        // every posted First-TD player correctly loses this simulation.
+        firstTouchdownAssigned = true;
       }
     }
 
@@ -396,7 +423,7 @@ export function simulatePlayers(
       const value = stats.get(player)?.value.get(query.market);
       if (value == null) return false;
       simulated = true;
-      // A push is not a win; it is counted honestly against the 50 runs.
+      // A push is not a win; it is counted honestly against the 100 runs.
       return over ? value > query.point! : value < query.point!;
     });
     return simulated ? result : null;
