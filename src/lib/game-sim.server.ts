@@ -259,8 +259,15 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
   }
 
 
+  // Effective spread of the two-regime draw, so the analytic anchor used for
+  // shrinkage matches the widened simulated distribution.
+  const REGIME_SIGMA =
+    Math.sqrt((1 - WIDE_REGIME_SHARE) * BASE_REGIME_SCALE ** 2 + WIDE_REGIME_SHARE * WIDE_REGIME_SCALE ** 2);
+  const effMarginSigma = marginSigma * REGIME_SIGMA;
+  const effTotalSigma = totalSigma * REGIME_SIGMA;
+
   const analyticSpread = (teamMargin: number, point: number) =>
-    normalCdf((teamMargin + point) / marginSigma);
+    normalCdf((teamMargin + point) / effMarginSigma);
 
   function spreadProb(team: "home" | "away", point: number): number | null {
     if (fairMargin == null || !scores.length) return null;
