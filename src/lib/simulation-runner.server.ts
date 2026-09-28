@@ -210,7 +210,10 @@ export function applySplitBadge<P extends { badge?: string; reason: string; mode
     market.publicBetting,
   );
   const favourable = bookSide > 0;
-  if (badge === "yellow" && favourable) badge = "green";
+  // Thin-edge Top 2 bet supported by the simulation, heavy opposite public
+  // money and a favourable sportsbook signal: the badge goes straight to
+  // green from any starting color.
+  if (favourable) badge = "green";
   if (badge === bet.badge) return bet;
   const note = favourable
     ? " Public money is heavily on the other side and the market reads this as the sportsbook-favourable outcome — confidence raised."
