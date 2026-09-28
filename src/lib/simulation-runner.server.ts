@@ -23,6 +23,7 @@ import {
   meaningfulInputChange,
   picksToSimulate,
   runSimulations,
+  simulationSeedKey,
   type InputSnapshot,
   type SimulationAggregate,
 } from "./simulation.server";
@@ -294,7 +295,13 @@ export async function generateBatch(
   }
 
   const fields = await d.compute(current, verifiedExtras(current), stored.analysis?.odds_snapshot ?? null);
-  const { simulations, aggregate } = runSimulations(fingerprint, picksToSimulate(fields), SIMULATION_RUNS);
+  // Settlement uses the same game + model-version seed as the score and player
+  // models, so identical inputs always settle to identical outcomes.
+  const { simulations, aggregate } = runSimulations(
+    simulationSeedKey(current),
+    picksToSimulate(fields),
+    SIMULATION_RUNS,
+  );
   if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly 50 simulations");
   const described = withSimulatedReasons(fields, aggregate);
 

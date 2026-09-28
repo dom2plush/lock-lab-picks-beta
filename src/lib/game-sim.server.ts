@@ -19,7 +19,7 @@
  */
 import type { FairModel } from "./fair-model.server";
 import type { GameRow, Sport } from "./lock-lab-types";
-import { SIMULATION_RUNS, mulberry32, seedFrom } from "./simulation.server";
+import { SIMULATION_RUNS, mulberry32, seedFrom, simulationSeedKey } from "./simulation.server";
 
 /** Scatter of final margins around the fair spread. */
 const MARGIN_SIGMA: Record<Sport, number> = { NFL: 13.2, CFB: 16.0 };
@@ -210,9 +210,9 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
   const fairTotal = fair.fairTotal;
   const marginSigma = MARGIN_SIGMA[game.sport];
   const totalSigma = TOTAL_SIGMA[game.sport];
-  const seed = seedFrom(
-    `${game.id}:${game.odds?.capturedAt ?? game.odds_updated_at ?? ""}:${fairMargin ?? "-"}:${fairTotal ?? "-"}`,
-  );
+  // Seeded from the game and the model version only: the same game on the same
+  // engine always draws the exact same 100 simulated scores for every user.
+  const seed = seedFrom(simulationSeedKey(game));
   const rand = mulberry32(seed);
 
   const scores: SimulatedScore[] = [];

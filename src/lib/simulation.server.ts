@@ -5,7 +5,7 @@
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v31";
+export const SIMULATION_ENGINE_VERSION = "sim-v32";
 export const SIMULATION_RUNS = 100;
 
 /** Rounds a price so tiny juice wiggles do not invalidate a stored batch. */
@@ -49,6 +49,25 @@ export type InputSnapshot = {
   moneyline: { home: number; away: number } | null;
   /** Material injury entries only: "team|player|status". */
   injuries: string[];
+  /**
+   * The exact dataset the batch was computed from, frozen alongside it: the
+   * full sportsbook snapshot, the complete availability report and the seed
+   * the runs came from. Read-only record — batch reuse is still decided by the
+   * meaningful fields above.
+   */
+  dataset?: DatasetSnapshot;
+};
+
+/** Everything the 100 runs actually saw, stored so every user shares one dataset. */
+export type DatasetSnapshot = {
+  seedKey: string;
+  engineVersion: string;
+  runs: number;
+  capturedAt: string | null;
+  book: string | null;
+  odds: unknown;
+  availability: { team: string; player: string; status: string }[];
+  availabilityReported: boolean;
 };
 
 /** Spread points must move at least this far (any half point) to matter. */
@@ -75,6 +94,27 @@ export function inputSnapshot(game: GameRow): InputSnapshot {
       .filter((injury) => MATERIAL_INJURY.test(injury.status ?? ""))
       .map((injury) => `${injury.team}|${injury.player}|${String(injury.status).toLowerCase()}`)
       .sort(),
+    dataset: datasetSnapshot(game),
+  };
+}
+
+/** Freezes the exact odds, availability report and seed the runs were built on. */
+export function datasetSnapshot(game: GameRow): DatasetSnapshot {
+  const odds = game.odds ?? {};
+  const injuries = game.injuries ?? [];
+  return {
+    seedKey: simulationSeedKey(game),
+    engineVersion: SIMULATION_ENGINE_VERSION,
+    runs: SIMULATION_RUNS,
+    capturedAt: odds.capturedAt ?? game.odds_updated_at ?? null,
+    book: odds.bookmaker ?? odds.bookmakerKey ?? null,
+    odds: JSON.parse(JSON.stringify(odds ?? {})),
+    availability: injuries.map((injury) => ({
+      team: injury.team,
+      player: injury.player,
+      status: String(injury.status ?? ""),
+    })),
+    availabilityReported: injuries.length > 0,
   };
 }
 
@@ -145,6 +185,17 @@ export function mulberry32(seed: number): () => number {
 
 export function seedFrom(text: string): number {
   return parseInt(hash(text).slice(0, 8), 16) >>> 0;
+}
+
+/**
+ * The one seed every simulated run is derived from: the game plus the model
+ * version, and nothing else. Odds re-pulls, capture timestamps and the moment
+ * a batch happens to be generated can never shift the random draws, so the
+ * same game on the same engine always produces the exact same 100 runs for
+ * every user.
+ */
+export function simulationSeedKey(game: { id: string }): string {
+  return `${game.id}:${SIMULATION_ENGINE_VERSION}`;
 }
 
 export type SimulatedPick = {
