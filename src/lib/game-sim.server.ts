@@ -1,14 +1,20 @@
 /**
- * The 50 Lock Lab game simulations.
+ * The 100 Lock Lab game simulations.
  *
  * Each run is a full simulated final score generated from the fair model's
  * margin and total, not a coin flip on a pre-chosen bet. Every spread,
  * total and moneyline candidate — standard or alternate — is then graded
- * against the SAME 50 scores, so no market can be priced by a different rule
+ * against the SAME 100 scores, so no market can be priced by a different rule
  * than its neighbour and no alternate line can manufacture an edge.
  *
- * The raw 50-run hit rate is deliberately not trusted on its own: it is
- * shrunk toward the model's own analytic probability, so 48/50 on a thin
+ * Scoring variance is deliberately football-shaped rather than a single tidy
+ * bell curve: a share of runs draw from a wide regime (shootouts, blowouts),
+ * defensive and special-teams touchdowns are added as discrete events, drive
+ * killing turnovers remove scores, and trailing teams score late. That keeps
+ * totals from piling up on the posted number.
+ *
+ * The raw run hit rate is deliberately not trusted on its own: it is
+ * shrunk toward the model's own analytic probability, so 96/100 on a thin
  * sample cannot masquerade as a 96% bet.
  */
 import type { FairModel } from "./fair-model.server";
@@ -19,8 +25,21 @@ import { SIMULATION_RUNS, mulberry32, seedFrom } from "./simulation.server";
 const MARGIN_SIGMA: Record<Sport, number> = { NFL: 13.2, CFB: 16.0 };
 /** Scatter of combined scores around the fair total. */
 const TOTAL_SIGMA: Record<Sport, number> = { NFL: 10.4, CFB: 12.8 };
-/** Weight of the analytic model when smoothing the 50-run count. */
+/** Weight of the analytic model when smoothing the simulated count. */
 const SHRINK_RUNS = 12;
+
+/** Share of runs drawn from the wide "explosive game" regime. */
+const WIDE_REGIME_SHARE = 0.18;
+/** How much wider that regime is. */
+const WIDE_REGIME_SCALE = 1.85;
+/** Narrow regime scale, so the blend keeps roughly the intended sigma. */
+const BASE_REGIME_SCALE = 0.92;
+/** Chance a team returns a turnover or kick for a touchdown in a given game. */
+const DEFENSIVE_TD_CHANCE = 0.11;
+/** Chance a turnover or failed drive wipes out a score for a team. */
+const DRIVE_KILL_CHANCE = 0.22;
+/** Chance a trailing team adds a late comeback score when down two scores. */
+const COMEBACK_CHANCE = 0.34;
 
 /** Final scores that actually occur in football, used to keep runs realistic. */
 const PLAUSIBLE = [
@@ -51,6 +70,7 @@ function gaussian(rand: () => number): number {
   const v = rand();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
+
 
 export type SimulatedScore = { run: number; home: number; away: number; margin: number; total: number };
 
