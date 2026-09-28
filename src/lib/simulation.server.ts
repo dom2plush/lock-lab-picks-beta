@@ -147,6 +147,17 @@ export function seedFrom(text: string): number {
   return parseInt(hash(text).slice(0, 8), 16) >>> 0;
 }
 
+/**
+ * The one seed every simulated run is derived from: the game plus the model
+ * version, and nothing else. Odds re-pulls, capture timestamps and the moment
+ * a batch happens to be generated can never shift the random draws, so the
+ * same game on the same engine always produces the exact same 100 runs for
+ * every user.
+ */
+export function simulationSeedKey(game: { id: string }): string {
+  return `${game.id}:${SIMULATION_ENGINE_VERSION}`;
+}
+
 export type SimulatedPick = {
   key: string;
   section: "top" | "prop" | "fun";
