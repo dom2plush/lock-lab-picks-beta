@@ -316,15 +316,18 @@ export function simulatePlayers(
       const order: string[] = [];
       for (const group of groups) {
         const rand = mulberry32(seedFrom(`${seedBase}:td:${group.players[0]!.player}:${run}`));
-        const remaining = group.players.map((m) => ({
-          player: m.player,
-          weight: Math.max(
-            0.01,
-            m.markets.get("player_anytime_td")?.yesProbability ??
-              m.markets.get("player_1st_td")?.yesProbability ??
-              0.05,
-          ),
-        }));
+        const remaining = group.players
+          .filter((m) => m.availability > 0)
+          .map((m) => ({
+            player: m.player,
+            weight:
+              Math.max(
+                0.01,
+                m.markets.get("player_anytime_td")?.yesProbability ??
+                  m.markets.get("player_1st_td")?.yesProbability ??
+                  0.05,
+              ) * m.availability,
+          }));
         // Draw distinct scorers without replacement, weighted by the market's
         // own read of how likely each player is to find the end zone.
         const slots = Math.min(group.touchdowns, remaining.length);
