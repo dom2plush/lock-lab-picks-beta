@@ -13,6 +13,7 @@ import {
   verifiedExtras,
   type AnalysisFields,
 } from "./analysis-runner.server";
+import { firstTdReason } from "./analysis-engine.server";
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 import {
   SIMULATION_ENGINE_VERSION,
@@ -184,6 +185,16 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
   ): P => {
     const simulated = byKey.get(pick.key);
     if (!simulated) return pick;
+    // First TD scorers: the simulated count only — no price, edge or status read.
+    if ((pick as { market?: string }).market === "First TD scorer") {
+      return {
+        ...pick,
+        simHitRate: Math.round(simulated.hitRate * 10000) / 10000,
+        modelEdge: null,
+        expectedRoi: null,
+        reason: firstTdReason(simulated.wins, aggregate.runs),
+      } as P;
+    }
     const implied = americanToProbability(pick.odds ?? null);
     const edge = implied != null ? simulated.hitRate - implied : null;
     // Expected return per unit staked at the exact posted price — the number
