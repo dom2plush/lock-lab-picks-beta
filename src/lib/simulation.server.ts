@@ -57,6 +57,8 @@ export type InputSnapshot = {
   moneyline: { home: number; away: number } | null;
   /** Material injury entries only: "team|player|status". */
   injuries: string[];
+  /** Manually entered public-betting split, when one was supplied. */
+  publicBetting?: string | null;
   /**
    * The exact dataset the batch was computed from, frozen alongside it: the
    * full sportsbook snapshot, the complete availability report and the seed
