@@ -2363,16 +2363,18 @@ export async function runLockLabFormula(
       }
     });
     const fallbackProps: PropBet[] = [];
+    const fallbackTd: PropBet[] = [];
     const fallbackFun: FunBet[] = [];
     // Fun bet claims its touchdown/longshot pick first so the props floor can
     // never take it; props themselves never draw from those markets otherwise.
     fillFunBet(candidates, usedFallback, fallbackFun, decisions);
+    fillTouchdownBets(game, candidates, usedFallback, fallbackTd, decisions);
     fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
     return attachSimulatedOutcomes(
       {
         topBets,
         funBets: fallbackFun,
-        playerProps: fallbackProps,
+        playerProps: [...fallbackProps, ...fallbackTd],
         notes: {
           propsAvailable: extra.props.length > 0,
           altMarketsAvailable: extra.alternates.length > 0,
