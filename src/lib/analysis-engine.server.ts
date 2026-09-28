@@ -921,6 +921,25 @@ const propHit = (c: Candidate) => c.grade?.modelProb ?? 0;
 const propRankCmp = (a: Candidate, b: Candidate) =>
   propHit(b) - propHit(a) || candidateRank(b) - candidateRank(a);
 const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
+/**
+ * Minimum posted line that marks a starter/high-usage role in each standard
+ * market. A sportsbook's own line is the usage signal: a 12.5-yard receiving
+ * line or a 1.5-reception line belongs to a fringe player.
+ */
+const MEANINGFUL_PROP_LINE: Record<string, number> = {
+  player_pass_yds: 150,
+  player_pass_completions: 14,
+  player_pass_attempts: 20,
+  player_pass_tds: 0.5,
+  player_rush_yds: 30,
+  player_rush_attempts: 8,
+  player_reception_yds: 30,
+  player_receptions: 2.5,
+};
+export const meaningfulPropLine = (c: Pick<Candidate, "market" | "point">): boolean => {
+  const min = MEANINGFUL_PROP_LINE[c.market];
+  return min != null && c.point != null && c.point >= min;
+};
 
 function fillPlayerProps(
   candidates: Candidate[],
@@ -944,6 +963,11 @@ function fillPlayerProps(
         propPriceOk(c),
     )
     .sort(propRankCmp);
+  // Established, high-usage players on meaningful lines lead; fringe players
+  // and tiny lines are only used when too few meaningful props qualify.
+  const meaningful = pool.filter(meaningfulPropLine);
+  if (meaningful.length >= 3) pool.splice(0, pool.length, ...meaningful);
+  else pool.sort((a, b) => Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)));
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
