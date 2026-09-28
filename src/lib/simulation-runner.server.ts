@@ -228,6 +228,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
       badge,
       simHitRate: Math.round(simulated.hitRate * 10000) / 10000,
       modelEdge: edge == null ? null : Math.round(edge * 10000) / 10000,
+      expectedRoi: roi == null ? null : Math.round(roi * 10000) / 10000,
       reason: `${parts.join(" · ")}.${valueNote}`,
     } as P;
   };
@@ -235,9 +236,16 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
   const topBets = (analysis.top_bets ?? [])
     .map((bet) => describe(bet, { top: true }))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
+  // Touchdown picks keep their own keys so the stored card, the tail record and
+  // the touchdown section always refer to the same bet.
+  let propIndex = 0;
   const props = (analysis.player_props ?? [])
     .map((prop) => describe(prop))
-    .map((prop, index) => ({ ...prop, key: `prop-${index + 1}` }));
+    .map((prop) =>
+      String(prop.key).startsWith("td-")
+        ? prop
+        : { ...prop, key: `prop-${(propIndex += 1)}` },
+    );
 
   return {
     ...analysis,
