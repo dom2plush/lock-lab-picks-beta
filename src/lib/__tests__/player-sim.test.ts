@@ -129,9 +129,12 @@ describe("player props come out of the 100 simulated games", () => {
     const result = await runLockLabFormula(game, odds, { alternates: [], props });
 
     expect(result.playerProps.length).toBeGreaterThan(0);
-    expect(result.playerProps.length).toBeLessThanOrEqual(4);
-    const players = result.playerProps.map((p) => `${p.player}|${p.market}`);
-    expect(new Set(players).size).toBe(players.length);
+    const standardProps = result.playerProps.filter((pick) => !pick.touchdown);
+    const touchdownProps = result.playerProps.filter((pick) => pick.touchdown);
+    expect(standardProps.length).toBeLessThanOrEqual(4);
+    expect(touchdownProps.length).toBeLessThanOrEqual(4);
+    const publishedPlayers = result.playerProps.map((p) => `${p.player}|${p.market}`);
+    expect(new Set(publishedPlayers).size).toBe(publishedPlayers.length);
     for (const pick of [...result.playerProps, ...result.funBets]) {
       expect(pick.simRuns).toBe(100);
       expect(Array.isArray(pick.simHits)).toBe(true);

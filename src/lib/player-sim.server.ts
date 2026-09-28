@@ -356,12 +356,14 @@ export function simulatePlayers(
           .map((m) => ({
             player: m.player,
             chance:
-              scorerChancePerTouchdown(
-                m.markets.get("player_anytime_td")?.yesProbability ??
-                  m.markets.get("player_1st_td")?.yesProbability ??
-                  0.05,
-                group.expectedTouchdowns,
-              ) * m.availability,
+              (!firstTouchdownAssigned && m.markets.get("player_1st_td")?.yesProbability != null
+                ? clamp(m.markets.get("player_1st_td")?.yesProbability ?? 0, 0.001, 0.45)
+                : m.markets.get("player_anytime_td")?.yesProbability != null
+                  ? scorerChancePerTouchdown(
+                      m.markets.get("player_anytime_td")?.yesProbability ?? 0,
+                      group.expectedTouchdowns,
+                    )
+                  : 0) * m.availability,
           }));
 
         // The unlisted field keeps a small sportsbook subset from absorbing
