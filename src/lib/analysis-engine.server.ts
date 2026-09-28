@@ -1249,7 +1249,7 @@ function fillTouchdownBets(
     }
     // Without a verified roster the feed cannot attribute every scorer, so the
     // section is completed from the same posted market with no team claimed.
-    const perMarket = () => touchdownBets.filter((b) => b.market === MARKET_LABEL[market]).length;
+    const perMarket = () => touchdownBets.filter((b) => b.market === PROP_MARKET_LABEL[market]).length;
     while (perMarket() < 2) {
       const pick = ranked.find(
         (c) =>
