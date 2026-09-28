@@ -94,6 +94,8 @@ export type PickSource = {
   simHitRate?: number | null;
   /** Simulated hit rate minus the probability the stored price implies. */
   modelEdge?: number | null;
+  /** Expected return per unit staked at the stored price, from the simulation. */
+  expectedRoi?: number | null;
 };
 
 export type PickBet = PickSource & {
