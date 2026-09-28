@@ -1,35 +1,12 @@
-/**
- * Fun bets: one primary TD fun bet whenever a verified TD market is posted,
- * plus an optional Bonus fun bet for a +200 or longer moneyline the model
- * clearly likes. The TD bet is never replaced, and +200+ never reaches Top 2.
- */
+/** The TD Scorers section is the only fun-bet output. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runLockLabFormula } from "../analysis-engine.server";
 import type { GameOdds, GameRow, MarketOffer } from "../lock-lab-types";
+import { isTouchdownPick } from "../lock-lab-types";
 
 const capturedAt = "2026-09-20T15:00:00.000Z";
-
-function makeGame(odds: GameOdds) {
-  return {
-    id: "00000000-0000-4000-8000-000000000009",
-    sport: "NFL",
-    provider_game_id: "evt-fun",
-    home_team: "Los Angeles Rams",
-    away_team: "New York Giants",
-    home_team_short: "RAMS",
-    away_team_short: "GIANTS",
-    commence_time: "2026-09-20T17:00:00.000Z",
-    status: "scheduled",
-    home_score: null,
-    away_score: null,
-    odds,
-    injuries: [],
-    is_demo: false,
-  } satisfies GameRow;
-}
-
-const baseOdds: GameOdds = {
+const odds: GameOdds = {
   bookmaker: "DraftKings",
   bookmakerKey: "draftkings",
   capturedAt,
@@ -38,78 +15,80 @@ const baseOdds: GameOdds = {
   moneyline: { home: -160, away: 140 },
 };
 
-function prop(market: string, player: string, selection: string, point: number | null, price: number, book = "FanDuel"): MarketOffer {
+const game = {
+  id: "00000000-0000-4000-8000-000000000009",
+  sport: "NFL",
+  provider_game_id: "evt-fun",
+  home_team: "Los Angeles Rams",
+  away_team: "New York Giants",
+  home_team_short: "RAMS",
+  away_team_short: "GIANTS",
+  commence_time: "2026-09-20T17:00:00.000Z",
+  status: "scheduled",
+  home_score: null,
+  away_score: null,
+  odds,
+  injuries: [
+    { team: "Los Angeles Rams", player: "Kyren Williams", status: "active" },
+    { team: "Los Angeles Rams", player: "Puka Nacua", status: "active" },
+    { team: "New York Giants", player: "Malik Nabers", status: "active" },
+    { team: "New York Giants", player: "Tyrone Tracy", status: "active" },
+  ],
+  is_demo: false,
+} satisfies GameRow;
+
+function prop(market: string, player: string, price: number): MarketOffer {
   return {
     market,
-    selection,
+    selection: "Yes",
     player,
-    point,
+    point: null,
     price,
-    book,
-    bookKey: book.toLowerCase(),
+    book: "FanDuel",
+    bookKey: "fanduel",
     capturedAt,
-    eventId: "evt-fun",
+    eventId: game.provider_game_id,
   };
 }
 
-const TD_MARKETS = new Set(["First TD scorer", "Anytime TD", "Player TDs"]);
+afterEach(() => vi.unstubAllEnvs());
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe("fun bets", () => {
-  it("keeps a TD fun bet and adds a +200+ moneyline only as a bonus", async () => {
+describe("TD Scorers replaces Fun Bet", () => {
+  it("returns no separate Fun Bet and keeps one Anytime plus one First TD per team", async () => {
     vi.stubEnv("LOVABLE_API_KEY", "");
-    // Giants +3 on the spread but +400 on the moneyline: a long price the
-    // simulated games clearly beat.
-    const odds: GameOdds = { ...baseOdds, moneyline: { home: -500, away: 400 } };
     const props = [
-      prop("player_anytime_td", "Kyren Williams", "Yes", null, -140),
-      prop("player_1st_td", "Kyren Williams", "Yes", null, 650),
+      prop("player_anytime_td", "Kyren Williams", -115),
+      prop("player_anytime_td", "Puka Nacua", 165),
+      prop("player_anytime_td", "Malik Nabers", 145),
+      prop("player_anytime_td", "Tyrone Tracy", 185),
+      prop("player_1st_td", "Kyren Williams", 500),
+      prop("player_1st_td", "Puka Nacua", 850),
+      prop("player_1st_td", "Malik Nabers", 750),
+      prop("player_1st_td", "Tyrone Tracy", 900),
     ];
-    const result = await runLockLabFormula(makeGame(odds), odds, { alternates: [], props });
+    const result = await runLockLabFormula(game, odds, { alternates: [], props });
+    const touchdowns = result.playerProps.filter(isTouchdownPick);
 
-    expect(TD_MARKETS.has(result.funBets[0]!.market)).toBe(true);
-    expect(result.funBets[0]!.market).toBe("First TD scorer");
-    const bonus = result.funBets[1];
-    expect(bonus).toBeDefined();
-    expect(bonus!.odds).toBe("+400");
-    expect(bonus!.reason).toMatch(/Bonus fun bet/);
-    expect(result.funBets.length).toBe(2);
-    // +200 or longer never reaches the Top 2.
-    for (const pick of result.topBets) {
-      const price = Number(String(pick.odds ?? "0").replace("+", ""));
-      expect(price).toBeLessThanOrEqual(199);
+    expect(result.funBets).toEqual([]);
+    expect(touchdowns).toHaveLength(4);
+    for (const team of [game.home_team, game.away_team]) {
+      const teamPicks = touchdowns.filter((pick) => pick.team === team);
+      expect(teamPicks.map((pick) => pick.market).sort()).toEqual(["Anytime TD", "First TD scorer"]);
     }
+    expect(touchdowns.every((pick) => pick.simRuns === 100)).toBe(true);
+    expect(touchdowns.every((pick) => (pick.simHitRate ?? 1) < 0.8)).toBe(true);
   });
 
-  it("does not force a bonus moneyline without meaningful edge", async () => {
+  it("does not create a separate longshot moneyline Fun Bet", async () => {
     vi.stubEnv("LOVABLE_API_KEY", "");
-    const props = [prop("player_anytime_td", "Kyren Williams", "Yes", null, -140)];
-    const result = await runLockLabFormula(makeGame(baseOdds), baseOdds, { alternates: [], props });
-    expect(result.funBets.length).toBe(1);
-    expect(result.funBets[0]!.market).toBe("Anytime TD");
-  });
+    const longshotOdds = { ...odds, moneyline: { home: -500, away: 400 } };
+    const result = await runLockLabFormula(
+      { ...game, odds: longshotOdds },
+      longshotOdds,
+      { alternates: [], props: [] },
+    );
 
-  it("uses a posted 2+ TD rung from another sportsbook when no scorer market exists", async () => {
-    vi.stubEnv("LOVABLE_API_KEY", "");
-    const props = [
-      prop("player_tds_over", "Kyren Williams", "Over", 0.5, -140, "BetMGM"),
-      prop("player_tds_over", "Kyren Williams", "Over", 1.5, 450, "BetMGM"),
-    ];
-    const result = await runLockLabFormula(makeGame(baseOdds), baseOdds, { alternates: [], props });
-    expect(result.funBets.length).toBe(1);
-    expect(result.funBets[0]!.market).toBe("Player TDs");
-    expect(result.funBets[0]!.label).toContain("Over 1.5");
-    expect(result.funBets[0]!.odds).toBe("+450");
-    // TD rungs stay out of the player props.
-    expect(result.playerProps.some((p) => p.market === "Player TDs")).toBe(false);
-  });
-
-  it("shows no TD fun bet when no TD market is posted", async () => {
-    vi.stubEnv("LOVABLE_API_KEY", "");
-    const result = await runLockLabFormula(makeGame(baseOdds), baseOdds, { alternates: [], props: [] });
-    expect(result.funBets.every((f) => !TD_MARKETS.has(f.market))).toBe(true);
+    expect(result.funBets).toEqual([]);
+    expect(result.topBets.every((pick) => Number(String(pick.odds).replace("+", "")) <= 199)).toBe(true);
   });
 });

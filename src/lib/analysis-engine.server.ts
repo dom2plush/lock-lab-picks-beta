@@ -518,7 +518,7 @@ export function buildCandidates(
   let propCount = 0;
   const perMarket = new Map<string, number>();
   // Touchdown-scorer markets are read first so the per-game prop budget can
-  // never cut them off before the fun bet gets a look at them. The per-market
+  // never cut them off before the TD Scorers section gets a look at them. The per-market
   // budget then guarantees the yardage and reception markets are graded too,
   // instead of a long scorer list swallowing the whole board.
   const propOffers = limitPropBumps(extra.props).sort(
@@ -573,13 +573,13 @@ export function buildCandidates(
  * ONE probability source for the whole board.
  *
  * Every spread, total and moneyline price — standard or alternate, either side
- * — is graded against the same 50 simulated final scores produced from Lock
+ * — is graded against the same 100 simulated final scores produced from Lock
  * Lab's fair line. An alternate therefore cannot be "better" simply because it
  * is further from the market: its probability and the standard line's come
  * from the identical distribution, so the only thing that can separate them is
  * the price.
  *
- * Player props are graded inside those SAME 50 simulated games: each run also
+ * Player props are graded inside those SAME 100 simulated games: each run also
  * produces a stat line for every posted player, correlated with that run's
  * team score and game script, so a prop's probability is the count of runs it
  * cleared. Where a player has no usable simulated stat the posted two-way
@@ -668,18 +668,17 @@ const MIN_RECOMMENDED_PRICE = -180;
 
 /**
  * Longest price allowed in the Top 2. Those two slots are normal bets, so a
- * +200 or longer underdog price never sits there — when the model likes one it
- * is published as the fun bet instead.
+ * +200 or longer underdog price never sits there.
  */
 const MAX_TOP_PRICE = 199;
 
-/** True when a game price is long enough to belong in the fun bet, not the Top 2. */
+/** True when a game price is too long for the Top 2. */
 function isLongshotPrice(price: number): boolean {
   return price > MAX_TOP_PRICE;
 }
 
 /**
- * THE edge thresholds. Every section — Top 2, props, fun bet, fallback fills —
+ * THE edge thresholds. Every section — Top 2, props and fallback fills —
  * reads these and nothing else, so a selection can never be playable in one
  * part of the board and a pass in another.
  */
@@ -746,11 +745,11 @@ function eligibleForTop(c: Candidate): { ok: boolean; why: string } {
   }
 
   // The Top 2 are normal bets. A +200 or longer game price — usually an
-  // underdog moneyline — belongs in the fun bet, never in these two slots.
+  // underdog moneyline — is outside the normal-bet range for these two slots.
   if (c.group !== "prop" && isLongshotPrice(c.price)) {
     return {
       ok: false,
-      why: `${c.label}: pays longer than +${MAX_TOP_PRICE} — held out of the Top 2 and considered for the fun bet instead.`,
+      why: `${c.label}: pays longer than +${MAX_TOP_PRICE} — outside the Top 2 price range.`,
     };
   }
 
@@ -889,19 +888,6 @@ function propBadge(c: Candidate): Badge {
 }
 
 /**
- * The fun bet is an explicit long shot and may run at a lower threshold than
- * the Top 2, but it is still never dressed up as a strong bet: a negative-edge
- * scoring price can show as a fun play, never as green.
- */
-function funBadge(c: Candidate): Badge {
-  const g = c.grade;
-  if (!g || g.modelProb == null) return "red";
-  const edge = g.edge ?? 0;
-  if (edge >= TARGET_EDGE && g.modelProb >= 0.5) return "green";
-  return g.modelProb >= 0.1 ? "yellow" : "red";
-}
-
-/**
  * 0 First TD, 1 Anytime TD, 1.5 multi-TD (2+), 2 every non-touchdown market.
  * Anything below 2 is a touchdown market reserved for TD Scorers.
  */
@@ -913,16 +899,6 @@ function propMarketPriority(market: string): number {
       : market === "player_tds_over"
         ? 1.5
         : 2;
-}
-
-/** A multi-touchdown rung only counts as a TD fun bet at 2+ (Over 1.5 or higher). */
-function isMultiTdRung(c: Candidate): boolean {
-  return (
-    c.market === "player_tds_over" &&
-    propDirection(c) === "over" &&
-    c.point != null &&
-    c.point >= 1.5
-  );
 }
 
 type DecisionMap = Map<string, { section: CandidateAuditEntry["section"]; badge: Badge; reason: string }>;
@@ -1334,18 +1310,18 @@ function pickSource(c: Candidate) {
     bookKey: c.bookKey,
     capturedAt: c.capturedAt,
     // Ties the published pick back to the graded selection so it can be
-    // settled against the same 50 simulated games it was chosen from.
+    // settled against the same 100 simulated games it was chosen from.
     candidateKey: c.key,
   };
 }
 
 /**
- * Settles every published pick against the 50 simulated games: game picks on
- * the simulated final scores, player props and the fun bet on the player stat
+ * Settles every published pick against the 100 simulated games: game picks on
+ * the simulated final scores and player props on the player stat
  * lines drawn inside those same games. A pick with no simulated settlement is
  * left untouched and falls back to the existing price-based settlement.
  */
-/** The 50 stored simulated results for a candidate, or null when it cannot be settled. */
+/** The 100 stored simulated results for a candidate, or null when it cannot be settled. */
 function candidateOutcomes(
   c: Candidate,
   game: GameRow,
@@ -1516,7 +1492,7 @@ export function simulationStrength(
 /**
  * Simulation-first Top 2. Every eligible posted game bet (standard and
  * alternate, -180 to +199, key/side rules intact, not already used by props or
- * the fun bet) is settled against the same simulated games and ranked by
+ * TD Scorers) is settled against the same simulated games and ranked by
  * EXPECTED RETURN at its exact price. A moneyline and a spread on the same team
  * both enter this ranking, so the one with the better expected return wins the
  * slot; the percentage-point edge is still published, as a secondary read.
@@ -2153,13 +2129,13 @@ export async function runLockLabFormula(
   extra: ExtraOffers = { alternates: [], props: [] },
   previousOdds?: GameOdds | null,
 ): Promise<EngineOutput> {
-  // FAIR LINE FIRST. The baseline model and its 50 simulated games are built
+  // FAIR LINE FIRST. The baseline model and its 100 simulated games are built
   // before a single sportsbook price is shopped, so no alternate can ever set
   // the projection it is then judged against.
   const fair = await buildFairModel(game, odds);
   const projection = simulateGame(game, fair);
 
-  // Player stat lines are drawn inside those same 50 simulated games, so a
+  // Player stat lines are drawn inside those same 100 simulated games, so a
   // prop's probability is a count of simulated games, not a coin flip.
   const players = simulatePlayers(game, projection, extra.props);
   const candidates = buildCandidates(game, odds, extra, projection, players);

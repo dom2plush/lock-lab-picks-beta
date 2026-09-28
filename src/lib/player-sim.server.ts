@@ -183,7 +183,10 @@ function touchdownsFor(points: number): number {
  */
 function scorerChancePerTouchdown(gameProbability: number, expectedTouchdowns: number): number {
   const chances = Math.max(1, expectedTouchdowns);
-  return clamp(1 - Math.pow(1 - clamp(gameProbability, 0.01, 0.85), 1 / chances), 0.001, 0.85);
+  // A single listed player cannot own more than three quarters of a team's TD
+  // probability. Prices beyond that are treated as uncertainty/hold, not as a
+  // licence to create 80%+ scorer rates from a thin posted pool.
+  return clamp(1 - Math.pow(1 - clamp(gameProbability, 0.01, 0.75), 1 / chances), 0.001, 0.75);
 }
 
 
@@ -438,7 +441,7 @@ export function simulatePlayers(
 
   const limited = [...models.values()].filter((m) => m.availability < 1);
   const notes = [
-    `Player stats simulated inside the same ${runs} game scores for ${models.size} posted player${models.size === 1 ? "" : "s"}: workload calibrated to the posted line, then scaled by each simulated game's team score and game script. Prop hit rates are counts out of those ${runs} runs, not independent coin flips.`,
+    `Player stats simulated inside the same ${runs} game scores for ${models.size} posted player${models.size === 1 ? "" : "s"}: workload calibrated to the posted line, then scaled by each simulated game's team score and game script. Touchdown chances retain an unlisted-field share and allow repeat scorers. Prop hit rates are counts out of those ${runs} runs, not independent coin flips.`,
   ];
   if (limited.length) {
     notes.push(
