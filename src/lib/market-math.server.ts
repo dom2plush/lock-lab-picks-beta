@@ -361,7 +361,7 @@ export function keyNumberGate(input: {
   if (simGain == null) {
     return { ok: false, keys, simGain, why: "The simulated games could not confirm any extra covers for this number." };
   }
-  if (simGain < MIN_SIM_COVER_GAIN) {
+  if (simGain < minSimCoverGain(input.runs)) {
     return {
       ok: false,
       keys,
