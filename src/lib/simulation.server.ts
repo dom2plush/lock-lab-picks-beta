@@ -104,8 +104,25 @@ export function inputSnapshot(game: GameRow): InputSnapshot {
       .filter((injury) => MATERIAL_INJURY.test(injury.status ?? ""))
       .map((injury) => `${injury.team}|${injury.player}|${String(injury.status).toLowerCase()}`)
       .sort(),
+    publicBetting: publicBettingKey(game),
     dataset: datasetSnapshot(game),
   };
+}
+
+/** Stable text of the manually entered public split; null when nothing was entered. */
+export function publicBettingKey(game: GameRow): string | null {
+  const p = game.public_betting;
+  if (!p) return null;
+  const parts = [
+    p.spreadBetPct,
+    p.spreadMoneyPct,
+    p.mlBetPct,
+    p.mlMoneyPct,
+    p.totalBetPct,
+    p.totalMoneyPct,
+  ].map((v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : ""));
+  if (parts.every((v) => v === "")) return null;
+  return `${parts.join("|")}@${p.recordedAt ?? ""}`;
 }
 
 /** Freezes the exact odds, availability report and seed the runs were built on. */
