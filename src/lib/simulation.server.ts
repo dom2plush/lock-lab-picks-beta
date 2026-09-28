@@ -183,6 +183,7 @@ export function meaningfulInputChange(prev: InputSnapshot | null, next: InputSna
       return "moneyline moved";
   }
   if (prev.injuries.join(";") !== next.injuries.join(";")) return "material injury change";
+  if ((prev.publicBetting ?? null) !== (next.publicBetting ?? null)) return "public betting input changed";
   return null;
 }
 
