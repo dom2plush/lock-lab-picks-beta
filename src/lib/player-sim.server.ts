@@ -130,6 +130,8 @@ type PlayerMarketBaseline = {
 type PlayerModel = {
   player: string;
   team: string | null;
+  /** 0-1 workload share from the verified injury report. */
+  availability: number;
   markets: Map<string, PlayerMarketBaseline>;
 };
 
