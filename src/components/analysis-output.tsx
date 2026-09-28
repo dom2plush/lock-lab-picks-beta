@@ -177,10 +177,10 @@ export function AnalysisOutput({
         </div>
       </Section>
 
-      <Section step={2} title="Player props" subtitle="One to three model-supported props with a verified live price.">
-        {analysis.player_props.length > 0 ? (
+      <Section step={2} title="Player props" subtitle="Model-supported props with a verified live price.">
+        {standardProps.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {analysis.player_props.map((prop) => (
+            {standardProps.map((prop) => (
               <article key={prop.key} className="rounded-lg border border-hairline bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
                   <span className="eyebrow">{prop.market}</span>
