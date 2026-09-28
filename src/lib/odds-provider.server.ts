@@ -344,7 +344,8 @@ export async function fetchEventMarkets(
           if (!market?.outcomes?.length) continue;
           const fromThisBook = new Set<string>();
           for (const outcome of market.outcomes) {
-            const player = (outcome.description ?? "").trim().toLowerCase();
+            const display = (outcome.description ?? "").trim();
+            const player = playerKey(display);
             if (!player || claimed.has(player)) continue;
             fromThisBook.add(player);
             offers.push({
