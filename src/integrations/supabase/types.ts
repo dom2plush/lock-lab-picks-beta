@@ -469,6 +469,56 @@ export type Database = {
         }
         Relationships: []
       }
+      public_betting_inputs: {
+        Row: {
+          game_id: string
+          id: string
+          ml_bet_pct: number | null
+          ml_money_pct: number | null
+          recorded_at: string
+          spread_bet_pct: number | null
+          spread_money_pct: number | null
+          total_bet_pct: number | null
+          total_money_pct: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          game_id: string
+          id?: string
+          ml_bet_pct?: number | null
+          ml_money_pct?: number | null
+          recorded_at?: string
+          spread_bet_pct?: number | null
+          spread_money_pct?: number | null
+          total_bet_pct?: number | null
+          total_money_pct?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          game_id?: string
+          id?: string
+          ml_bet_pct?: number | null
+          ml_money_pct?: number | null
+          recorded_at?: string
+          spread_bet_pct?: number | null
+          spread_money_pct?: number | null
+          total_bet_pct?: number | null
+          total_money_pct?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_betting_inputs_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: true
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tails: {
         Row: {
           analysis_id: string

@@ -26,6 +26,7 @@ import type {
   MarketOffer,
   PickBet,
   PropBet,
+  PublicBetting,
 } from "./lock-lab-types";
 import type { AltEvaluation, ValueGrade } from "./market-math.server";
 import {
@@ -1010,6 +1011,14 @@ function fillPlayerProps(
     (c) => !playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel),
   );
 
+  // One prop per player whenever the board can fill every slot with a
+  // different qualified player. A player is only repeated when there are not
+  // enough distinct qualified players to reach the target count.
+  const distinctQualifiedPlayers = new Set(
+    remaining.map((c) => (c.player ?? "").toLowerCase()).filter(Boolean),
+  ).size;
+  const onePerPlayer = distinctQualifiedPlayers >= maximum;
+
   while (playerProps.length < maximum && remaining.length) {
     // Hit probability leads: the most likely remaining +EV prop defines the bar.
     const best = remaining[0]!;
@@ -1052,7 +1061,11 @@ function fillPlayerProps(
     if (idx >= 0) remaining.splice(idx, 1);
     for (let i = remaining.length - 1; i >= 0; i -= 1) {
       const c = remaining[i]!;
-      if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) {
+      const samePlayer = onePerPlayer && (c.player ?? "") === (chosen.player ?? "");
+      if (
+        samePlayer ||
+        playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)
+      ) {
         remaining.splice(i, 1);
       }
     }
@@ -1083,29 +1096,35 @@ function fillPlayerProps(
         Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)) ||
         propRankCmp(a, b),
     );
-  for (const c of floor) {
-    if (playerProps.length >= MIN_PROPS) break;
-    if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
-    const thin = (c.grade?.edge ?? 0) < MIN_EDGE;
-    const badge: Badge = thin ? "red" : propBadge(c);
-    used.add(c.key);
-    const reason =
-      reasons?.get(c.key) ??
-      (thin
-        ? "Thin edge — the strongest remaining posted prop in the 100 simulated games, shown so you can compare it; the model sees little value at this price."
-        : "The strongest remaining posted prop on this board under the model's usage and matchup read.");
-    playerProps.push({
-      key: `prop-${playerProps.length + 1}`,
-      badge,
-      label: c.label,
-      player: c.player ?? "",
-      market: c.marketLabel,
-      odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
-      ...pickSource(c),
-      reason,
-    });
-    decisions.set(c.key, { section: "prop", badge, reason });
+  // Two passes: fill with players not already on the card first, and only
+  // repeat a player if the board cannot otherwise reach the target count.
+  for (const pass of [0, 1]) {
+    for (const c of floor) {
+      if (playerProps.length >= MIN_PROPS) break;
+      if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+      if (used.has(c.key)) continue;
+      if (pass === 0 && playerProps.some((p) => p.player === (c.player ?? ""))) continue;
+      const thin = (c.grade?.edge ?? 0) < MIN_EDGE;
+      const badge: Badge = thin ? "red" : propBadge(c);
+      used.add(c.key);
+      const reason =
+        reasons?.get(c.key) ??
+        (thin
+          ? "Thin edge — the strongest remaining posted prop in the 100 simulated games, shown so you can compare it; the model sees little value at this price."
+          : "The strongest remaining posted prop on this board under the model's usage and matchup read.");
+      playerProps.push({
+        key: `prop-${playerProps.length + 1}`,
+        badge,
+        label: c.label,
+        player: c.player ?? "",
+        market: c.marketLabel,
+        odds: fmtOdds(c.price),
+        estimatedProbability: c.grade?.modelProb ?? null,
+        ...pickSource(c),
+        reason,
+      });
+      decisions.set(c.key, { section: "prop", badge, reason });
+    }
   }
 }
 
@@ -1570,9 +1589,11 @@ export function sportsbookSideSignal(
   c: Pick<Candidate, "key" | "standardKey" | "group">,
   odds: GameOdds | null | undefined,
   previous: GameOdds | null | undefined,
+  publicBetting?: PublicBetting | null,
 ): number {
-  if (!odds) return 0;
   const side = c.group === "alt" ? c.standardKey : c.key;
+  const publicSignal = publicSideSignal(side, publicBetting);
+  if (!odds) return publicSignal ?? 0;
   let juice = 0;
   let move = 0;
   const diff = (own: number | undefined, opp: number | undefined) => {
@@ -1607,9 +1628,59 @@ export function sportsbookSideSignal(
       break;
     }
     default:
-      return 0;
+      return publicSignal ?? 0;
   }
-  return 0.6 * juice + 0.4 * move;
+  const fromOdds = 0.6 * juice + 0.4 * move;
+  // Manually entered public splits, when present, carry equal weight with the
+  // odds-derived read. Blank inputs are ignored entirely.
+  return publicSignal == null ? fromOdds : 0.5 * fromOdds + 0.5 * publicSignal;
+}
+
+/**
+ * Book-favourable read from a manually entered public-betting split. Heavy
+ * public tickets and money on a side means the book benefits when the OTHER
+ * side wins, so this side's signal goes negative. Returns null when the
+ * relevant figures are blank — nothing is ever inferred.
+ */
+export function publicSideSignal(
+  side: string | null | undefined,
+  p: PublicBetting | null | undefined,
+): number | null {
+  if (!p || !side) return null;
+  const num = (v: number | null | undefined) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? v : null;
+  let bet: number | null = null;
+  let money: number | null = null;
+  let homeOrOver = true;
+  switch (side) {
+    case "spread-home":
+    case "spread-away":
+      bet = num(p.spreadBetPct);
+      money = num(p.spreadMoneyPct);
+      homeOrOver = side === "spread-home";
+      break;
+    case "ml-home":
+    case "ml-away":
+      bet = num(p.mlBetPct);
+      money = num(p.mlMoneyPct);
+      homeOrOver = side === "ml-home";
+      break;
+    case "total-over":
+    case "total-under":
+      bet = num(p.totalBetPct);
+      money = num(p.totalMoneyPct);
+      homeOrOver = side === "total-over";
+      break;
+    default:
+      return null;
+  }
+  const parts = [bet, money].filter((v): v is number => v != null);
+  if (!parts.length) return null;
+  // Entered figures describe the home side / the over.
+  const ownShare = parts.reduce((a, b) => a + b, 0) / parts.length;
+  const share = homeOrOver ? ownShare : 100 - ownShare;
+  // 75% public backing on this side ⇒ full -1 (book wants the other outcome).
+  return clip1(-(share - 50) / 25);
 }
 
 /**
@@ -1662,7 +1733,7 @@ function simulationFirstTop2(
   // when two bets are genuinely close does the sportsbook-favourable signal
   // (juice shading + line movement) decide the order.
   scored.sort((a, b) => b.score - a.score);
-  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds);
+  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds, game.public_betting ?? null);
   for (let pass = 0; pass < scored.length; pass += 1) {
     for (let i = 0; i + 1 < scored.length; i += 1) {
       const a = scored[i]!;

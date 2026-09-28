@@ -11,7 +11,7 @@ export const SIMULATION_ENGINE_VERSION = "sim-v33";
  * do not. It forces saved cards to rebuild without touching the seed, which
  * stays tied to SIMULATION_ENGINE_VERSION only.
  */
-export const CARD_SELECTION_VERSION = "cards-v5";
+export const CARD_SELECTION_VERSION = "cards-v6";
 /** Version stamped on stored batches; a mismatch triggers one rebuild. */
 export const STORED_BATCH_VERSION = `${SIMULATION_ENGINE_VERSION}+${CARD_SELECTION_VERSION}`;
 export const SIMULATION_RUNS = 100;
@@ -57,6 +57,8 @@ export type InputSnapshot = {
   moneyline: { home: number; away: number } | null;
   /** Material injury entries only: "team|player|status". */
   injuries: string[];
+  /** Manually entered public-betting split, when one was supplied. */
+  publicBetting?: string | null;
   /**
    * The exact dataset the batch was computed from, frozen alongside it: the
    * full sportsbook snapshot, the complete availability report and the seed
@@ -102,8 +104,25 @@ export function inputSnapshot(game: GameRow): InputSnapshot {
       .filter((injury) => MATERIAL_INJURY.test(injury.status ?? ""))
       .map((injury) => `${injury.team}|${injury.player}|${String(injury.status).toLowerCase()}`)
       .sort(),
+    publicBetting: publicBettingKey(game),
     dataset: datasetSnapshot(game),
   };
+}
+
+/** Stable text of the manually entered public split; null when nothing was entered. */
+export function publicBettingKey(game: GameRow): string | null {
+  const p = game.public_betting;
+  if (!p) return null;
+  const parts = [
+    p.spreadBetPct,
+    p.spreadMoneyPct,
+    p.mlBetPct,
+    p.mlMoneyPct,
+    p.totalBetPct,
+    p.totalMoneyPct,
+  ].map((v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : ""));
+  if (parts.every((v) => v === "")) return null;
+  return `${parts.join("|")}@${p.recordedAt ?? ""}`;
 }
 
 /** Freezes the exact odds, availability report and seed the runs were built on. */
@@ -164,6 +183,7 @@ export function meaningfulInputChange(prev: InputSnapshot | null, next: InputSna
       return "moneyline moved";
   }
   if (prev.injuries.join(";") !== next.injuries.join(";")) return "material injury change";
+  if ((prev.publicBetting ?? null) !== (next.publicBetting ?? null)) return "public betting input changed";
   return null;
 }
 

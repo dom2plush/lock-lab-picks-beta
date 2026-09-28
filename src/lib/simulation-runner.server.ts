@@ -181,7 +181,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
 
   const describe = <P extends { key: string; odds?: string | null; reason: string; badge?: string }>(
     pick: P,
-    { fun = false, top = false }: { fun?: boolean; top?: boolean } = {},
+    { fun = false }: { fun?: boolean; top?: boolean } = {},
   ): P => {
     const simulated = byKey.get(pick.key);
     if (!simulated) return pick;
@@ -217,15 +217,13 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
         `${edge >= 0 ? "+" : ""}${(edge * 100).toFixed(1)}% edge`,
       );
     }
-    // Honest labelling: a non-positive edge is never described as value. A Top
-    // 2 slot that had to be filled without a positive edge says so outright.
+    // Honest labelling: a non-positive edge is never described as value. Top 2
+    // bets are ranked on simulated frequency, so no slot is called a fallback.
     const valueNote =
       edge == null
         ? ""
         : edge <= 0
-          ? top
-            ? " Fallback — No Positive Edge. This slot was filled to complete the Top 2; the board offers no positive value at this price."
-            : " No positive value at this price — weak board, lowest-confidence play."
+          ? " No positive value at this price — the simulation ranks it here on how often it wins, not on price value."
           : edge < 0.01
             ? " Thin edge — weak value."
             : "";
@@ -365,7 +363,8 @@ export async function precomputeUpcoming(
 
   for (const game of games) {
     try {
-      const batch = await ensureSimulationBatch(game);
+      const { attachPublicBetting } = await import("./public-betting.server");
+      const batch = await ensureSimulationBatch(await attachPublicBetting(game));
       if (!batch) continue;
       if (batch.fromCache) report.cached += 1;
       else report.generated += 1;
