@@ -109,15 +109,17 @@ export const getOrCreateAnalysis = createServerFn({ method: "POST" })
     // when none exists yet or when a meaningful input (line, injury, QB) moved,
     // so clicking Analyze does not spend a new run.
     const { verifiedExtras } = await import("./analysis-runner.server");
-    const { ensureSimulationBatch } = await import("./simulation-runner.server");
+    const { ensureSimulationBatch, withDisplayBadges } = await import("./simulation-runner.server");
     const { attachPublicBetting } = await import("./public-betting.server");
     // Manually entered public-betting splits, when present, join the inputs.
     game = await attachPublicBetting(game);
     const extra = verifiedExtras(game);
     const batch = await ensureSimulationBatch(game);
+    const shown = batch?.analysis ?? stored;
     return {
       status,
-      analysis: batch?.analysis ?? stored,
+      // The displayed Top 2 badge is always the result of applySplitBadge.
+      analysis: shown ? withDisplayBadges(shown, game, shown.odds_snapshot ?? null) : shown,
       message: null,
       propsVerified: extra.props.length > 0,
     };

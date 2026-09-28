@@ -356,7 +356,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
 
   const topBets = (analysis.top_bets ?? [])
     .map((bet) => describe(bet, { top: true }))
-    .map((bet) => applySplitBadge(bet, market))
+    .map((bet) => applySplitBadge({ ...bet, sideKey: resolveSideKey(bet as never, market?.teams ?? {}) }, market))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   // Touchdown picks keep their own keys so the stored card, the tail record and
   // the touchdown section always refer to the same bet.
