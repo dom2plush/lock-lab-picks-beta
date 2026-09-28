@@ -1096,9 +1096,14 @@ function fillPlayerProps(
         Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)) ||
         propRankCmp(a, b),
     );
-  for (const c of floor) {
-    if (playerProps.length >= MIN_PROPS) break;
-    if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+  // Two passes: fill with players not already on the card first, and only
+  // repeat a player if the board cannot otherwise reach the target count.
+  for (const pass of [0, 1]) {
+    for (const c of floor) {
+      if (playerProps.length >= MIN_PROPS) break;
+      if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
+      if (used.has(c.key)) continue;
+      if (pass === 0 && playerProps.some((p) => p.player === (c.player ?? ""))) continue;
     const thin = (c.grade?.edge ?? 0) < MIN_EDGE;
     const badge: Badge = thin ? "red" : propBadge(c);
     used.add(c.key);
