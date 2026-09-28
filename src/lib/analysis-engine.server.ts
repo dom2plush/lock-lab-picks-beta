@@ -1061,7 +1061,11 @@ function fillPlayerProps(
     if (idx >= 0) remaining.splice(idx, 1);
     for (let i = remaining.length - 1; i >= 0; i -= 1) {
       const c = remaining[i]!;
-      if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) {
+      const samePlayer = onePerPlayer && (c.player ?? "") === (chosen.player ?? "");
+      if (
+        samePlayer ||
+        playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)
+      ) {
         remaining.splice(i, 1);
       }
     }
