@@ -146,6 +146,8 @@ type Candidate = {
   note: string;
   /** Standard-vs-alternate grade, present only on alternate spread/total lines. */
   alt?: AltEvaluation;
+  /** Probability read straight from the 100 simulated games, when available. */
+  simProb?: number;
   /** Key of the standard-market candidate this alternate is measured against. */
   standardKey?: string;
   /** Probability vs price: estimated chance, implied chance, edge, EV, noise band. */
@@ -636,6 +638,7 @@ function gradeBoard(
 
     if (fromSim != null) {
       modelProb = fromSim;
+      c.simProb = fromSim;
       evidence = simEvidence;
       if (c.alt) distance = Math.abs(c.alt.point - c.alt.standardPoint);
     } else if (c.group === "core") {
@@ -1116,6 +1119,12 @@ function propTeam(game: GameRow, player: string | undefined): string | null {
  * for, the pick is still posted from the real market and says so, rather than
  * guessing at a roster.
  */
+/** First TD cards state only the simulated count — no price, edge or status read. */
+export function firstTdReason(wins: number, runs: number): string {
+  const pct = runs > 0 ? Math.round((wins / runs) * 1000) / 10 : 0;
+  return `Scored the game's first touchdown in ${wins}/${runs} simulated games (${pct}%) — the most of any posted scorer on his team.`;
+}
+
 function fillTouchdownBets(
   game: GameRow,
   candidates: Candidate[],
@@ -1133,14 +1142,26 @@ function fillTouchdownBets(
   );
   if (!pool.length) return;
 
-  const ranked = [...pool].sort((a, b) => candidateRank(b) - candidateRank(a));
+  // First TD scorers are chosen purely by how often the player scored the
+  // game's first touchdown in the 100 simulated games — price never selects.
+  const firstTdCount = (c: Candidate) => c.simProb ?? -1;
+  const ranked = [...pool]
+    .filter((c) => c.market !== "player_1st_td" || c.simProb != null)
+    .sort((a, b) =>
+      a.market === "player_1st_td" && b.market === "player_1st_td"
+        ? firstTdCount(b) - firstTdCount(a)
+        : candidateRank(b) - candidateRank(a),
+    );
   const takenPlayers = new Set<string>();
 
   const take = (c: Candidate, team: string | null) => {
+    const first = c.market === "player_1st_td";
     const badge = propBadge(c);
     used.add(c.key);
     takenPlayers.add(`${c.player ?? ""}|${c.market}`);
-    const reason = team
+    const reason = first
+      ? firstTdReason(Math.round((c.simProb ?? 0) * 100), 100)
+      : team
       ? `${team} touchdown pick: the strongest posted price for this scorer market under the simulated scoring runs.`
       : "The strongest posted price in this scorer market under the simulated scoring runs. The feed does not name this player's team, so no team is claimed.";
     touchdownBets.push({

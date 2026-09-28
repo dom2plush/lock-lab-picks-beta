@@ -229,7 +229,7 @@ export function AnalysisOutput({
                     {pick.team ? `${pick.team} · ` : ""}
                     {pick.market}
                   </span>
-                  <BadgePill badge={pick.badge} />
+                  {pick.market !== "First TD scorer" && <BadgePill badge={pick.badge} />}
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{pick.label}</p>
                 <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
