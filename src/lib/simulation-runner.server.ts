@@ -178,7 +178,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
 
   const describe = <P extends { key: string; odds?: string | null; reason: string; badge?: string }>(
     pick: P,
-    { fun = false }: { fun?: boolean } = {},
+    { fun = false, top = false }: { fun?: boolean; top?: boolean } = {},
   ): P => {
     const simulated = byKey.get(pick.key);
     if (!simulated) return pick;
@@ -193,9 +193,18 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
         `${edge >= 0 ? "+" : ""}${(edge * 100).toFixed(1)}% edge`,
       );
     }
-    // Honest labelling: a non-positive edge is never described as value.
+    // Honest labelling: a non-positive edge is never described as value. A Top
+    // 2 slot that had to be filled without a positive edge says so outright.
     const valueNote =
-      edge == null ? "" : edge <= 0 ? " No positive value at this price — weak board, lowest-confidence play." : edge < 0.01 ? " Thin edge — weak value." : "";
+      edge == null
+        ? ""
+        : edge <= 0
+          ? top
+            ? " Fallback — No Positive Edge. This slot was filled to complete the Top 2; the board offers no positive value at this price."
+            : " No positive value at this price — weak board, lowest-confidence play."
+          : edge < 0.01
+            ? " Thin edge — weak value."
+            : "";
     // The fun bet is a long shot by design, so it is never promoted to green
     // on a thin edge, but it is not marked red for being a long shot either.
     const badge = fun
@@ -213,7 +222,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
   };
 
   const topBets = (analysis.top_bets ?? [])
-    .map((bet) => describe(bet))
+    .map((bet) => describe(bet, { top: true }))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   const props = (analysis.player_props ?? [])
     .map((prop) => describe(prop))
