@@ -26,6 +26,7 @@ import type {
   MarketOffer,
   PickBet,
   PropBet,
+  PublicBetting,
 } from "./lock-lab-types";
 import type { AltEvaluation, ValueGrade } from "./market-math.server";
 import {
