@@ -181,7 +181,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
 
   const describe = <P extends { key: string; odds?: string | null; reason: string; badge?: string }>(
     pick: P,
-    { fun = false, top = false }: { fun?: boolean; top?: boolean } = {},
+    { fun = false }: { fun?: boolean; top?: boolean } = {},
   ): P => {
     const simulated = byKey.get(pick.key);
     if (!simulated) return pick;
