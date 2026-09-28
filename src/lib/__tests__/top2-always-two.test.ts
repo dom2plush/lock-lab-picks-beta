@@ -41,7 +41,8 @@ describe("Top 2 always has two bets, ordered and labelled honestly", () => {
     expect(out.top_bets[1]!.modelEdge).toBe(e2);
     expect(out.top_bets[1]!.reason).toContain(`${(e2 * 100).toFixed(1)}% edge`);
     expect(out.top_bets[1]!.badge).toBe("red");
-    expect(out.top_bets[1]!.reason).toMatch(/No positive value/);
+    expect(out.top_bets[1]!.reason).toMatch(/Fallback — No Positive Edge/);
+    expect(out.top_bets[1]!.reason).toMatch(/no positive value/i);
     expect(out.top_bets[1]!.reason).not.toMatch(/strong value/);
   });
 });
