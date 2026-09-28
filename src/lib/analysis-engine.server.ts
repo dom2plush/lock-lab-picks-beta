@@ -636,6 +636,7 @@ function gradeBoard(
 
     if (fromSim != null) {
       modelProb = fromSim;
+      c.simProb = fromSim;
       evidence = simEvidence;
       if (c.alt) distance = Math.abs(c.alt.point - c.alt.standardPoint);
     } else if (c.group === "core") {
