@@ -272,7 +272,13 @@ export function simulatePlayers(
           : PASS_SCRIPT_MARKETS.has(market)
             ? passFactor
             : 1;
-        const mean = line * scoreFactor * script;
+        // Verified availability scales the workload: a player ruled out scores
+        // nothing in any simulated game, a doubtful one plays limited snaps.
+        const mean = line * scoreFactor * script * model.availability;
+        if (model.availability <= 0) {
+          value.set(market, 0);
+          continue;
+        }
         if (COUNT_MARKETS.has(market)) {
           const lambda = market === "player_pass_tds" ? mean + 0.15 : mean + 0.1;
           value.set(market, poisson(lambda, u));
