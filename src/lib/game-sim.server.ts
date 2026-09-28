@@ -295,8 +295,8 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
     }
     const analytic =
       side === "Over"
-        ? normalCdf((fairTotal - point) / totalSigma)
-        : normalCdf((point - fairTotal) / totalSigma);
+        ? normalCdf((fairTotal - point) / effTotalSigma)
+        : normalCdf((point - fairTotal) / effTotalSigma);
     return shrink(hits, decided, analytic);
   }
 
