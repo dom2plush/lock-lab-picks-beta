@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { AnalysisOutput } from "@/components/analysis-output";
 import { GameCard } from "@/components/game-card";
+import { PublicBettingPanel } from "@/components/public-betting-panel";
 import { TailDialog, type TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
