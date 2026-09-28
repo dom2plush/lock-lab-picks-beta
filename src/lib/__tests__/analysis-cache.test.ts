@@ -146,7 +146,7 @@ function deps(store: SimulationStore, compute: BatchDeps["compute"]): Partial<Ba
   return { store, compute, refresh: null, sleep: async () => {}, now: () => Date.now() };
 }
 
-describe("precomputed 50-run analysis cache", () => {
+describe("precomputed 100-run analysis cache", () => {
   it("repeat Analyze clicks and a second user get the exact same stored card without a new batch", async () => {
     const { store, batches } = memoryStore();
     const { compute, calls } = countingCompute();
@@ -169,13 +169,13 @@ describe("precomputed 50-run analysis cache", () => {
     }
   });
 
-  it("stores exactly 50 simulation outcomes and the pick's hit rate and edge", async () => {
+  it("stores exactly 100 simulation outcomes and the pick's hit rate and edge", async () => {
     const { store, batches } = memoryStore();
     const { compute } = countingCompute();
     const res = await ensureSimulationBatch(makeGame(), {}, deps(store, compute));
     expect(batches[0]!.runs).toBe(SIMULATION_RUNS);
-    expect(SIMULATION_RUNS).toBe(50);
-    expect(batches[0]!.simulations).toHaveLength(50);
+    expect(SIMULATION_RUNS).toBe(100);
+    expect(batches[0]!.simulations).toHaveLength(SIMULATION_RUNS);
     expect(batches[0]!.engine_version).toBe(SIMULATION_ENGINE_VERSION);
     const pick = res!.analysis.top_bets[0]!;
     expect(pick.simHitRate).toBe(0.6);
@@ -212,7 +212,7 @@ describe("precomputed 50-run analysis cache", () => {
     expect(logged!.analysis.top_bets[0]!.price).toBe(-115);
   });
 
-  it("a meaningful market, injury or engine change creates a new 50-run batch and keeps the old one intact", async () => {
+  it("a meaningful market, injury or engine change creates a new 100-run batch and keeps the old one intact", async () => {
     const { store, batches } = memoryStore();
     const { compute, calls } = countingCompute();
     await ensureSimulationBatch(makeGame(), {}, deps(store, compute));
@@ -226,7 +226,7 @@ describe("precomputed 50-run analysis cache", () => {
     expect(lineMove!.fromCache).toBe(false);
     expect(lineMove!.analysis.top_bets[0]!.label).toBe("PACKE -7.5 (-115)");
     expect(batches.filter((b) => b.is_current)).toHaveLength(1);
-    expect(batches[1]!.simulations).toHaveLength(50);
+    expect(batches[1]!.simulations).toHaveLength(SIMULATION_RUNS);
 
     const injured = await ensureSimulationBatch(
       makeGame({ home: -7.5, injuries: [{ team: "Green Bay Packers", player: "Jordan Love", status: "Out" }] }),

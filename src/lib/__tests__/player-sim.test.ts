@@ -1,5 +1,5 @@
 /**
- * Player props are settled inside the same 50 simulated games as the game
+ * Player props are settled inside the same 100 simulated games as the game
  * picks: every published prop carries 50 real outcomes, never a coin flip.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -75,12 +75,12 @@ afterEach(() => {
 });
 
 describe("player props come out of the 50 simulated games", () => {
-  it("produces exactly 50 outcomes per prop, consistent with the score model", async () => {
+  it("produces exactly 100 outcomes per prop, consistent with the score model", async () => {
     const fair = await buildFairModel(game, odds);
     const projection = simulateGame(game, fair);
     const players = simulatePlayers(game, projection, props);
 
-    expect(players.runs).toBe(50);
+    expect(players.runs).toBe(100);
     const over = players.outcomes({
       market: "player_pass_yds",
       player: "Jaxson Dart",
@@ -93,8 +93,8 @@ describe("player props come out of the 50 simulated games", () => {
       selection: "Under",
       point: 225.5,
     });
-    expect(over).toHaveLength(50);
-    expect(under).toHaveLength(50);
+    expect(over).toHaveLength(100);
+    expect(under).toHaveLength(100);
     // Same simulated stat line: a player cannot go over and under in one game.
     over!.forEach((won, index) => expect(won).toBe(!under![index]));
 
@@ -124,7 +124,7 @@ describe("player props come out of the 50 simulated games", () => {
     ).toBeNull();
   });
 
-  it("publishes props settled against those same 50 runs", async () => {
+  it("publishes props settled against those same 100 runs", async () => {
     vi.stubEnv("LOVABLE_API_KEY", "");
     const result = await runLockLabFormula(game, odds, { alternates: [], props });
 
@@ -133,12 +133,12 @@ describe("player props come out of the 50 simulated games", () => {
     const players = result.playerProps.map((p) => `${p.player}|${p.market}`);
     expect(new Set(players).size).toBe(players.length);
     for (const pick of [...result.playerProps, ...result.funBets]) {
-      expect(pick.simRuns).toBe(50);
+      expect(pick.simRuns).toBe(100);
       expect(Array.isArray(pick.simHits)).toBe(true);
-      expect(pick.simHits!.every((run) => run >= 1 && run <= 50)).toBe(true);
+      expect(pick.simHits!.every((run) => run >= 1 && run <= 100)).toBe(true);
     }
     for (const pick of result.topBets) {
-      expect(pick.simRuns).toBe(50);
+      expect(pick.simRuns).toBe(100);
     }
   });
 });
