@@ -13,8 +13,8 @@ import {
   verifiedExtras,
   type AnalysisFields,
 } from "./analysis-runner.server";
-import { firstTdReason } from "./analysis-engine.server";
-import type { AnalysisRow, GameRow } from "./lock-lab-types";
+import { firstTdReason, publicSideSignal, sportsbookSideSignal } from "./analysis-engine.server";
+import type { AnalysisRow, GameOdds, GameRow, PublicBetting } from "./lock-lab-types";
 import {
   SIMULATION_ENGINE_VERSION,
   STORED_BATCH_VERSION,
