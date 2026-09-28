@@ -36,6 +36,13 @@
       "when": 1790137911708,
       "tag": "0004_immutable_simulation_batches",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790624750273,
+      "tag": "0005_create_public_betting_inputs",
+      "breakpoints": true
     }
   ]
 }
