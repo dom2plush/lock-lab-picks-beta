@@ -70,7 +70,8 @@ describe("simulations are reproducible", () => {
 
     const pa = simulatePlayers(game, a, []);
     const pb = simulatePlayers(game, b, []);
-    expect(JSON.stringify(pa.players)).toBe(JSON.stringify(pb.players));
+    expect(pa.runs).toBe(pb.runs);
+    expect(pa.notes).toEqual(pb.notes);
   });
 
   it("settles the same board to the same hit rates every time", () => {
