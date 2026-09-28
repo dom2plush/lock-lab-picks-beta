@@ -5,7 +5,7 @@
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v32";
+export const SIMULATION_ENGINE_VERSION = "sim-v33";
 export const SIMULATION_RUNS = 100;
 
 /** Rounds a price so tiny juice wiggles do not invalidate a stored batch. */

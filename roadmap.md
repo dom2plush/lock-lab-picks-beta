@@ -50,3 +50,5 @@
 - Simulation diagnostics (avg/median scores and totals, variance, std dev, ranges, ML win counts, total distribution bands) stored on the projection for audit.
 - Player props/TD markets matched across books by a normalized player identifier (accents, punctuation, suffixes) under the provider event id.
 - TD Scorers now serves as the fun-bet section; the separate Fun Bet output is empty. TDs are allocated within the same 100 games with an unlisted-field share and repeat-scorer support, preventing a small posted pool from absorbing every score.
+
+- [x] Colts @ Commanders (and any game): touchdown-scorer picks priced at a non-snapshot sportsbook are no longer dropped by the audit (sim-v33)

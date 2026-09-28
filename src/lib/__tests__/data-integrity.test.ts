@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GameRow, MarketOffer } from "../lock-lab-types";
+import { enforceAuditIntegrity } from "../odds-audit";
 import { verifyAlternateOffers, verifyPropOffers } from "../prop-integrity";
 
 const game = {
@@ -125,5 +126,69 @@ describe("pregame gate", () => {
   it("locks picks for a live or final game regardless of clock", () => {
     expect(isPregame({ ...game, status: "live" }, kickoff - 60_000)).toBe(false);
     expect(isPregame({ ...game, status: "final" }, kickoff - 60_000)).toBe(false);
+  });
+});
+
+describe("audit keeps touchdown-scorer picks from other sportsbooks", () => {
+  const snapshot = game.odds;
+
+  it("does not drop an Anytime TD pick priced at another book", () => {
+    const result = enforceAuditIntegrity(
+      {
+        odds_snapshot: snapshot,
+        top_bets: [],
+        bad_bet: null,
+        fun_bets: [],
+        player_props: [
+          {
+            key: "td-1",
+            badge: "green",
+            label: "Zay Flowers Anytime TD (+150)",
+            player: "Zay Flowers",
+            market: "Anytime TD",
+            odds: "+150",
+            price: 150,
+            point: null,
+            book: "Fanatics",
+            bookKey: "fanatics",
+            capturedAt: "2026-09-20T15:04:00.000Z",
+            estimatedProbability: 0.44,
+          },
+        ] as never,
+      },
+      snapshot,
+    );
+    expect(result.dropped).toHaveLength(0);
+    expect(result.output.player_props).toHaveLength(1);
+  });
+
+  it("still drops a moneyline priced at a book the page is not showing", () => {
+    const result = enforceAuditIntegrity(
+      {
+        odds_snapshot: snapshot,
+        top_bets: [
+          {
+            key: "top1",
+            rank: 1,
+            badge: "green",
+            label: "Chiefs ML (-120)",
+            market: "Moneyline",
+            line: null,
+            odds: "-120",
+            price: -120,
+            point: null,
+            book: "Fanatics",
+            bookKey: "fanatics",
+            capturedAt: "2026-09-20T15:00:00.000Z",
+          },
+        ] as never,
+        bad_bet: null,
+        fun_bets: [],
+        player_props: [],
+      },
+      snapshot,
+    );
+    expect(result.dropped).toHaveLength(1);
+    expect(result.output.top_bets).toHaveLength(0);
   });
 });
