@@ -32,4 +32,18 @@ describe("split badge", () => {
     // Mild opposite action (below the heavy threshold) still stops at red.
     expect(applySplitBadge(base, { publicBetting: { spreadBetPct: 40, spreadMoneyPct: 40 }, odds, previousOdds: null }).badge).toBe("red");
   });
+  it("Bears +3.5: thin edge, heavy opposite splits, favourable book read → green", () => {
+    // 52% simulated vs ~52.4% implied at -110: model edge -0.0038 (thin, no EV gate).
+    // 29/29 home splits ⇒ 71% opposite public share; the odds fixture reads
+    // book-favourable for the home side.
+    const bears = {
+      badge: "red",
+      reason: "r.",
+      modelEdge: -0.0038,
+      sideKey: "spread-home",
+      odds: "-110",
+    };
+    const splits = { spreadBetPct: 29, spreadMoneyPct: 29 };
+    expect(applySplitBadge(bears, { publicBetting: splits, odds, previousOdds: null }).badge).toBe("green");
+  });
 });
