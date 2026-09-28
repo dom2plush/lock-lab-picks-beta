@@ -1733,7 +1733,8 @@ function simulationFirstTop2(
   // when two bets are genuinely close does the sportsbook-favourable signal
   // (juice shading + line movement) decide the order.
   scored.sort((a, b) => b.score - a.score);
-  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds, game.public_betting ?? null);
+  // Public splits never influence Top 2 selection; they only adjust the badge afterwards.
+  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds, null);
   for (let pass = 0; pass < scored.length; pass += 1) {
     for (let i = 0; i + 1 < scored.length; i += 1) {
       const a = scored[i]!;
@@ -2821,6 +2822,8 @@ export async function runLockLabFormula(
       odds: fmtOdds(c.price),
       ...pickSource(c),
       ...standardFields,
+      // Standard-market side (home/away/over/under) for the badge-only split read.
+      sideKey: (c.group === "alt" ? c.standardKey : c.key) ?? null,
       reason: clean(
         entry.reason,
         c.grade?.modelProb != null && c.grade.edge != null && c.grade.edge > 0
