@@ -2209,17 +2209,24 @@ export async function runLockLabFormula(
       leadIndex > 0
         ? [distinct[leadIndex]!, ...distinct.filter((_, i) => i !== leadIndex)]
         : distinct
-    ).map((c, index) =>
-      index < 2
-        ? requireSimulatedAltValue(
-            enforceAltSpreadSide(preferKeyNumberSpread(c, candidates), byKey),
-            byKey,
-            game,
-            projection,
-            players,
-          )
-        : c,
-    );
+    ).map((c, index) => {
+      if (index >= 2) return c;
+      const picked = requireSimulatedAltValue(
+        enforceAltSpreadSide(preferKeyNumberSpread(c, candidates), byKey),
+        byKey,
+        game,
+        projection,
+        players,
+      );
+      // A plus-money alternate with only a thin edge is not worth giving up the
+      // standard number: post the standard line instead (e.g. Over 41.5 -110
+      // rather than Over 43.5 +109 flagged "too close").
+      if (picked.alt && picked.price >= 100 && !eligibleForTop(picked).ok && picked.standardKey) {
+        const standard = byKey.get(picked.standardKey);
+        if (standard && standard.grade?.modelProb != null) return standard;
+      }
+      return picked;
+    });
     const topBets = ranked.slice(0, 2).map((c, index): PickBet => {
       const standard = c.standardKey ? byKey.get(c.standardKey) : undefined;
       const eligible = eligibleForTop(c).ok;
