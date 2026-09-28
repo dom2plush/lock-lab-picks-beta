@@ -74,11 +74,26 @@ export function parseFeed(json: { games?: FeedGame[] }): FeedSplit[] {
   return out;
 }
 
-export async function fetchSplits(sport: Sport): Promise<FeedSplit[]> {
-  const url = `https://api.actionnetwork.com/web/v2/scoreboard/${LEAGUE[sport]}?bookIds=15,30,68,69,71&periods=event`;
+async function fetchFeed(sport: Sport, extra = ""): Promise<{ games?: (FeedGame & { week?: number; season?: number })[] }> {
+  const url = `https://api.actionnetwork.com/web/v2/scoreboard/${LEAGUE[sport]}?bookIds=15,30,68,69,71&periods=event${extra}`;
   const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } });
   if (!res.ok) throw new Error(`splits feed ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return parseFeed(await res.json());
+  return res.json();
+}
+
+/** Current week plus the next one, so upcoming games get splits as soon as they open. */
+export async function fetchSplits(sport: Sport): Promise<FeedSplit[]> {
+  const current = await fetchFeed(sport);
+  const first = current.games?.[0];
+  const out = parseFeed(current);
+  if (first?.week && first.season) {
+    try {
+      out.push(...parseFeed(await fetchFeed(sport, `&week=${first.week + 1}&season=${first.season}`)));
+    } catch {
+      // Next week is optional.
+    }
+  }
+  return out;
 }
 
 export function matchSplit(game: Pick<GameRow, "home_team" | "away_team" | "commence_time">, splits: FeedSplit[]) {
