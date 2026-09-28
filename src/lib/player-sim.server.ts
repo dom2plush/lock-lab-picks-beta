@@ -199,7 +199,12 @@ export function simulatePlayers(
       yesPrices.set(id, [...(yesPrices.get(id) ?? []), offer.price]);
     }
     if (!models.has(player)) {
-      models.set(player, { player, team: teamOf(game, player), markets: new Map() });
+      models.set(player, {
+        player,
+        team: teamOf(game, player),
+        availability: availabilityFactor(game, player),
+        markets: new Map(),
+      });
     }
     models.get(player)!.markets.set(offer.market, { line: null, yesProbability: null });
   }
