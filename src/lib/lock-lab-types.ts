@@ -51,6 +51,36 @@ export type Injury = {
   note?: string;
 };
 
+/**
+ * Manually entered public-betting split for one game. Every field is optional:
+ * a blank field is ignored entirely and never inferred. Percentages describe
+ * the HOME side (spread, moneyline) and the OVER (total).
+ */
+export type PublicBetting = {
+  spreadBetPct?: number | null;
+  spreadMoneyPct?: number | null;
+  mlBetPct?: number | null;
+  mlMoneyPct?: number | null;
+  totalBetPct?: number | null;
+  totalMoneyPct?: number | null;
+  /** When the entered split was observed. */
+  recordedAt?: string | null;
+  updatedAt?: string | null;
+};
+
+/** True when at least one public-betting figure was actually entered. */
+export function hasPublicBetting(p: PublicBetting | null | undefined): boolean {
+  if (!p) return false;
+  return [
+    p.spreadBetPct,
+    p.spreadMoneyPct,
+    p.mlBetPct,
+    p.mlMoneyPct,
+    p.totalBetPct,
+    p.totalMoneyPct,
+  ].some((v) => typeof v === "number" && Number.isFinite(v));
+}
+
 export type GameRow = {
   id: string;
   sport: Sport;
