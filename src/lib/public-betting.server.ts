@@ -1,5 +1,5 @@
 /**
- * Manually entered public-betting splits.
+ * Automatically retrieved public-betting splits (Action Network feed).
  *
  * Nothing here is ever inferred: a game with no stored row, or a row whose
  * fields are all blank, carries no public-betting input and the model ignores

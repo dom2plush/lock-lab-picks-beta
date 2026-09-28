@@ -42,6 +42,7 @@ export type SyncReport = {
   demoGamesRetired: number;
   analysesGraded: number;
   tailsGraded: number;
+  splitsUpdated: number;
   errors: string[];
 };
 
@@ -90,7 +91,8 @@ export async function refreshGameOdds(game: GameRow): Promise<GameRow | null> {
       updated_at: new Date().toISOString(),
     };
 
-
+    const { refreshGameSplits } = await import("./public-betting-feed.server");
+    await refreshGameSplits(game);
     const { data, error } = await supabaseAdmin
       .from("games")
       .update(update as never)
@@ -128,6 +130,7 @@ export async function syncSportsData(): Promise<SyncReport> {
     demoGamesRetired: 0,
     analysesGraded: 0,
     tailsGraded: 0,
+    splitsUpdated: 0,
     errors: [],
   };
 
@@ -268,6 +271,20 @@ export async function syncSportsData(): Promise<SyncReport> {
           .neq("status", "final")
           .select("id");
         report.demoGamesRetired += retired?.length ?? 0;
+      }
+
+      // 3b. Public betting splits (free, separate source): refreshed with the odds.
+      try {
+        const { fetchSplits, storeSplits } = await import("./public-betting-feed.server");
+        const { data: upcoming } = await supabaseAdmin
+          .from("games")
+          .select("*")
+          .eq("sport", sport)
+          .eq("status", "scheduled");
+        const n = await storeSplits((upcoming ?? []) as unknown as GameRow[], await fetchSplits(sport));
+        report.splitsUpdated += n;
+      } catch (error) {
+        report.errors.push(`${sport} betting splits: ${(error as Error).message}`);
       }
 
       // 4. Final scores (paid), inside the reserve.
