@@ -145,10 +145,34 @@ function teamOf(game: GameRow, player: string): string | null {
   return null;
 }
 
+const OUT_STATUS = /\bout\b|injured reserve|\bir\b|suspend|inactive|\bpup\b|\bnfi\b/i;
+const DOUBTFUL_STATUS = /doubtful/i;
+const QUESTIONABLE_STATUS = /questionable|game[- ]time/i;
+
+/**
+ * Workload multiplier from the VERIFIED injury report only. A player who is
+ * ruled out does not accumulate stats in any simulated game; a doubtful or
+ * questionable player carries reduced snaps. A player who is not on the report
+ * is simulated at full workload, and the absence of a report is handled by the
+ * fair model's confidence, never by silently assuming health here.
+ */
+function availabilityFactor(game: GameRow, player: string): number {
+  const wanted = player.trim().toLowerCase();
+  for (const injury of game.injuries ?? []) {
+    if ((injury.player ?? "").trim().toLowerCase() !== wanted) continue;
+    const status = String(injury.status ?? "");
+    if (OUT_STATUS.test(status)) return 0;
+    if (DOUBTFUL_STATUS.test(status)) return 0.3;
+    if (QUESTIONABLE_STATUS.test(status)) return 0.85;
+  }
+  return 1;
+}
+
 /** Touchdowns a team plausibly scored given its simulated points. */
 function touchdownsFor(points: number): number {
   return Math.max(0, Math.round((points - 2.5) / 7.4));
 }
+
 
 export function simulatePlayers(
   game: GameRow,
