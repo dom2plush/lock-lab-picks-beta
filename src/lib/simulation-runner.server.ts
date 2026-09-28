@@ -166,6 +166,7 @@ export type BadgeMarketContext = {
   publicBetting: PublicBetting | null | undefined;
   odds: GameOdds | null | undefined;
   previousOdds: GameOdds | null | undefined;
+  teams?: { home_team?: string | null; away_team?: string | null };
 };
 
 /** Opposite side must hold at least this share of public tickets/money. */
@@ -219,6 +220,57 @@ export function applySplitBadge<P extends { badge?: string; reason: string; mode
     ? " Public money is heavily on the other side and the market reads this as the sportsbook-favourable outcome — confidence raised."
     : " Public money is heavily on the other side — confidence raised.";
   return { ...bet, badge, reason: `${bet.reason}${note}` };
+}
+
+/**
+ * Standard-market side for a Top 2 bet. Uses the stored sideKey; older or
+ * rebuilt cards may lack it, so it is recovered from the bet's own market and
+ * selection against the game's teams (display-only, never changes the pick).
+ */
+export function resolveSideKey(
+  bet: { sideKey?: string | null; market?: string | null; selection?: string | null; label?: string | null },
+  teams: { home_team?: string | null; away_team?: string | null },
+): string | null {
+  if (bet.sideKey) return bet.sideKey;
+  const market = String(bet.market ?? "").toLowerCase();
+  const text = `${bet.selection ?? ""} ${bet.label ?? ""}`.toLowerCase();
+  if (market.includes("total")) {
+    if (/\bover\b/.test(text)) return "total-over";
+    if (/\bunder\b/.test(text)) return "total-under";
+    return null;
+  }
+  const prefix = market.includes("spread") ? "spread" : market.includes("money") || market === "ml" ? "ml" : null;
+  if (!prefix) return null;
+  const home = String(teams.home_team ?? "").toLowerCase();
+  const away = String(teams.away_team ?? "").toLowerCase();
+  const matches = (team: string) =>
+    !!team && (text.includes(team) || text.includes(team.split(" ").pop() ?? "\u0000"));
+  const isHome = matches(home);
+  const isAway = matches(away);
+  if (isHome === isAway) return null;
+  return `${prefix}-${isHome ? "home" : "away"}`;
+}
+
+/**
+ * Final displayed Top 2 badges: re-applies applySplitBadge to the card being
+ * shown so the on-screen badge is always its result, including cached cards.
+ */
+export function withDisplayBadges<T extends { top_bets?: unknown }>(
+  analysis: T,
+  game: Pick<GameRow, "home_team" | "away_team" | "public_betting" | "odds">,
+  previousOdds?: GameOdds | null,
+): T {
+  if (!Array.isArray(analysis.top_bets)) return analysis;
+  const market: BadgeMarketContext = {
+    publicBetting: game.public_betting ?? null,
+    odds: game.odds ?? null,
+    previousOdds: previousOdds ?? null,
+  };
+  const bets = analysis.top_bets as { badge?: string; reason: string; modelEdge?: number | null; sideKey?: string | null }[];
+  return {
+    ...analysis,
+    top_bets: bets.map((bet) => applySplitBadge({ ...bet, sideKey: resolveSideKey(bet, game) }, market)),
+  };
 }
 
 export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" | "player_props" | "fun_bets">>(
@@ -305,7 +357,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
 
   const topBets = (analysis.top_bets ?? [])
     .map((bet) => describe(bet, { top: true }))
-    .map((bet) => applySplitBadge(bet, market))
+    .map((bet) => applySplitBadge({ ...bet, sideKey: resolveSideKey(bet as never, market?.teams ?? {}) }, market))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   // Touchdown picks keep their own keys so the stored card, the tail record and
   // the touchdown section always refer to the same bet.
@@ -378,6 +430,7 @@ export async function generateBatch(
     publicBetting: current.public_betting ?? null,
     odds: current.odds ?? null,
     previousOdds: stored.analysis?.odds_snapshot ?? null,
+    teams: { home_team: current.home_team, away_team: current.away_team },
   });
 
   // Stored batches are immutable: a forced/engine-mismatched rerun of the same
