@@ -52,3 +52,4 @@
 - TD Scorers now serves as the fun-bet section; the separate Fun Bet output is empty. TDs are allocated within the same 100 games with an unlisted-field share and repeat-scorer support, preventing a small posted pool from absorbing every score.
 
 - [x] Colts @ Commanders (and any game): touchdown-scorer picks priced at a non-snapshot sportsbook are no longer dropped by the audit (sim-v33)
+- [x] Thin plus-money alternate in the final Top 2 swaps to its standard line; props prefer starter-level lines (cards-v3, same seeds)

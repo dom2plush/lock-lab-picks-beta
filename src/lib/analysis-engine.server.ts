@@ -921,6 +921,25 @@ const propHit = (c: Candidate) => c.grade?.modelProb ?? 0;
 const propRankCmp = (a: Candidate, b: Candidate) =>
   propHit(b) - propHit(a) || candidateRank(b) - candidateRank(a);
 const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
+/**
+ * Minimum posted line that marks a starter/high-usage role in each standard
+ * market. A sportsbook's own line is the usage signal: a 12.5-yard receiving
+ * line or a 1.5-reception line belongs to a fringe player.
+ */
+const MEANINGFUL_PROP_LINE: Record<string, number> = {
+  player_pass_yds: 150,
+  player_pass_completions: 14,
+  player_pass_attempts: 20,
+  player_pass_tds: 0.5,
+  player_rush_yds: 30,
+  player_rush_attempts: 8,
+  player_reception_yds: 30,
+  player_receptions: 2.5,
+};
+export const meaningfulPropLine = (c: Pick<Candidate, "market" | "point">): boolean => {
+  const min = MEANINGFUL_PROP_LINE[c.market];
+  return min != null && c.point != null && c.point >= min;
+};
 
 function fillPlayerProps(
   candidates: Candidate[],
@@ -944,6 +963,11 @@ function fillPlayerProps(
         propPriceOk(c),
     )
     .sort(propRankCmp);
+  // Established, high-usage players on meaningful lines lead; fringe players
+  // and tiny lines are only used when too few meaningful props qualify.
+  const meaningful = pool.filter(meaningfulPropLine);
+  if (meaningful.length >= 3) pool.splice(0, pool.length, ...meaningful);
+  else pool.sort((a, b) => Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)));
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
@@ -1043,6 +1067,7 @@ function fillPlayerProps(
       (a, b) =>
         Number(propMarketPriority(a.market) !== 2) - Number(propMarketPriority(b.market) !== 2) ||
         Number(propPriceOk(b)) - Number(propPriceOk(a)) ||
+        Number(meaningfulPropLine(b)) - Number(meaningfulPropLine(a)) ||
         propRankCmp(a, b),
     );
   for (const c of floor) {
@@ -1547,8 +1572,33 @@ function simulationFirstTop2(
   scored.sort((a, b) => Number(b.roi > 0) - Number(a.roi > 0) || b.score - a.score);
   const picked: Scored[] = [];
   const ideas = new Set<string>();
-  for (const s of scored) {
+  // A plus-money alternate whose simulated edge is under 1% ("thin") is not
+  // worth giving up the standard number: post the regular line of the same
+  // selection instead (e.g. Over 41.5 -110 rather than Over 43.5 +109).
+  const standardFor = (s: Scored): Scored => {
+    if (s.c.group !== "alt" || s.c.price < 100 || s.edge >= 0.01 || !s.c.standardKey) return s;
+    const std = byKey.get(s.c.standardKey);
+    if (!std || std.selection !== s.c.selection || reserved.has(std.key)) return s;
+    const found = scored.find((x) => x.c.key === std.key);
+    if (found) return found;
+    const outcomes = candidateOutcomes(std, game, projection, players);
+    if (!outcomes || !outcomes.length) return s;
+    const hits: number[] = [];
+    outcomes.forEach((won, i) => won && hits.push(i + 1));
+    const roi = expectedRoi(hits.length, outcomes.length, std.price);
+    return {
+      c: std,
+      hits,
+      runs: outcomes.length,
+      edge: simulatedEdge(hits.length, outcomes.length, std.price),
+      roi,
+      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier),
+    };
+  };
+  for (const raw of scored) {
     if (picked.length >= 2) break;
+    const s = standardFor(raw);
+    if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
     ideas.add(idea);
