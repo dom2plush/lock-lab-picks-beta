@@ -15,7 +15,11 @@ describe("split badge", () => {
   });
   it("red to yellow, then green when book-favourable", () => {
     const heavy = { spreadBetPct: 20, spreadMoneyPct: 25 };
-    expect(applySplitBadge(base, { publicBetting: heavy, odds: null, previousOdds: null }).badge).toBe("yellow");
+    // Heavy opposite public splits alone satisfy the combined book-favourable
+    // read when no odds evidence is available — no single signal is required.
+    expect(applySplitBadge(base, { publicBetting: heavy, odds: null, previousOdds: null }).badge).toBe("green");
     expect(applySplitBadge(base, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("green");
+    // Mild opposite action (below the heavy threshold) still stops at red.
+    expect(applySplitBadge(base, { publicBetting: { spreadBetPct: 40, spreadMoneyPct: 40 }, odds, previousOdds: null }).badge).toBe("red");
   });
 });
