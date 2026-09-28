@@ -74,6 +74,32 @@ function gaussian(rand: () => number): number {
 
 export type SimulatedScore = { run: number; home: number; away: number; margin: number; total: number };
 
+/** Internal audit view of the simulated distribution. Not shown on the card. */
+export type SimulationDiagnostics = {
+  runs: number;
+  avgHomeScore: number;
+  avgAwayScore: number;
+  medianHomeScore: number;
+  medianAwayScore: number;
+  avgTotal: number;
+  medianTotal: number;
+  totalVariance: number;
+  totalStdDev: number;
+  minTotal: number;
+  maxTotal: number;
+  avgMargin: number;
+  medianMargin: number;
+  marginVariance: number;
+  marginStdDev: number;
+  minMargin: number;
+  maxMargin: number;
+  homeWins: number;
+  awayWins: number;
+  ties: number;
+  /** Count of runs falling in each total band. */
+  totalDistribution: { label: string; from: number; to: number | null; runs: number }[];
+};
+
 export type GameProjection = {
   runs: number;
   scores: SimulatedScore[];
@@ -84,19 +110,85 @@ export type GameProjection = {
   /** 0-1 confidence in the underlying model inputs. */
   confidence: number;
   notes: string[];
+  /** Audit numbers for the simulated distribution, or null with no runs. */
+  diagnostics: SimulationDiagnostics | null;
   /** Chance this team covers the given handicap (positive = getting points). */
   spreadProb(team: "home" | "away", point: number): number | null;
   /** Chance the game goes over/under this number. */
   totalProb(side: "Over" | "Under", point: number): number | null;
   /** Chance this team wins outright. */
   moneylineProb(team: "home" | "away"): number | null;
-  /** Per-run win/lose vector for a handicap, graded on the same 50 scores. */
+  /** Per-run win/lose vector for a handicap, graded on the same scores. */
   spreadOutcomes(team: "home" | "away", point: number): boolean[] | null;
   /** Per-run win/lose vector for a total. */
   totalOutcomes(side: "Over" | "Under", point: number): boolean[] | null;
   /** Per-run win/lose vector for a moneyline. */
   moneylineOutcomes(team: "home" | "away"): boolean[] | null;
 };
+
+function mean(values: number[]): number {
+  if (!values.length) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function medianOf(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+function variance(values: number[]): number {
+  if (values.length < 2) return 0;
+  const avg = mean(values);
+  return values.reduce((sum, v) => sum + (v - avg) ** 2, 0) / (values.length - 1);
+}
+
+const TOTAL_BANDS: { label: string; from: number; to: number | null }[] = [
+  { label: "under 37", from: -Infinity, to: 36.5 },
+  { label: "37-43", from: 36.5, to: 43.5 },
+  { label: "44-50", from: 43.5, to: 50.5 },
+  { label: "51-57", from: 50.5, to: 57.5 },
+  { label: "58+", from: 57.5, to: null },
+];
+
+function buildDiagnostics(scores: SimulatedScore[]): SimulationDiagnostics | null {
+  if (!scores.length) return null;
+  const homes = scores.map((s) => s.home);
+  const aways = scores.map((s) => s.away);
+  const totals = scores.map((s) => s.total);
+  const margins = scores.map((s) => s.margin);
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return {
+    runs: scores.length,
+    avgHomeScore: round(mean(homes)),
+    avgAwayScore: round(mean(aways)),
+    medianHomeScore: medianOf(homes),
+    medianAwayScore: medianOf(aways),
+    avgTotal: round(mean(totals)),
+    medianTotal: medianOf(totals),
+    totalVariance: round(variance(totals)),
+    totalStdDev: round(Math.sqrt(variance(totals))),
+    minTotal: Math.min(...totals),
+    maxTotal: Math.max(...totals),
+    avgMargin: round(mean(margins)),
+    medianMargin: medianOf(margins),
+    marginVariance: round(variance(margins)),
+    marginStdDev: round(Math.sqrt(variance(margins))),
+    minMargin: Math.min(...margins),
+    maxMargin: Math.max(...margins),
+    homeWins: margins.filter((m) => m > 0).length,
+    awayWins: margins.filter((m) => m < 0).length,
+    ties: margins.filter((m) => m === 0).length,
+    totalDistribution: TOTAL_BANDS.map((band) => ({
+      label: band.label,
+      from: band.from === -Infinity ? 0 : band.from,
+      to: band.to,
+      runs: totals.filter((t) => t > band.from && (band.to == null || t < band.to)).length,
+    })),
+  };
+}
+
 
 /**
  * Blends the simulated count with the analytic probability from the same fair
