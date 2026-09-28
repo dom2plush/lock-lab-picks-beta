@@ -221,6 +221,57 @@ export function applySplitBadge<P extends { badge?: string; reason: string; mode
   return { ...bet, badge, reason: `${bet.reason}${note}` };
 }
 
+/**
+ * Standard-market side for a Top 2 bet. Uses the stored sideKey; older or
+ * rebuilt cards may lack it, so it is recovered from the bet's own market and
+ * selection against the game's teams (display-only, never changes the pick).
+ */
+export function resolveSideKey(
+  bet: { sideKey?: string | null; market?: string | null; selection?: string | null; label?: string | null },
+  teams: { home_team?: string | null; away_team?: string | null },
+): string | null {
+  if (bet.sideKey) return bet.sideKey;
+  const market = String(bet.market ?? "").toLowerCase();
+  const text = `${bet.selection ?? ""} ${bet.label ?? ""}`.toLowerCase();
+  if (market.includes("total")) {
+    if (/\bover\b/.test(text)) return "total-over";
+    if (/\bunder\b/.test(text)) return "total-under";
+    return null;
+  }
+  const prefix = market.includes("spread") ? "spread" : market.includes("money") || market === "ml" ? "ml" : null;
+  if (!prefix) return null;
+  const home = String(teams.home_team ?? "").toLowerCase();
+  const away = String(teams.away_team ?? "").toLowerCase();
+  const matches = (team: string) =>
+    !!team && (text.includes(team) || text.includes(team.split(" ").pop() ?? "\u0000"));
+  const isHome = matches(home);
+  const isAway = matches(away);
+  if (isHome === isAway) return null;
+  return `${prefix}-${isHome ? "home" : "away"}`;
+}
+
+/**
+ * Final displayed Top 2 badges: re-applies applySplitBadge to the card being
+ * shown so the on-screen badge is always its result, including cached cards.
+ */
+export function withDisplayBadges<T extends { top_bets?: unknown }>(
+  analysis: T,
+  game: Pick<GameRow, "home_team" | "away_team" | "public_betting" | "odds">,
+  previousOdds?: GameOdds | null,
+): T {
+  if (!Array.isArray(analysis.top_bets)) return analysis;
+  const market: BadgeMarketContext = {
+    publicBetting: game.public_betting ?? null,
+    odds: game.odds ?? null,
+    previousOdds: previousOdds ?? null,
+  };
+  const bets = analysis.top_bets as { badge?: string; reason: string; modelEdge?: number | null; sideKey?: string | null }[];
+  return {
+    ...analysis,
+    top_bets: bets.map((bet) => applySplitBadge({ ...bet, sideKey: resolveSideKey(bet, game) }, market)),
+  };
+}
+
 export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" | "player_props" | "fun_bets">>(
   analysis: T,
   aggregate: SimulationAggregate,
