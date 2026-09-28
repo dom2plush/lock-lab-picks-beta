@@ -1,11 +1,11 @@
 /**
  * Shared pieces of the precomputed Lock Lab simulation batch: the input
  * fingerprint that decides when a batch is stale, and the deterministic
- * random source used to settle the formula's picks 50 times.
+ * random source used to settle the formula's picks 100 times.
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v29";
+export const SIMULATION_ENGINE_VERSION = "sim-v30";
 export const SIMULATION_RUNS = 100;
 
 /** Rounds a price so tiny juice wiggles do not invalidate a stored batch. */

@@ -1174,6 +1174,97 @@ function fillFunBet(
   }
 }
 
+/** The team a prop belongs to, taken only from the verified availability report. */
+function propTeam(game: GameRow, player: string | undefined): string | null {
+  const wanted = (player ?? "").trim().toLowerCase();
+  if (!wanted) return null;
+  for (const injury of game.injuries ?? []) {
+    if ((injury.player ?? "").trim().toLowerCase() !== wanted) continue;
+    if (injury.team === game.home_team) return game.home_team;
+    if (injury.team === game.away_team) return game.away_team;
+  }
+  return null;
+}
+
+/**
+ * Touchdown picks, in their own section: one Anytime TD and one First TD for
+ * each team, taken only from verified posted scorer markets and ranked by the
+ * simulated scoring runs. When the feed cannot prove which team a scorer plays
+ * for, the pick is still posted from the real market and says so, rather than
+ * guessing at a roster.
+ */
+function fillTouchdownBets(
+  game: GameRow,
+  candidates: Candidate[],
+  used: Set<string>,
+  touchdownBets: PropBet[],
+  decisions: DecisionMap,
+): void {
+  const pool = candidates.filter(
+    (c) =>
+      c.group === "prop" &&
+      !used.has(c.key) &&
+      (c.market === "player_anytime_td" || c.market === "player_1st_td") &&
+      ["yes", "over"].includes(propDirection(c)) &&
+      c.grade?.modelProb != null,
+  );
+  if (!pool.length) return;
+
+  const ranked = [...pool].sort((a, b) => candidateRank(b) - candidateRank(a));
+  const takenPlayers = new Set<string>();
+
+  const take = (c: Candidate, team: string | null) => {
+    const badge = propBadge(c);
+    used.add(c.key);
+    takenPlayers.add(`${c.player ?? ""}|${c.market}`);
+    const reason = team
+      ? `${team} touchdown pick: the strongest posted price for this scorer market under the simulated scoring runs.`
+      : "The strongest posted price in this scorer market under the simulated scoring runs. The feed does not name this player's team, so no team is claimed.";
+    touchdownBets.push({
+      key: `td-${touchdownBets.length + 1}`,
+      badge,
+      label: c.label,
+      player: c.player ?? "",
+      market: c.marketLabel,
+      odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
+      touchdown: true,
+      team,
+      ...pickSource(c),
+      reason,
+    });
+    decisions.set(c.key, { section: "prop", badge, reason });
+  };
+
+  for (const market of ["player_anytime_td", "player_1st_td"]) {
+    for (const team of [game.home_team, game.away_team]) {
+      const pick = ranked.find(
+        (c) =>
+          c.market === market &&
+          !used.has(c.key) &&
+          propTeam(game, c.player) === team &&
+          !takenPlayers.has(`${c.player ?? ""}|${c.market}`),
+      );
+      if (pick) take(pick, team);
+    }
+    // Without a verified roster the feed cannot attribute every scorer, so the
+    // section is completed from the same posted market with no team claimed.
+    const perMarket = () => touchdownBets.filter((b) => b.market === PROP_MARKET_LABEL[market]).length;
+    while (perMarket() < 2) {
+      const pick = ranked.find(
+        (c) =>
+          c.market === market &&
+          !used.has(c.key) &&
+          !takenPlayers.has(`${c.player ?? ""}|${c.market}`),
+      );
+      if (!pick) break;
+      take(pick, propTeam(game, pick.player));
+    }
+  }
+}
+
+
+
 /** How reliable a candidate's probability estimate is (0-1). */
 function candidateRobustness(c: Candidate): number {
   if (!c.grade) return 0.5;
@@ -1379,6 +1470,23 @@ export function simulatedEdge(hits: number, runs: number, price: number): number
   return hits / runs - impliedFromAmerican(price);
 }
 
+/** Profit per unit staked when the bet wins, from the exact American price. */
+export function payoutMultiplier(price: number): number {
+  return price > 0 ? price / 100 : 100 / Math.abs(price);
+}
+
+/**
+ * Expected return per unit staked at the exact sportsbook price, using the
+ * simulated hit rate: p * profit - (1 - p). This is the ranking metric, because
+ * a percentage-point edge cannot compare a +160 underdog with a -110 favourite
+ * — the same edge pays very differently at the two prices.
+ */
+export function expectedRoi(hits: number, runs: number, price: number): number {
+  if (!runs) return 0;
+  const p = hits / runs;
+  return p * (payoutMultiplier(price) + 1) - 1;
+}
+
 function candidateSimEdge(
   c: Candidate,
   game: GameRow,
@@ -1416,22 +1524,31 @@ export function requireSimulatedAltValue(
   return c;
 }
 
-/** Stable re-order: a positive-edge Top Bet always sits above a non-positive one. */
+/**
+ * Stable re-order by expected return: a Top Bet with positive expected ROI at
+ * its posted price always sits above one without, and among two positive bets
+ * the higher expected return leads.
+ */
 export function orderTopBetsByValue<T extends { simHits?: number[] | null | undefined; simRuns?: number | null | undefined; odds?: string | null | undefined; key: string }>(
   bets: T[],
 ): (T & { rank: number })[] {
-  const edgeOf = (b: T): number | null => {
+  const roiOf = (b: T): number | null => {
     const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
     if (!b.simRuns || !Number.isFinite(price)) return null;
-    return simulatedEdge(b.simHits?.length ?? 0, b.simRuns, price);
+    return expectedRoi(b.simHits?.length ?? 0, b.simRuns, price);
   };
   const positive = (b: T) => {
-    const e = edgeOf(b);
-    return e != null && e > 0 ? 1 : 0;
+    const r = roiOf(b);
+    return r != null && r > 0 ? 1 : 0;
   };
   return bets
     .map((b, i) => ({ b, i }))
-    .sort((x, y) => positive(y.b) - positive(x.b) || x.i - y.i)
+    .sort(
+      (x, y) =>
+        positive(y.b) - positive(x.b) ||
+        (roiOf(y.b) ?? -Infinity) - (roiOf(x.b) ?? -Infinity) ||
+        x.i - y.i,
+    )
     .map(({ b }, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 }) as T & { rank: number });
 }
 
@@ -1471,19 +1588,27 @@ function attachSimulatedOutcomes(
 }
 
 /**
- * Composite strength of a bet after the full 50-game simulation:
- * simulated model edge first, then simulated hit rate, then model confidence.
+ * Composite strength of a bet after the full simulation. Expected return at the
+ * exact posted price leads by two orders of magnitude, so a long price with a
+ * genuinely better expected return always outranks a short one; simulated hit
+ * rate and model confidence only break near-ties.
  */
-export function simulationStrength(hitRate: number, edge: number, tier: string | null | undefined): number {
+export function simulationStrength(
+  roi: number,
+  hitRate: number,
+  tier: string | null | undefined,
+): number {
   const confidence = tier === "strong" ? 1 : tier === "playable" ? 0.5 : 0;
-  return edge * 100 + (hitRate - 0.5) * 20 + confidence;
+  return roi * 1000 + hitRate * 2 + confidence;
 }
 
 /**
  * Simulation-first Top 2. Every eligible posted game bet (standard and
  * alternate, -180 to +199, key/side rules intact, not already used by props or
- * the fun bet) is settled against the same 50 simulated games, ranked by
- * edge, hit rate and confidence, and the two strongest distinct bets post.
+ * the fun bet) is settled against the same simulated games and ranked by
+ * EXPECTED RETURN at its exact price. A moneyline and a spread on the same team
+ * both enter this ranking, so the one with the better expected return wins the
+ * slot; the percentage-point edge is still published, as a secondary read.
  */
 function simulationFirstTop2(
   current: PickBet[],
@@ -1494,7 +1619,7 @@ function simulationFirstTop2(
   projection: GameProjection,
   players: PlayerProjection,
 ): PickBet[] {
-  type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; score: number };
+  type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; roi: number; score: number };
   const scored: Scored[] = [];
   for (const raw of candidates) {
     if (raw.group === "prop" || reserved.has(raw.key)) continue;
@@ -1510,11 +1635,19 @@ function simulationFirstTop2(
     outcomes.forEach((won, i) => won && hits.push(i + 1));
     const hitRate = hits.length / outcomes.length;
     const edge = simulatedEdge(hits.length, outcomes.length, c.price);
-    scored.push({ c, hits, runs: outcomes.length, edge, score: simulationStrength(hitRate, edge, c.grade?.tier) });
+    const roi = expectedRoi(hits.length, outcomes.length, c.price);
+    scored.push({
+      c,
+      hits,
+      runs: outcomes.length,
+      edge,
+      roi,
+      score: simulationStrength(roi, hitRate, c.grade?.tier),
+    });
   }
   if (scored.length < 2 && current.length >= 2) return current;
 
-  scored.sort((a, b) => Number(b.edge > 0) - Number(a.edge > 0) || b.score - a.score);
+  scored.sort((a, b) => Number(b.roi > 0) - Number(a.roi > 0) || b.score - a.score);
   const picked: Scored[] = [];
   const ideas = new Set<string>();
   for (const s of scored) {
@@ -1555,7 +1688,9 @@ function simulationFirstTop2(
             standardComparison: comparison,
           }
         : {}),
-      reason: comparison ?? "Ranked among the two strongest bets after the full 50-game simulation.",
+      reason:
+        comparison ??
+        `Ranked among the two strongest bets by expected return at this price across the full ${s.runs}-game simulation.`,
       simHits: s.hits,
       simRuns: s.runs,
     } as PickBet);
@@ -2228,16 +2363,18 @@ export async function runLockLabFormula(
       }
     });
     const fallbackProps: PropBet[] = [];
+    const fallbackTd: PropBet[] = [];
     const fallbackFun: FunBet[] = [];
     // Fun bet claims its touchdown/longshot pick first so the props floor can
     // never take it; props themselves never draw from those markets otherwise.
     fillFunBet(candidates, usedFallback, fallbackFun, decisions);
+    fillTouchdownBets(game, candidates, usedFallback, fallbackTd, decisions);
     fillPlayerProps(candidates, usedFallback, fallbackProps, decisions);
     return attachSimulatedOutcomes(
       {
         topBets,
         funBets: fallbackFun,
-        playerProps: fallbackProps,
+        playerProps: [...fallbackProps, ...fallbackTd],
         notes: {
           propsAvailable: extra.props.length > 0,
           altMarketsAvailable: extra.alternates.length > 0,
@@ -2618,6 +2755,10 @@ export async function runLockLabFormula(
   // Sections are topped up from the ranked live board so a normal game shows
   // two props and one fun bet. Only real posted prices are ever used.
   fillFunBet(candidates, used, funBets, decisions);
+  const touchdownBets: PropBet[] = [];
+  // One Anytime TD and one First TD per team, in their own section, before the
+  // standard props are filled so the two pools never take the same price.
+  fillTouchdownBets(game, candidates, used, touchdownBets, decisions);
   fillPlayerProps(candidates, used, playerProps, decisions, 4, propReasons);
 
 
@@ -2631,7 +2772,7 @@ export async function runLockLabFormula(
     {
       topBets,
       funBets,
-      playerProps,
+      playerProps: [...playerProps, ...touchdownBets],
       notes: {
         propsAvailable: extra.props.length > 0,
         altMarketsAvailable: extra.alternates.length > 0,

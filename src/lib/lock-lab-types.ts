@@ -94,6 +94,8 @@ export type PickSource = {
   simHitRate?: number | null;
   /** Simulated hit rate minus the probability the stored price implies. */
   modelEdge?: number | null;
+  /** Expected return per unit staked at the stored price, from the simulation. */
+  expectedRoi?: number | null;
 };
 
 export type PickBet = PickSource & {
@@ -139,7 +141,16 @@ export type PropBet = PickSource & {
   /** Formula-estimated probability used to validate the posted price. */
   estimatedProbability?: number | null;
   reason: string;
+  /** Set on touchdown picks, which are shown in their own section. */
+  touchdown?: boolean;
+  /** Team this touchdown pick belongs to, when the report can prove it. */
+  team?: string | null;
 };
+
+/** Touchdown picks are stored inside player_props and split out by key. */
+export function isTouchdownPick(pick: { key: string; touchdown?: boolean }): boolean {
+  return pick.touchdown === true || String(pick.key).startsWith("td-");
+}
 
 export type AnalysisRow = {
   id: string;

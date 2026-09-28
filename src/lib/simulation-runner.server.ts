@@ -184,9 +184,20 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
     if (!simulated) return pick;
     const implied = americanToProbability(pick.odds ?? null);
     const edge = implied != null ? simulated.hitRate - implied : null;
+    // Expected return per unit staked at the exact posted price — the number
+    // the board ranks on. A +160 price and a -110 price cannot be compared on
+    // percentage-point edge alone, so that stays a secondary read.
+    const priceNumber = Number(String(pick.odds ?? "").replace("+", ""));
+    const roi =
+      Number.isFinite(priceNumber) && priceNumber !== 0
+        ? simulated.hitRate * ((priceNumber > 0 ? priceNumber / 100 : 100 / Math.abs(priceNumber)) + 1) - 1
+        : null;
     const parts = [
       `Simulated hit rate ${pct(simulated.hitRate)} (${simulated.wins} of ${aggregate.runs} Lock Lab runs)`,
     ];
+    if (roi != null) {
+      parts.push(`${roi >= 0 ? "+" : ""}${(roi * 100).toFixed(1)}% expected return at this price`);
+    }
     if (implied != null && edge != null) {
       parts.push(
         `price implies ${pct(implied)}`,
@@ -217,6 +228,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
       badge,
       simHitRate: Math.round(simulated.hitRate * 10000) / 10000,
       modelEdge: edge == null ? null : Math.round(edge * 10000) / 10000,
+      expectedRoi: roi == null ? null : Math.round(roi * 10000) / 10000,
       reason: `${parts.join(" · ")}.${valueNote}`,
     } as P;
   };
@@ -224,9 +236,16 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
   const topBets = (analysis.top_bets ?? [])
     .map((bet) => describe(bet, { top: true }))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
+  // Touchdown picks keep their own keys so the stored card, the tail record and
+  // the touchdown section always refer to the same bet.
+  let propIndex = 0;
   const props = (analysis.player_props ?? [])
     .map((prop) => describe(prop))
-    .map((prop, index) => ({ ...prop, key: `prop-${index + 1}` }));
+    .map((prop) =>
+      String(prop.key).startsWith("td-")
+        ? prop
+        : { ...prop, key: `prop-${(propIndex += 1)}` },
+    );
 
   return {
     ...analysis,
