@@ -101,10 +101,17 @@ function checkEntry(
   if (expected && !displayedOdds) problems.push("The price is recorded but not shown with the pick.");
 
   // Core spread/total/moneyline picks must come from the snapshot's book.
-  // Alternate lines, team totals and props are often posted by a different
-  // book; those are fine because the pick carries and displays its own record.
+  // Alternate lines, team totals, player props and touchdown-scorer picks are
+  // often posted by a different book; those are fine because the pick carries
+  // and displays its own book, price and capture time.
   const tag = `${market} ${pickKey}`.toLowerCase();
-  const derivative = /alternat|team.total|player|prop|^alt-|[ -]alt-/.test(tag);
+  // Player-market picks (standard props and the touchdown scorer section) live
+  // in their own sections, so the section itself settles the question.
+  const isPlayerProp =
+    section === "Player prop" ||
+    section === "Fun bet" ||
+    /player|prop|touchdown|\btd\b|^td-|[ -]td-/.test(tag);
+  const derivative = isPlayerProp || /alternat|team.total|^alt-|[ -]alt-/.test(tag);
   if (!derivative && snapshot.bookmaker && source.book && !sameBook(source.book, snapshot.bookmaker)) {
     problems.push(
       `Priced at ${source.book} but the page is showing a ${snapshot.bookmaker} snapshot.`,
@@ -112,7 +119,6 @@ function checkEntry(
   }
   // Player props may come from another book whose prop market last moved at a
   // different time; they carry and display their own capture timestamp.
-  const isPlayerProp = /player|prop/.test(tag);
   if (
     !isPlayerProp &&
     snapshot.capturedAt &&
