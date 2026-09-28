@@ -172,14 +172,23 @@ export type BadgeMarketContext = {
 const HEAVY_OPPOSITE_SHARE = 65;
 
 /**
+ * Slightly negative edges still count as simulation support: a bet whose
+ * simulated hit rate lands within this many points of its price is "thin but
+ * supported" and may earn the market-signal badge upgrade. Clearly negative
+ * edges beyond this tolerance are never upgraded.
+ */
+const SUPPORT_EDGE_TOLERANCE = 0.02;
+
+/**
  * Badge-only adjustment from public betting splits for a Top 2 bet with a
  * thin/close edge. Never changes which bets were selected; a bet already green
  * (strong edge) is left alone. Needs the simulation to support the bet (hit
- * rate at or above the price) and heavy public concentration on the other side;
- * red becomes yellow, and yellow becomes green when the combined public splits
- * and the available odds/juice/line-movement evidence point toward this side
- * as the sportsbook-favourable outcome — no single odds signal (such as line
- * movement) is required to agree on its own.
+ * rate at or within a couple of points of the price — a slightly negative
+ * model edge no longer blocks the upgrade) and heavy public concentration on
+ * the other side; red becomes yellow, and yellow becomes green when the
+ * combined public splits and the available odds/juice/line-movement evidence
+ * point toward this side as the sportsbook-favourable outcome — no single odds
+ * signal (such as line movement) is required to agree on its own.
  */
 export function applySplitBadge<P extends { badge?: string; reason: string; modelEdge?: number | null; sideKey?: string | null }>(
   bet: P,
@@ -187,7 +196,7 @@ export function applySplitBadge<P extends { badge?: string; reason: string; mode
 ): P {
   if (!market?.publicBetting || !bet.sideKey) return bet;
   if (bet.badge === "green") return bet;
-  if (bet.modelEdge == null || bet.modelEdge < 0) return bet;
+  if (bet.modelEdge == null || bet.modelEdge < -SUPPORT_EDGE_TOLERANCE) return bet;
   const signal = publicSideSignal(bet.sideKey, market.publicBetting);
   // signal +1 ⇔ own share 25%; opposite share = 50 + 25·signal.
   if (signal == null || 50 + 25 * signal < HEAVY_OPPOSITE_SHARE) return bet;

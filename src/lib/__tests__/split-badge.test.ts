@@ -10,8 +10,18 @@ describe("split badge", () => {
     expect(applySplitBadge({ ...base, badge: "green" }, { publicBetting: { spreadBetPct: 10, spreadMoneyPct: 10 }, odds, previousOdds: null }).badge).toBe("green");
   });
   it("needs heavy opposite action and simulation support", () => {
-    expect(applySplitBadge(base, { publicBetting: { spreadBetPct: 45, spreadMoneyPct: 45 }, odds, previousOdds: null }).badge).toBe("red");
-    expect(applySplitBadge({ ...base, modelEdge: -0.02 }, { publicBetting: { spreadBetPct: 20, spreadMoneyPct: 20 }, odds, previousOdds: null }).badge).toBe("red");
+    // Mild opposite action (below the heavy threshold) stays red even when the
+    // edge is only slightly negative — the share gate still applies.
+    expect(applySplitBadge({ ...base, modelEdge: -0.02 }, { publicBetting: { spreadBetPct: 45, spreadMoneyPct: 45 }, odds, previousOdds: null }).badge).toBe("red");
+    // A clearly negative edge (beyond the support tolerance) is never upgraded.
+    expect(applySplitBadge({ ...base, modelEdge: -0.05 }, { publicBetting: { spreadBetPct: 20, spreadMoneyPct: 25 }, odds, previousOdds: null }).badge).toBe("red");
+  });
+  it("upgrades slightly negative edges when the public is heavily opposite", () => {
+    const heavy = { spreadBetPct: 20, spreadMoneyPct: 25 };
+    // A slightly negative edge (within the support tolerance) no longer blocks
+    // the red → yellow upgrade; the sportsbook-favourable read then lifts it.
+    expect(applySplitBadge({ ...base, modelEdge: -0.02 }, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("green");
+    expect(applySplitBadge({ ...base, badge: "yellow", modelEdge: -0.02 }, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("green");
   });
   it("red to yellow, then green when book-favourable", () => {
     const heavy = { spreadBetPct: 20, spreadMoneyPct: 25 };
