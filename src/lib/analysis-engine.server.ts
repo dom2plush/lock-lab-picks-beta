@@ -1174,6 +1174,97 @@ function fillFunBet(
   }
 }
 
+/** The team a prop belongs to, taken only from the verified availability report. */
+function propTeam(game: GameRow, player: string | undefined): string | null {
+  const wanted = (player ?? "").trim().toLowerCase();
+  if (!wanted) return null;
+  for (const injury of game.injuries ?? []) {
+    if ((injury.player ?? "").trim().toLowerCase() !== wanted) continue;
+    if (injury.team === game.home_team) return game.home_team;
+    if (injury.team === game.away_team) return game.away_team;
+  }
+  return null;
+}
+
+/**
+ * Touchdown picks, in their own section: one Anytime TD and one First TD for
+ * each team, taken only from verified posted scorer markets and ranked by the
+ * simulated scoring runs. When the feed cannot prove which team a scorer plays
+ * for, the pick is still posted from the real market and says so, rather than
+ * guessing at a roster.
+ */
+function fillTouchdownBets(
+  game: GameRow,
+  candidates: Candidate[],
+  used: Set<string>,
+  touchdownBets: PropBet[],
+  decisions: DecisionMap,
+): void {
+  const pool = candidates.filter(
+    (c) =>
+      c.group === "prop" &&
+      !used.has(c.key) &&
+      (c.market === "player_anytime_td" || c.market === "player_1st_td") &&
+      ["yes", "over"].includes(propDirection(c)) &&
+      c.grade?.modelProb != null,
+  );
+  if (!pool.length) return;
+
+  const ranked = [...pool].sort((a, b) => candidateRank(b) - candidateRank(a));
+  const takenPlayers = new Set<string>();
+
+  const take = (c: Candidate, team: string | null) => {
+    const badge = propBadge(c);
+    used.add(c.key);
+    takenPlayers.add(`${c.player ?? ""}|${c.market}`);
+    const reason = team
+      ? `${team} touchdown pick: the strongest posted price for this scorer market under the simulated scoring runs.`
+      : "The strongest posted price in this scorer market under the simulated scoring runs. The feed does not name this player's team, so no team is claimed.";
+    touchdownBets.push({
+      key: `td-${touchdownBets.length + 1}`,
+      badge,
+      label: c.label,
+      player: c.player ?? "",
+      market: c.marketLabel,
+      odds: fmtOdds(c.price),
+      estimatedProbability: c.grade?.modelProb ?? null,
+      touchdown: true,
+      team,
+      ...pickSource(c),
+      reason,
+    });
+    decisions.set(c.key, { section: "prop", badge, reason });
+  };
+
+  for (const market of ["player_anytime_td", "player_1st_td"]) {
+    for (const team of [game.home_team, game.away_team]) {
+      const pick = ranked.find(
+        (c) =>
+          c.market === market &&
+          !used.has(c.key) &&
+          propTeam(game, c.player) === team &&
+          !takenPlayers.has(`${c.player ?? ""}|${c.market}`),
+      );
+      if (pick) take(pick, team);
+    }
+    // Without a verified roster the feed cannot attribute every scorer, so the
+    // section is completed from the same posted market with no team claimed.
+    const perMarket = () => touchdownBets.filter((b) => b.market === MARKET_LABEL[market]).length;
+    while (perMarket() < 2) {
+      const pick = ranked.find(
+        (c) =>
+          c.market === market &&
+          !used.has(c.key) &&
+          !takenPlayers.has(`${c.player ?? ""}|${c.market}`),
+      );
+      if (!pick) break;
+      take(pick, propTeam(game, pick.player));
+    }
+  }
+}
+
+
+
 /** How reliable a candidate's probability estimate is (0-1). */
 function candidateRobustness(c: Candidate): number {
   if (!c.grade) return 0.5;
