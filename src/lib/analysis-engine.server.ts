@@ -1597,7 +1597,9 @@ function simulationFirstTop2(
             standardComparison: comparison,
           }
         : {}),
-      reason: comparison ?? "Ranked among the two strongest bets after the full 50-game simulation.",
+      reason:
+        comparison ??
+        `Ranked among the two strongest bets by expected return at this price across the full ${s.runs}-game simulation.`,
       simHits: s.hits,
       simRuns: s.runs,
     } as PickBet);
