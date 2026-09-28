@@ -50,6 +50,13 @@
       "when": 1790625303741,
       "tag": "0006_public_betting_splits_readonly",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790627513053,
+      "tag": "0007_restrict_public_betting_inputs",
+      "breakpoints": true
     }
   ]
 }
