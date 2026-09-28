@@ -94,6 +94,27 @@ export function inputSnapshot(game: GameRow): InputSnapshot {
       .filter((injury) => MATERIAL_INJURY.test(injury.status ?? ""))
       .map((injury) => `${injury.team}|${injury.player}|${String(injury.status).toLowerCase()}`)
       .sort(),
+    dataset: datasetSnapshot(game),
+  };
+}
+
+/** Freezes the exact odds, availability report and seed the runs were built on. */
+export function datasetSnapshot(game: GameRow): DatasetSnapshot {
+  const odds = game.odds ?? {};
+  const injuries = game.injuries ?? [];
+  return {
+    seedKey: simulationSeedKey(game),
+    engineVersion: SIMULATION_ENGINE_VERSION,
+    runs: SIMULATION_RUNS,
+    capturedAt: odds.capturedAt ?? game.odds_updated_at ?? null,
+    book: odds.bookmaker ?? odds.bookmakerKey ?? null,
+    odds: JSON.parse(JSON.stringify(odds ?? {})),
+    availability: injuries.map((injury) => ({
+      team: injury.team,
+      player: injury.player,
+      status: String(injury.status ?? ""),
+    })),
+    availabilityReported: injuries.length > 0,
   };
 }
 
