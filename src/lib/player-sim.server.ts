@@ -17,7 +17,7 @@
  */
 import type { GameProjection } from "./game-sim.server";
 import type { GameRow, MarketOffer } from "./lock-lab-types";
-import { mulberry32, seedFrom } from "./simulation.server";
+import { mulberry32, seedFrom, simulationSeedKey } from "./simulation.server";
 
 /** Yardage scatter (coefficient of variation) by market. */
 const YARD_CV: Record<string, number> = {
