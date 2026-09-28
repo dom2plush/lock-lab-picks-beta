@@ -1011,6 +1011,14 @@ function fillPlayerProps(
     (c) => !playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel),
   );
 
+  // One prop per player whenever the board can fill every slot with a
+  // different qualified player. A player is only repeated when there are not
+  // enough distinct qualified players to reach the target count.
+  const distinctQualifiedPlayers = new Set(
+    remaining.map((c) => (c.player ?? "").toLowerCase()).filter(Boolean),
+  ).size;
+  const onePerPlayer = distinctQualifiedPlayers >= maximum;
+
   while (playerProps.length < maximum && remaining.length) {
     // Hit probability leads: the most likely remaining +EV prop defines the bar.
     const best = remaining[0]!;
