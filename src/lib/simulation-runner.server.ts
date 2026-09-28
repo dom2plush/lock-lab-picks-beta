@@ -217,15 +217,13 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
         `${edge >= 0 ? "+" : ""}${(edge * 100).toFixed(1)}% edge`,
       );
     }
-    // Honest labelling: a non-positive edge is never described as value. A Top
-    // 2 slot that had to be filled without a positive edge says so outright.
+    // Honest labelling: a non-positive edge is never described as value. Top 2
+    // bets are ranked on simulated frequency, so no slot is called a fallback.
     const valueNote =
       edge == null
         ? ""
         : edge <= 0
-          ? top
-            ? " Fallback — No Positive Edge. This slot was filled to complete the Top 2; the board offers no positive value at this price."
-            : " No positive value at this price — weak board, lowest-confidence play."
+          ? " No positive value at this price — the simulation ranks it here on how often it wins, not on price value."
           : edge < 0.01
             ? " Thin edge — weak value."
             : "";
