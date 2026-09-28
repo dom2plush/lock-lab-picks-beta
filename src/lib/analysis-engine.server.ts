@@ -1497,19 +1497,27 @@ function attachSimulatedOutcomes(
 }
 
 /**
- * Composite strength of a bet after the full 50-game simulation:
- * simulated model edge first, then simulated hit rate, then model confidence.
+ * Composite strength of a bet after the full simulation. Expected return at the
+ * exact posted price leads by two orders of magnitude, so a long price with a
+ * genuinely better expected return always outranks a short one; simulated hit
+ * rate and model confidence only break near-ties.
  */
-export function simulationStrength(hitRate: number, edge: number, tier: string | null | undefined): number {
+export function simulationStrength(
+  roi: number,
+  hitRate: number,
+  tier: string | null | undefined,
+): number {
   const confidence = tier === "strong" ? 1 : tier === "playable" ? 0.5 : 0;
-  return edge * 100 + (hitRate - 0.5) * 20 + confidence;
+  return roi * 1000 + hitRate * 2 + confidence;
 }
 
 /**
  * Simulation-first Top 2. Every eligible posted game bet (standard and
  * alternate, -180 to +199, key/side rules intact, not already used by props or
- * the fun bet) is settled against the same 50 simulated games, ranked by
- * edge, hit rate and confidence, and the two strongest distinct bets post.
+ * the fun bet) is settled against the same simulated games and ranked by
+ * EXPECTED RETURN at its exact price. A moneyline and a spread on the same team
+ * both enter this ranking, so the one with the better expected return wins the
+ * slot; the percentage-point edge is still published, as a secondary read.
  */
 function simulationFirstTop2(
   current: PickBet[],
@@ -1520,7 +1528,7 @@ function simulationFirstTop2(
   projection: GameProjection,
   players: PlayerProjection,
 ): PickBet[] {
-  type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; score: number };
+  type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; roi: number; score: number };
   const scored: Scored[] = [];
   for (const raw of candidates) {
     if (raw.group === "prop" || reserved.has(raw.key)) continue;
@@ -1536,11 +1544,19 @@ function simulationFirstTop2(
     outcomes.forEach((won, i) => won && hits.push(i + 1));
     const hitRate = hits.length / outcomes.length;
     const edge = simulatedEdge(hits.length, outcomes.length, c.price);
-    scored.push({ c, hits, runs: outcomes.length, edge, score: simulationStrength(hitRate, edge, c.grade?.tier) });
+    const roi = expectedRoi(hits.length, outcomes.length, c.price);
+    scored.push({
+      c,
+      hits,
+      runs: outcomes.length,
+      edge,
+      roi,
+      score: simulationStrength(roi, hitRate, c.grade?.tier),
+    });
   }
   if (scored.length < 2 && current.length >= 2) return current;
 
-  scored.sort((a, b) => Number(b.edge > 0) - Number(a.edge > 0) || b.score - a.score);
+  scored.sort((a, b) => Number(b.roi > 0) - Number(a.roi > 0) || b.score - a.score);
   const picked: Scored[] = [];
   const ideas = new Set<string>();
   for (const s of scored) {
