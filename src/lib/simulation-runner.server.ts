@@ -13,8 +13,8 @@ import {
   verifiedExtras,
   type AnalysisFields,
 } from "./analysis-runner.server";
-import { firstTdReason } from "./analysis-engine.server";
-import type { AnalysisRow, GameRow } from "./lock-lab-types";
+import { firstTdReason, publicSideSignal, sportsbookSideSignal } from "./analysis-engine.server";
+import type { AnalysisRow, GameOdds, GameRow, PublicBetting } from "./lock-lab-types";
 import {
   SIMULATION_ENGINE_VERSION,
   STORED_BATCH_VERSION,
@@ -162,9 +162,53 @@ export async function ensureSimulationBatch(
  * produced, and stamps the simulated hit rate and model edge onto the pick so
  * they are stored with it permanently.
  */
+export type BadgeMarketContext = {
+  publicBetting: PublicBetting | null | undefined;
+  odds: GameOdds | null | undefined;
+  previousOdds: GameOdds | null | undefined;
+};
+
+/** Opposite side must hold at least this share of public tickets/money. */
+const HEAVY_OPPOSITE_SHARE = 65;
+
+/**
+ * Badge-only adjustment from public betting splits for a Top 2 bet with a
+ * thin/close edge. Never changes which bets were selected; a bet already green
+ * (strong edge) is left alone. Needs the simulation to support the bet (hit
+ * rate at or above the price) and heavy public concentration on the other side;
+ * red becomes yellow, and yellow becomes green when the odds-derived read also
+ * marks this side as the sportsbook-favourable outcome.
+ */
+export function applySplitBadge<P extends { badge?: string; reason: string; modelEdge?: number | null; sideKey?: string | null }>(
+  bet: P,
+  market: BadgeMarketContext | undefined,
+): P {
+  if (!market?.publicBetting || !bet.sideKey) return bet;
+  if (bet.badge === "green") return bet;
+  if (bet.modelEdge == null || bet.modelEdge < 0) return bet;
+  const signal = publicSideSignal(bet.sideKey, market.publicBetting);
+  // signal +1 ⇔ own share 25%; opposite share = 50 + 25·signal.
+  if (signal == null || 50 + 25 * signal < HEAVY_OPPOSITE_SHARE) return bet;
+  let badge = bet.badge === "red" ? "yellow" : bet.badge ?? "yellow";
+  const bookSide = sportsbookSideSignal(
+    { key: bet.sideKey, standardKey: bet.sideKey, group: "core" } as never,
+    market.odds,
+    market.previousOdds,
+    null,
+  );
+  const favourable = bookSide > 0;
+  if (badge === "yellow" && favourable) badge = "green";
+  if (badge === bet.badge) return bet;
+  const note = favourable
+    ? " Public money is heavily on the other side and the market reads this as the sportsbook-favourable outcome — confidence raised."
+    : " Public money is heavily on the other side — confidence raised.";
+  return { ...bet, badge, reason: `${bet.reason}${note}` };
+}
+
 export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" | "player_props" | "fun_bets">>(
   analysis: T,
   aggregate: SimulationAggregate,
+  market?: BadgeMarketContext,
 ): T {
   const byKey = new Map(aggregate.picks.map((pick) => [pick.key, pick]));
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -245,6 +289,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
 
   const topBets = (analysis.top_bets ?? [])
     .map((bet) => describe(bet, { top: true }))
+    .map((bet) => applySplitBadge(bet, market))
     .map((bet, index) => ({ ...bet, key: `top${index + 1}`, rank: index + 1 }));
   // Touchdown picks keep their own keys so the stored card, the tail record and
   // the touchdown section always refer to the same bet.
@@ -313,7 +358,11 @@ export async function generateBatch(
     SIMULATION_RUNS,
   );
   if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly 50 simulations");
-  const described = withSimulatedReasons(fields, aggregate);
+  const described = withSimulatedReasons(fields, aggregate, {
+    publicBetting: current.public_betting ?? null,
+    odds: current.odds ?? null,
+    previousOdds: stored.analysis?.odds_snapshot ?? null,
+  });
 
   // Stored batches are immutable: a forced/engine-mismatched rerun of the same
   // inputs is stored as its own row rather than overwriting the old one.
