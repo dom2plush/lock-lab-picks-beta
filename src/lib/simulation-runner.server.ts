@@ -176,8 +176,10 @@ const HEAVY_OPPOSITE_SHARE = 65;
  * thin/close edge. Never changes which bets were selected; a bet already green
  * (strong edge) is left alone. Needs the simulation to support the bet (hit
  * rate at or above the price) and heavy public concentration on the other side;
- * red becomes yellow, and yellow becomes green when the odds-derived read also
- * marks this side as the sportsbook-favourable outcome.
+ * red becomes yellow, and yellow becomes green when the combined public splits
+ * and the available odds/juice/line-movement evidence point toward this side
+ * as the sportsbook-favourable outcome — no single odds signal (such as line
+ * movement) is required to agree on its own.
  */
 export function applySplitBadge<P extends { badge?: string; reason: string; modelEdge?: number | null; sideKey?: string | null }>(
   bet: P,
@@ -190,11 +192,13 @@ export function applySplitBadge<P extends { badge?: string; reason: string; mode
   // signal +1 ⇔ own share 25%; opposite share = 50 + 25·signal.
   if (signal == null || 50 + 25 * signal < HEAVY_OPPOSITE_SHARE) return bet;
   let badge = bet.badge === "red" ? "yellow" : bet.badge ?? "yellow";
+  // The public splits count toward the sportsbook-favourable read alongside
+  // the odds evidence (juice, line movement); no single signal must agree alone.
   const bookSide = sportsbookSideSignal(
     { key: bet.sideKey, standardKey: bet.sideKey, group: "core" } as never,
     market.odds,
     market.previousOdds,
-    null,
+    market.publicBetting,
   );
   const favourable = bookSide > 0;
   if (badge === "yellow" && favourable) badge = "green";
