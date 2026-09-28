@@ -914,6 +914,13 @@ function propDirection(c: Candidate): string {
 
 /** Closeness window: only a near-equal edge may be preferred for diversity. */
 const DIVERSITY_EDGE_TOLERANCE = 0.015;
+/** Plus-money props must be genuinely likely, not longshot value. */
+const PLUS_MONEY_PROP_MIN_HIT = 0.45;
+const propHit = (c: Candidate) => c.grade?.modelProb ?? 0;
+/** Props rank by simulated hit probability first; EV only breaks ties. */
+const propRankCmp = (a: Candidate, b: Candidate) =>
+  propHit(b) - propHit(a) || candidateRank(b) - candidateRank(a);
+const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
 
 function fillPlayerProps(
   candidates: Candidate[],
@@ -932,9 +939,11 @@ function fillPlayerProps(
         // Touchdown markets stay reserved for TD Scorers.
         propMarketPriority(c.market) === 2 &&
         c.grade?.modelProb != null &&
-        (c.grade?.edge ?? 0) >= MIN_EDGE,
+        (c.grade?.edge ?? 0) > 0 &&
+        (c.grade?.edge ?? 0) >= MIN_EDGE &&
+        propPriceOk(c),
     )
-    .sort((a, b) => candidateRank(b) - candidateRank(a));
+    .sort(propRankCmp);
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
@@ -964,11 +973,11 @@ function fillPlayerProps(
   );
 
   while (playerProps.length < maximum && remaining.length) {
-    // Edge always leads: the best remaining candidate defines the bar.
+    // Hit probability leads: the most likely remaining +EV prop defines the bar.
     const best = remaining[0]!;
-    const bestEdge = best.grade?.edge ?? 0;
-    // Contenders are only those whose edge is genuinely close to the leader.
-    const contenders = remaining.filter((c) => (c.grade?.edge ?? 0) >= bestEdge - DIVERSITY_EDGE_TOLERANCE);
+    const bestHit = propHit(best);
+    // Contenders are only those whose hit rate is genuinely close to the leader.
+    const contenders = remaining.filter((c) => propHit(c) >= bestHit - DIVERSITY_EDGE_TOLERANCE);
 
     const chosenPlayers = new Set(playerProps.map((p) => p.player));
     const chosenMarkets = new Set(playerProps.map((p) => p.market));
@@ -997,7 +1006,7 @@ function fillPlayerProps(
         const sb = score(b);
         if (sb > sa) return b;
         if (sb < sa) return a;
-        return candidateRank(b) > candidateRank(a) ? b : a;
+        return propRankCmp(a, b) > 0 ? b : a;
       }, contenders[0]!);
     }
 
@@ -1017,7 +1026,7 @@ function fillPlayerProps(
   // ones (by the same 100-run simulated probabilities) are shown with an honest
   // badge rather than reporting props as unavailable. The -180 limit holds,
   // Touchdown markets never enter the standard player-prop floor.
-  const MIN_PROPS = 2;
+  const MIN_PROPS = 3;
   if (playerProps.length >= MIN_PROPS) return;
   const floor = candidates
     .filter(
@@ -1033,7 +1042,8 @@ function fillPlayerProps(
     .sort(
       (a, b) =>
         Number(propMarketPriority(a.market) !== 2) - Number(propMarketPriority(b.market) !== 2) ||
-        candidateRank(b) - candidateRank(a),
+        Number(propPriceOk(b)) - Number(propPriceOk(a)) ||
+        propRankCmp(a, b),
     );
   for (const c of floor) {
     if (playerProps.length >= MIN_PROPS) break;
