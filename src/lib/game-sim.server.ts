@@ -325,12 +325,14 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
 
 
   const homeWinProb = moneylineProb("home");
+  const diagnostics = buildDiagnostics(scores);
   const notes = [...fair.notes];
-  if (scores.length) {
-    const avgMargin = scores.reduce((sum, s) => sum + s.margin, 0) / scores.length;
-    const avgTotal = scores.reduce((sum, s) => sum + s.total, 0) / scores.length;
+  if (diagnostics) {
     notes.push(
-      `${runs} simulated final scores off that fair line: average margin ${avgMargin.toFixed(1)} to ${game.home_team}, average total ${avgTotal.toFixed(1)}, ${game.home_team} wins ${((homeWinProb ?? 0) * 100).toFixed(1)}% of runs. Every spread, total and moneyline price below is graded against these same 50 runs.`,
+      `${runs} simulated final scores off that fair line: average margin ${diagnostics.avgMargin.toFixed(1)} to ${game.home_team}, average total ${diagnostics.avgTotal.toFixed(1)}, ${game.home_team} wins ${((homeWinProb ?? 0) * 100).toFixed(1)}% of runs. Every spread, total, moneyline, alternate line and player prop below is graded against these same ${runs} runs.`,
+      `Simulation diagnostics: median total ${diagnostics.medianTotal}, total spread ${diagnostics.minTotal}-${diagnostics.maxTotal} (sd ${diagnostics.totalStdDev}), median margin ${diagnostics.medianMargin}, margin spread ${diagnostics.minMargin} to ${diagnostics.maxMargin} (sd ${diagnostics.marginStdDev}), outright ${diagnostics.homeWins}-${diagnostics.awayWins}-${diagnostics.ties}; totals ${diagnostics.totalDistribution
+        .map((band) => `${band.label}: ${band.runs}`)
+        .join(", ")}.`,
     );
   } else {
     notes.push(
@@ -346,6 +348,7 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
     homeWinProb,
     confidence: fair.inputs.confidence,
     notes,
+    diagnostics,
     spreadProb,
     totalProb,
     moneylineProb,
