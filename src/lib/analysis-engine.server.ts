@@ -1547,8 +1547,33 @@ function simulationFirstTop2(
   scored.sort((a, b) => Number(b.roi > 0) - Number(a.roi > 0) || b.score - a.score);
   const picked: Scored[] = [];
   const ideas = new Set<string>();
-  for (const s of scored) {
+  // A plus-money alternate whose simulated edge is under 1% ("thin") is not
+  // worth giving up the standard number: post the regular line of the same
+  // selection instead (e.g. Over 41.5 -110 rather than Over 43.5 +109).
+  const standardFor = (s: Scored): Scored => {
+    if (s.c.group !== "alt" || s.c.price < 100 || s.edge >= 0.01 || !s.c.standardKey) return s;
+    const std = byKey.get(s.c.standardKey);
+    if (!std || std.selection !== s.c.selection || reserved.has(std.key)) return s;
+    const found = scored.find((x) => x.c.key === std.key);
+    if (found) return found;
+    const outcomes = candidateOutcomes(std, game, projection, players);
+    if (!outcomes || !outcomes.length) return s;
+    const hits: number[] = [];
+    outcomes.forEach((won, i) => won && hits.push(i + 1));
+    const roi = expectedRoi(hits.length, outcomes.length, std.price);
+    return {
+      c: std,
+      hits,
+      runs: outcomes.length,
+      edge: simulatedEdge(hits.length, outcomes.length, std.price),
+      roi,
+      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier),
+    };
+  };
+  for (const raw of scored) {
     if (picked.length >= 2) break;
+    const s = standardFor(raw);
+    if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
     ideas.add(idea);
