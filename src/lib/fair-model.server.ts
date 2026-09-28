@@ -35,6 +35,10 @@ const CONFIDENCE_GAMES = 4;
 const SHRINK = 3;
 /** Points charged for a quarterback ruled out; other contributors are worth far less. */
 const QB_OUT_POINTS: Record<Sport, number> = { NFL: 4.5, CFB: 4 };
+/** Confidence retained when no verified availability report exists at all. */
+const UNVERIFIED_INJURY_CONFIDENCE = 0.7;
+/** Confidence retained when only one side has a verified availability report. */
+const PARTIAL_INJURY_CONFIDENCE = 0.85;
 
 type FinalGame = {
   home_team: string;
