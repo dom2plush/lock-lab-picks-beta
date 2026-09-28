@@ -213,7 +213,51 @@ export function AnalysisOutput({
         )}
       </Section>
 
-      <Section step={3} title="Fun bet" subtitle="One higher-risk scoring play for smaller units.">
+      <Section
+        step={3}
+        title="Touchdown picks"
+        subtitle="One anytime and one first touchdown scorer per team, from verified posted prices."
+      >
+        {touchdownPicks.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {touchdownPicks.map((pick) => (
+              <article key={pick.key} className="rounded-lg border border-hairline bg-card p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow">
+                    {pick.team ? `${pick.team} · ` : ""}
+                    {pick.market}
+                  </span>
+                  <BadgePill badge={pick.badge} />
+                </div>
+                <p className="mt-2 font-display text-lg font-semibold">{pick.label}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Logged {pick.point != null ? `${pick.point} ` : ""}{pick.odds ?? "—"}
+                  {pick.book ? ` · ${pick.book}` : ""}
+                  {pick.capturedAt ? ` · ${formatCapturedAt(pick.capturedAt)}` : ""}
+                </p>
+                {tailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => onTail(tailTarget(pick.key, pick.label, pick.odds ?? null, "player_props"))}
+                  >
+                    Tail
+                  </Button>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
+            No verified touchdown scorer price was posted for this game.
+          </p>
+        )}
+      </Section>
+
+      <Section step={4} title="Fun bet" subtitle="One higher-risk scoring play for smaller units.">
+
         {analysis.fun_bets.length === 0 && (
           <p className="rounded-lg border border-dashed border-hairline bg-card p-4 text-sm text-muted-foreground">
             No verified first-touchdown or anytime-touchdown price was available for a legitimate fun play.
