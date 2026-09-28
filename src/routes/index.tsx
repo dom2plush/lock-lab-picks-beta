@@ -229,6 +229,8 @@ function AnalyzePage() {
             </div>
           )}
 
+          <PublicBettingPanel game={analysis.game} />
+
           {analysis.row && (
             <AnalysisOutput
               game={analysis.game}
