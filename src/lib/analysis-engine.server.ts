@@ -1715,7 +1715,7 @@ function simulationFirstTop2(
   // when two bets are genuinely close does the sportsbook-favourable signal
   // (juice shading + line movement) decide the order.
   scored.sort((a, b) => b.score - a.score);
-  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds);
+  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds, game.public_betting ?? null);
   for (let pass = 0; pass < scored.length; pass += 1) {
     for (let i = 0; i + 1 < scored.length; i += 1) {
       const a = scored[i]!;
