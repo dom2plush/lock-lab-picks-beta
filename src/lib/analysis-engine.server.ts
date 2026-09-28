@@ -1104,26 +1104,27 @@ function fillPlayerProps(
       if (playerProps.some((p) => p.player === (c.player ?? "") && p.market === c.marketLabel)) continue;
       if (used.has(c.key)) continue;
       if (pass === 0 && playerProps.some((p) => p.player === (c.player ?? ""))) continue;
-    const thin = (c.grade?.edge ?? 0) < MIN_EDGE;
-    const badge: Badge = thin ? "red" : propBadge(c);
-    used.add(c.key);
-    const reason =
-      reasons?.get(c.key) ??
-      (thin
-        ? "Thin edge — the strongest remaining posted prop in the 100 simulated games, shown so you can compare it; the model sees little value at this price."
-        : "The strongest remaining posted prop on this board under the model's usage and matchup read.");
-    playerProps.push({
-      key: `prop-${playerProps.length + 1}`,
-      badge,
-      label: c.label,
-      player: c.player ?? "",
-      market: c.marketLabel,
-      odds: fmtOdds(c.price),
-      estimatedProbability: c.grade?.modelProb ?? null,
-      ...pickSource(c),
-      reason,
-    });
-    decisions.set(c.key, { section: "prop", badge, reason });
+      const thin = (c.grade?.edge ?? 0) < MIN_EDGE;
+      const badge: Badge = thin ? "red" : propBadge(c);
+      used.add(c.key);
+      const reason =
+        reasons?.get(c.key) ??
+        (thin
+          ? "Thin edge — the strongest remaining posted prop in the 100 simulated games, shown so you can compare it; the model sees little value at this price."
+          : "The strongest remaining posted prop on this board under the model's usage and matchup read.");
+      playerProps.push({
+        key: `prop-${playerProps.length + 1}`,
+        badge,
+        label: c.label,
+        player: c.player ?? "",
+        market: c.marketLabel,
+        odds: fmtOdds(c.price),
+        estimatedProbability: c.grade?.modelProb ?? null,
+        ...pickSource(c),
+        reason,
+      });
+      decisions.set(c.key, { section: "prop", badge, reason });
+    }
   }
 }
 
