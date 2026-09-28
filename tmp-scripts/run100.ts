@@ -1,0 +1,12 @@
+import { supabaseAdmin } from "../src/integrations/supabase/client.server";
+import { ensureSimulationBatch } from "../src/lib/simulation-runner.server";
+const { data } = await supabaseAdmin.from("games").select("*").eq("sport","NFL").eq("status","scheduled").order("commence_time").limit(1);
+const g = data![0]!;
+console.log("game", g.away_team, "@", g.home_team);
+const res = await ensureSimulationBatch(g as any, { force: true, allowGenerate: true });
+const a: any = res!.analysis;
+console.log("runs", res!.aggregate.runs);
+console.log("TOP", a.top_bets.map((b:any)=>({l:b.label,odds:b.odds,edge:b.modelEdge,hit:b.simHitRate,reason:b.reason.slice(0,140)})));
+console.log("PROPS", a.player_props.map((b:any)=>({l:b.label,odds:b.odds,edge:b.modelEdge,hit:b.simHitRate})));
+console.log("FUN", a.fun_bets.map((b:any)=>({l:b.label,odds:b.odds,edge:b.modelEdge})));
+console.log("NOTES", (a.notes?.model ?? a.model_notes ?? []).slice?.(-2));
