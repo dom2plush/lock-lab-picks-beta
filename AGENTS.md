@@ -18,3 +18,4 @@
 
 - Top 2 ranks by combined hit rate, then Base/Stress robustness, then edge, then ROI; sportsbook-side signal only breaks near-ties. Why: user wants frequency-led picks that survive the stress test.
 - Badges come from `robustBadge` in src/lib/robustness.ts (pure, client-safe); public splits may only lift RED to YELLOW, never force GREEN. Why: stress test is a confidence modifier, splits a supporting factor.
+- Extreme prop edges (>= LARGE_EDGE) are validated against the player's simulated opportunity (validatePropOpportunity) instead of a blanket cap: supported keeps normal badge rules, unconfirmed caps at YELLOW and lowers rank; props are never deleted for size alone. Why: user wants real edges kept but fragile ones discounted.
