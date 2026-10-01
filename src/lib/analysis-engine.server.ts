@@ -49,6 +49,17 @@ import type { GameProjection } from "./game-sim.server";
 import { simulateGame } from "./game-sim.server";
 import type { PlayerProjection } from "./player-sim.server";
 import { simulatePlayers } from "./player-sim.server";
+import {
+  DISAGREEMENT_WARNING,
+  LARGE_EDGE,
+  disagreementVerdict,
+  robustBadge,
+  robustFields,
+  robustnessFromHits,
+  robustnessFromOutcomes,
+  stressCollapsed,
+  type Robustness,
+} from "./robustness";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -153,6 +164,8 @@ type Candidate = {
   standardKey?: string;
   /** Probability vs price: estimated chance, implied chance, edge, EV, noise band. */
   grade?: ValueGrade;
+  /** Base (500) vs Stress (500) robustness at the exact posted price. */
+  robust?: Robustness;
 };
 
 /** Internal calibration record for one considered selection. Never rendered publicly. */
@@ -661,6 +674,10 @@ function gradeBoard(
 
     c.grade = gradeValue({ modelProb, price: c.price, group: c.group, distance, evidenceStrength: evidence });
     c.note = `${c.note} ${c.grade.note}`;
+    if (fromSim != null) {
+      const robust = robustnessFromOutcomes(candidateOutcomes(c, game, projection, players), c.price);
+      if (robust) c.robust = robust;
+    }
   }
 }
 
@@ -884,6 +901,7 @@ function betIdeaKey(c: Candidate): string {
  * green anywhere — with the confidence read layered on top of it.
  */
 function propBadge(c: Candidate): Badge {
+  if (c.robust) return robustBadge(c.robust);
   const g = c.grade;
   if (!g || g.modelProb == null || g.edge == null) return "red";
   if (g.edge < MIN_EDGE) return "red";
@@ -928,11 +946,25 @@ const isUnder = (c: Candidate) => propDirection(c).includes("under");
  * posted line) and EV support it. Unders need strong simulation support
  * (60%+) or they are marked down, so weak unders are not forced.
  */
-const propStrength = (c: Candidate) =>
-  propHit(c) +
-  (meaningfulPropLine(c) ? 0.06 : 0) +
-  0.25 * Math.max(-0.1, Math.min(0.2, c.grade?.edge ?? 0)) -
-  (isUnder(c) && propHit(c) < 0.6 ? 0.08 : 0);
+const propStrength = (c: Candidate) => {
+  const r = c.robust;
+  // Robustness: stress-test agreement and a surviving stress edge support a
+  // prop; a huge edge with weak corroboration is treated as suspicious.
+  const robust = r
+    ? 0.08 * r.agreementScore +
+      0.3 * Math.max(-0.1, Math.min(0.1, r.stressEdge)) -
+      (stressCollapsed(r) ? 0.1 : 0) -
+      (r.combinedEdge >= LARGE_EDGE && r.agreementLevel !== "HIGH" ? 0.06 : 0)
+    : 0;
+  return (
+    propHit(c) +
+    (meaningfulPropLine(c) ? 0.06 : 0) +
+    0.25 * Math.max(-0.1, Math.min(0.2, c.grade?.edge ?? 0)) +
+    0.15 * Math.max(-0.2, Math.min(0.3, r?.expectedRoi ?? 0)) +
+    robust -
+    (isUnder(c) && propHit(c) < 0.6 ? 0.08 : 0)
+  );
+};
 const propRankCmp = (a: Candidate, b: Candidate) =>
   propStrength(b) - propStrength(a) || candidateRank(b) - candidateRank(a);
 const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
