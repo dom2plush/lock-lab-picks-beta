@@ -148,6 +148,10 @@ export type PickSource = {
   disagreement?: { model: number; market: number; verdict: "supported" | "weakened" | "uncertain" } | null;
   /** Standard-line metrics when an alternate line was chosen over it. */
   standardMetrics?: { hitRate: number; implied: number; edge: number; roi: number; pushRate?: number | null } | null;
+  /** Same-side spreads within a point (key-number check), each from the same 1,000 runs. */
+  lineComparison?: LineMetrics[] | null;
+  /** Both sides of the total when they are close. */
+  totalComparison?: { over: LineMetrics; under: LineMetrics; stronger: string } | null;
   /** Push share of the 1,000 runs (spreads/totals on whole numbers). */
   pushRate?: number | null;
 };
@@ -264,3 +268,16 @@ export function formatKickoff(iso: string) {
     minute: "2-digit",
   });
 }
+
+export type LineMetrics = {
+  label: string;
+  price: number;
+  hitRate: number;
+  baseHitRate: number;
+  stressHitRate: number;
+  implied: number;
+  edge: number;
+  roi: number;
+  agreement: "HIGH" | "MEDIUM" | "LOW";
+  pushRate: number | null;
+};

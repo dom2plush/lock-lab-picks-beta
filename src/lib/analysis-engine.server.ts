@@ -1677,8 +1677,46 @@ function attachSimulatedOutcomes(
     const standard = c?.standardKey ? byKey.get(c.standardKey) : undefined;
     const stdR = standard ? robustnessFromOutcomes(candidateOutcomes(standard, game, projection, players), standard.price) : null;
     const pushRate = c ? candidatePushRate(c, game, projection) : null;
+    const metricsOf = (x: Candidate) => {
+      const xr = robustnessFromOutcomes(candidateOutcomes(x, game, projection, players), x.price);
+      return xr
+        ? {
+            label: x.label,
+            price: x.price,
+            hitRate: xr.combinedHitRate,
+            baseHitRate: xr.baseHitRate,
+            stressHitRate: xr.stressHitRate,
+            implied: xr.impliedProbability,
+            edge: xr.combinedEdge,
+            roi: xr.expectedRoi,
+            agreement: xr.agreementLevel,
+            pushRate: candidatePushRate(x, game, projection),
+          }
+        : null;
+    };
+    let lineComparison: ReturnType<typeof metricsOf>[] | null = null;
+    if (c && isSpread(c)) {
+      const peers = candidates.filter(
+        (x) => x.group !== "prop" && isSpread(x) && x.selection === c.selection && Math.abs(x.point! - c.point!) <= 1.01,
+      );
+      if (peers.length > 1) lineComparison = peers.sort((a, b) => a.point! - b.point!).map(metricsOf).filter(Boolean);
+    }
+    let totalComparison: { over: ReturnType<typeof metricsOf>; under: ReturnType<typeof metricsOf>; stronger: string } | null = null;
+    if (c && /total/i.test(c.market) && !/team_total/i.test(c.market) && c.point != null) {
+      const sideAt = (sel: string) => candidates.find((x) => x.group !== "prop" && x.market === c.market && x.point === c.point && x.selection === sel);
+      const o = sideAt("Over");
+      const u = sideAt("Under");
+      const om = o ? metricsOf(o) : null;
+      const um = u ? metricsOf(u) : null;
+      if (om && um && Math.abs(om.hitRate - um.hitRate) <= 0.08) {
+        const strength = (m: NonNullable<typeof om>) => m.hitRate + 0.5 * m.roi + (m.agreement === "HIGH" ? 0.01 : m.agreement === "LOW" ? -0.01 : 0);
+        totalComparison = { over: om, under: um, stronger: strength(om) >= strength(um) ? om.label : um.label };
+      }
+    }
     return {
       ...bet,
+      lineComparison,
+      totalComparison,
       ...robustFields(r),
       badge: robustBadge(r, { dataOk }),
       pushRate,
@@ -1865,6 +1903,52 @@ export function publicSideSignal(
  * often it wins, supported by expected return at its exact price and model
  * confidence. The sportsbook-favourable side only breaks near-ties.
  */
+/** NFL key margins: a half-point across one of these is materially different. */
+const KEY_MARGINS = [3, 7, 10, 14];
+const isSpread = (c: Candidate) => /spread/i.test(c.market) && !/team_total/i.test(c.market) && c.point != null;
+const crossesKey = (a: number, b: number) => {
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  return KEY_MARGINS.some((k) => (lo < k && hi > k) || (lo < -k && hi > -k));
+};
+/** Hit-rate gain the extra protection must buy, and the ROI it may cost. */
+const KEY_MIN_HIT_GAIN = 0.03;
+const KEY_MAX_ROI_COST = 0.03;
+const lineDecision = new Map<string, string>();
+
+/**
+ * Same-team spreads within one point compete on whether the extra half-point
+ * (especially across 3/7/10/14) is worth the extra juice. Never hard-coded:
+ * protection wins only when it buys real hit rate without destroying ROI;
+ * otherwise the cheaper line stays.
+ */
+function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: number; roi: number }>(s: T, pool: T[]): T {
+  if (!isSpread(s.c)) return s;
+  const hr = (x: T) => x.hits.length / x.runs;
+  const peers = pool.filter(
+    (x) => x !== s && isSpread(x.c) && x.c.selection === s.c.selection && Math.abs(x.c.point! - s.c.point!) <= 1.01,
+  );
+  let best = s;
+  for (const x of peers) {
+    const more = x.c.point! > best.c.point! ? x : best;
+    const less = more === x ? best : x;
+    const gain = hr(more) - hr(less);
+    const cost = less.roi - more.roi;
+    const keyed = crossesKey(more.c.point!, less.c.point!);
+    const need = keyed ? KEY_MIN_HIT_GAIN : KEY_MIN_HIT_GAIN * 1.5;
+    const winner = gain >= need && cost <= KEY_MAX_ROI_COST ? more : less;
+    const loser = winner === more ? less : more;
+    lineDecision.set(
+      winner.c.key,
+      winner === more
+        ? `${winner.c.label} is preferable to ${loser.c.label}: the extra protection${keyed ? " across a key number" : ""} lifts the simulated hit rate ${(gain * 100).toFixed(1)} pts and is worth the price.`
+        : `${winner.c.label} is preferable to ${loser.c.label}: the extra protection${keyed ? " across a key number" : ""} adds only ${(gain * 100).toFixed(1)} pts of hit rate${cost > KEY_MAX_ROI_COST ? " and is overpriced" : ""}.`,
+    );
+    best = winner;
+  }
+  return best;
+}
+
 function simulationFirstTop2(
   current: PickBet[],
   candidates: Candidate[],
@@ -1947,7 +2031,7 @@ function simulationFirstTop2(
   };
   for (const raw of scored) {
     if (picked.length >= 2) break;
-    const s = standardFor(raw);
+    const s = keyNumberChoice(standardFor(raw), scored);
     if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
@@ -1994,6 +2078,7 @@ function simulationFirstTop2(
           }
         : {}),
       reason:
+        lineDecision.get(s.c.key) ??
         comparison ??
         `Won ${s.hits.length} of ${s.runs} simulated games — among the two strongest bets by simulated frequency, supported by the price and matchup read.`,
       simHits: s.hits,
