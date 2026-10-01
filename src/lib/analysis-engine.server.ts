@@ -1922,7 +1922,7 @@ const lineDecision = new Map<string, string>();
  * -3.5 -> -2.5) when it is posted inside the Top 2 price range and simulates
  * at least as well; non-key moves still have to earn their extra juice.
  */
-function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: number; roi: number }>(s: T, pool: T[]): T {
+export function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: number; roi: number }>(s: T, pool: T[]): T {
   if (!isSpread(s.c)) return s;
   const hr = (x: T) => x.hits.length / x.runs;
   const peers = pool.filter(
