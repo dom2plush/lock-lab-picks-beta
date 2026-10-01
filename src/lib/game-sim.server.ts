@@ -19,6 +19,7 @@
  */
 import type { FairModel } from "./fair-model.server";
 import type { GameRow, Sport } from "./lock-lab-types";
+import { BASE_RUNS } from "./robustness";
 import { SIMULATION_RUNS, mulberry32, seedFrom, simulationSeedKey } from "./simulation.server";
 
 /** Scatter of final margins around the fair spread. */
@@ -217,37 +218,97 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
 
   const scores: SimulatedScore[] = [];
   if (fairMargin != null && fairTotal != null) {
+    // Stress scenarios use their own seeded stream so the Base Model runs stay
+    // byte-identical to a pure base simulation of the same game.
+    const sRand = mulberry32(seedFrom(`${simulationSeedKey(game)}:stress`));
+    const materialInjuries = (game.injuries ?? []).some((i) =>
+      /\b(out|doubtful|questionable|ir|injured reserve)\b/i.test(i.status ?? ""),
+    );
+    const favouriteSign = fairMargin >= 0 ? 1 : -1;
     for (let run = 1; run <= runs; run += 1) {
+      // Runs 1..BASE_RUNS: Base Model (most likely game environment).
+      // Runs after that: Stress Test — every run perturbs the key assumptions
+      // in a football-realistic range to see whether a bet survives them.
+      const stress = run > BASE_RUNS;
+      const sc = stress
+        ? {
+            // C/D/H: offensive + defensive efficiency and pace move the scoring level.
+            totalMult: Math.max(0.78, Math.min(1.25, 1 + gaussian(sRand) * 0.06 - gaussian(sRand) * 0.04 + gaussian(sRand) * 0.04)),
+            // Team-strength / QB uncertainty (J: wider when injuries are reported).
+            marginScale: Math.max(0.6, Math.min(1.4, 1 + gaussian(sRand) * 0.15)),
+            marginShift: gaussian(sRand) * (materialInjuries ? 2.2 : 1.5),
+            // B: explosive-play frequency.
+            wideShare: WIDE_REGIME_SHARE * (0.7 + sRand() * 0.9),
+            // A: QB turnover variance.
+            driveKill: Math.max(0.08, Math.min(0.4, DRIVE_KILL_CHANCE * (1 + gaussian(sRand) * 0.3))),
+            defTd: Math.max(0.04, Math.min(0.2, DEFENSIVE_TD_CHANCE * (1 + gaussian(sRand) * 0.3))),
+            // F: underdog backdoor / G: game-state scoring.
+            comeback: Math.max(0.15, Math.min(0.55, COMEBACK_CHANCE * (0.7 + sRand() * 0.7))),
+            // E: favourite blowout.
+            blowout: 0.04 + sRand() * 0.08,
+            // K: red-zone efficiency, L: fourth-down / high-leverage swings, I: key numbers.
+            redZone: 0.25,
+            leverage: 0.15,
+            keyNudge: 0.06,
+          }
+        : null;
       // Two scoring regimes: most games are ordinary, a minority are explosive
       // shootouts or blowouts. This keeps the tails populated instead of
       // stacking every run on the posted number.
-      const wide = rand() < WIDE_REGIME_SHARE;
+      const wide = rand() < (sc ? sc.wideShare : WIDE_REGIME_SHARE);
       const scale = wide ? WIDE_REGIME_SCALE : BASE_REGIME_SCALE;
-      const margin = fairMargin + gaussian(rand) * marginSigma * scale;
-      const total = Math.max(10, fairTotal + gaussian(rand) * totalSigma * scale);
+      const runMargin = sc ? fairMargin * sc.marginScale + sc.marginShift : fairMargin;
+      const runTotal = sc ? fairTotal * sc.totalMult : fairTotal;
+      const margin = runMargin + gaussian(rand) * marginSigma * scale;
+      const total = Math.max(10, runTotal + gaussian(rand) * totalSigma * scale);
 
       let home = (total + margin) / 2;
       let away = (total - margin) / 2;
 
       // Defensive / special-teams touchdowns: points scored without an
       // offensive drive, which the margin-and-total draw cannot produce.
-      if (rand() < DEFENSIVE_TD_CHANCE) home += 7;
-      if (rand() < DEFENSIVE_TD_CHANCE) away += 7;
+      const defTd = sc ? sc.defTd : DEFENSIVE_TD_CHANCE;
+      if (rand() < defTd) home += 7;
+      if (rand() < defTd) away += 7;
 
       // Turnovers and failed drives inside scoring range remove points.
-      if (rand() < DRIVE_KILL_CHANCE) home -= rand() < 0.5 ? 3 : 7;
-      if (rand() < DRIVE_KILL_CHANCE) away -= rand() < 0.5 ? 3 : 7;
+      const kill = sc ? sc.driveKill : DRIVE_KILL_CHANCE;
+      if (rand() < kill) home -= rand() < 0.5 ? 3 : 7;
+      if (rand() < kill) away -= rand() < 0.5 ? 3 : 7;
 
       // Game state: a team down two scores late plays faster and often adds
       // one more touchdown, which lifts the total without flipping the game.
       const gap = home - away;
-      if (Math.abs(gap) >= 11 && rand() < COMEBACK_CHANCE) {
+      if (Math.abs(gap) >= 11 && rand() < (sc ? sc.comeback : COMEBACK_CHANCE)) {
         if (gap > 0) away += rand() < 0.35 ? 8 : 7;
         else home += rand() < 0.35 ? 8 : 7;
       }
 
-      const homeScore = snapScore(home);
+      if (sc) {
+        // Favourite pulls away late.
+        if (sRand() < sc.blowout) {
+          if (favouriteSign > 0) home += 7;
+          else away += 7;
+        }
+        // Red zone: a touchdown stalls into a field goal, or a field goal becomes a touchdown.
+        if (sRand() < sc.redZone) {
+          const swing = sRand() < 0.55 ? -4 : 4;
+          if (sRand() < 0.5) home += swing;
+          else away += swing;
+        }
+        // Fourth-down / high-leverage swing.
+        if (sRand() < sc.leverage) {
+          const pts = sRand() < 0.5 ? 3 : 7;
+          if (sRand() < 0.5) home += pts;
+          else away += pts;
+        }
+      }
+
+      let homeScore = snapScore(home);
       const awayScore = snapScore(away);
+      // Key-number outcomes: a missed extra point or a two-point try moves a
+      // final off (or onto) 3/7 in a share of stress runs.
+      if (sc && sRand() < sc.keyNudge && homeScore >= 6) homeScore += sRand() < 0.5 ? -1 : 1;
       scores.push({
         run,
         home: homeScore,
