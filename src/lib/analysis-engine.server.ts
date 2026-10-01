@@ -1936,7 +1936,7 @@ export function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: 
     const cost = less.roi - more.roi;
     const keyed = crossesKey(more.c.point!, less.c.point!);
     const need = keyed ? KEY_MIN_HIT_GAIN : KEY_MIN_HIT_GAIN * 1.5;
-    const winner = keyed ? (gain >= 0 ? more : less) : gain >= need && cost <= KEY_MAX_ROI_COST ? more : less;
+    const winner = keyed ? (gain >= 0 && more.roi > 0 ? more : less) : gain >= need && cost <= KEY_MAX_ROI_COST ? more : less.roi >= more.roi ? less : more;
     const loser = winner === more ? less : more;
     lineDecision.set(
       winner.c.key,
@@ -2003,6 +2003,13 @@ function simulationFirstTop2(
         scored[i + 1] = a;
       }
     }
+  }
+  // Negative-value bets never outrank a positive-value one; they only fill a
+  // slot when fewer than two positive-value bets exist (Top 2 is always two).
+  const positives = scored.filter((s) => s.roi > 0);
+  if (positives.length) {
+    const rest = scored.filter((s) => s.roi <= 0);
+    scored.splice(0, scored.length, ...positives, ...rest);
   }
   const picked: Scored[] = [];
   const ideas = new Set<string>();

@@ -11,7 +11,7 @@ export const SIMULATION_ENGINE_VERSION = "sim-v35";
  * do not. It forces saved cards to rebuild without touching the seed, which
  * stays tied to SIMULATION_ENGINE_VERSION only.
  */
-export const CARD_SELECTION_VERSION = "cards-v12";
+export const CARD_SELECTION_VERSION = "cards-v13";
 /** Version stamped on stored batches; a mismatch triggers one rebuild. */
 export const STORED_BATCH_VERSION = `${SIMULATION_ENGINE_VERSION}+${CARD_SELECTION_VERSION}`;
 /** 500 Base Model runs followed by 500 Stress Test runs. */
