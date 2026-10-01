@@ -294,7 +294,12 @@ export function simulatePlayers(
             : 1;
         // Verified availability scales the workload: a player ruled out scores
         // nothing in any simulated game, a doubtful one plays limited snaps.
-        const mean = line * scoreFactor * script * model.availability;
+        // Stress runs also treat a limited player's workload as uncertain.
+        const availability =
+          run > BASE_RUNS && model.availability > 0 && model.availability < 1
+            ? Math.min(1, model.availability * (0.7 + 0.6 * u))
+            : model.availability;
+        const mean = line * scoreFactor * script * availability;
         if (model.availability <= 0) {
           value.set(market, 0);
           continue;
