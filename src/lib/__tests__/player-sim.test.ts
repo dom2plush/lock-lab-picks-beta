@@ -80,7 +80,7 @@ describe("player props come out of the 100 simulated games", () => {
     const projection = simulateGame(game, fair);
     const players = simulatePlayers(game, projection, props);
 
-    expect(players.runs).toBe(100);
+    expect(players.runs).toBe(1000);
     const over = players.outcomes({
       market: "player_pass_yds",
       player: "Jaxson Dart",
@@ -93,8 +93,8 @@ describe("player props come out of the 100 simulated games", () => {
       selection: "Under",
       point: 225.5,
     });
-    expect(over).toHaveLength(100);
-    expect(under).toHaveLength(100);
+    expect(over).toHaveLength(1000);
+    expect(under).toHaveLength(1000);
     // Same simulated stat line: a player cannot go over and under in one game.
     over!.forEach((won, index) => expect(won).toBe(!under![index]));
 
@@ -136,12 +136,12 @@ describe("player props come out of the 100 simulated games", () => {
     const publishedPlayers = result.playerProps.map((p) => `${p.player}|${p.market}`);
     expect(new Set(publishedPlayers).size).toBe(publishedPlayers.length);
     for (const pick of [...result.playerProps, ...result.funBets]) {
-      expect(pick.simRuns).toBe(100);
+      expect(pick.simRuns).toBe(1000);
       expect(Array.isArray(pick.simHits)).toBe(true);
-      expect(pick.simHits!.every((run) => run >= 1 && run <= 100)).toBe(true);
+      expect(pick.simHits!.every((run) => run >= 1 && run <= 1000)).toBe(true);
     }
     for (const pick of result.topBets) {
-      expect(pick.simRuns).toBe(100);
+      expect(pick.simRuns).toBe(1000);
     }
   });
 

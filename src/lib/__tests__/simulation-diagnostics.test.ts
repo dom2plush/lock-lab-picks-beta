@@ -42,12 +42,12 @@ describe("100-run simulation diagnostics", () => {
     const projection = simulateGame(game, fair);
     const d = projection.diagnostics!;
 
-    expect(projection.runs).toBe(100);
-    expect(d.runs).toBe(100);
-    expect(d.homeWins + d.awayWins + d.ties).toBe(100);
+    expect(projection.runs).toBe(1000);
+    expect(d.runs).toBe(1000);
+    expect(d.homeWins + d.awayWins + d.ties).toBe(1000);
     expect(d.avgTotal).toBeGreaterThan(20);
     expect(d.medianTotal).toBeGreaterThan(20);
-    expect(d.totalDistribution.reduce((sum, band) => sum + band.runs, 0)).toBe(100);
+    expect(d.totalDistribution.reduce((sum, band) => sum + band.runs, 0)).toBe(1000);
     // Explosive plays, defensive scores and comebacks keep the tails alive.
     expect(d.totalStdDev).toBeGreaterThan(9);
     expect(d.maxTotal - d.minTotal).toBeGreaterThan(30);
@@ -58,10 +58,10 @@ describe("100-run simulation diagnostics", () => {
     const fair = await buildFairModel(game, odds);
     const projection = simulateGame(game, fair);
 
-    expect(projection.spreadOutcomes("home", -3)).toHaveLength(100);
-    expect(projection.totalOutcomes("Over", 45.5)).toHaveLength(100);
-    expect(projection.totalOutcomes("Under", 49.5)).toHaveLength(100);
-    expect(projection.moneylineOutcomes("away")).toHaveLength(100);
+    expect(projection.spreadOutcomes("home", -3)).toHaveLength(1000);
+    expect(projection.totalOutcomes("Over", 45.5)).toHaveLength(1000);
+    expect(projection.totalOutcomes("Under", 49.5)).toHaveLength(1000);
+    expect(projection.moneylineOutcomes("away")).toHaveLength(1000);
 
     // An alternate is settled on the same scores as its standard line.
     const standard = projection.spreadOutcomes("away", 3)!.filter(Boolean).length;

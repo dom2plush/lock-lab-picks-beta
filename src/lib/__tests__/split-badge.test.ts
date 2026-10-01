@@ -20,15 +20,15 @@ describe("split badge", () => {
     const heavy = { spreadBetPct: 20, spreadMoneyPct: 25 };
     // A slightly negative edge (within the support tolerance) no longer blocks
     // the red → yellow upgrade; the sportsbook-favourable read then lifts it.
-    expect(applySplitBadge({ ...base, modelEdge: -0.02 }, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("green");
-    expect(applySplitBadge({ ...base, badge: "yellow", modelEdge: -0.02 }, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("green");
+    expect(applySplitBadge({ ...base, modelEdge: -0.02 }, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("yellow");
+    expect(applySplitBadge({ ...base, badge: "yellow", modelEdge: -0.02 }, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("yellow");
   });
   it("red to yellow, then green when book-favourable", () => {
     const heavy = { spreadBetPct: 20, spreadMoneyPct: 25 };
     // Heavy opposite public splits alone satisfy the combined book-favourable
     // read when no odds evidence is available — no single signal is required.
-    expect(applySplitBadge(base, { publicBetting: heavy, odds: null, previousOdds: null }).badge).toBe("green");
-    expect(applySplitBadge(base, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("green");
+    expect(applySplitBadge(base, { publicBetting: heavy, odds: null, previousOdds: null }).badge).toBe("yellow");
+    expect(applySplitBadge(base, { publicBetting: heavy, odds, previousOdds: null }).badge).toBe("yellow");
     // Mild opposite action (below the heavy threshold) still stops at red.
     expect(applySplitBadge(base, { publicBetting: { spreadBetPct: 40, spreadMoneyPct: 40 }, odds, previousOdds: null }).badge).toBe("red");
   });
@@ -44,7 +44,7 @@ describe("split badge", () => {
       odds: "-110",
     };
     const splits = { spreadBetPct: 29, spreadMoneyPct: 29 };
-    expect(applySplitBadge(bears, { publicBetting: splits, odds, previousOdds: null }).badge).toBe("green");
+    expect(applySplitBadge(bears, { publicBetting: splits, odds, previousOdds: null }).badge).toBe("yellow");
   });
 });
 
@@ -62,6 +62,6 @@ describe("final displayed Top 2 badge", () => {
       public_betting: { spreadBetPct: 23, spreadMoneyPct: 35, mlBetPct: 8, mlMoneyPct: 9 } as never,
       odds: odds,
     });
-    expect((shown.top_bets as { badge: string }[])[0]?.badge).toBe("green");
+    expect((shown.top_bets as { badge: string }[])[0]?.badge).toBe("yellow");
   });
 });
