@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
@@ -150,6 +151,7 @@ export function AnalysisOutput({
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified?: boolean;
 }) {
+  const [details, setDetails] = useState(false);
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
   const tailable = status === "pregame";
   const touchdownPicks = (analysis.player_props ?? []).filter(isTouchdownPick);
@@ -214,6 +216,9 @@ export function AnalysisOutput({
             so nothing below claims a player is active or out.
           </p>
         )}
+        <Button size="sm" variant="outline" className="mt-3" onClick={() => setDetails((d) => !d)}>
+          {details ? "Hide details" : "Show details"}
+        </Button>
       </div>
 
       <Section step={1} title="Top 2 bets" subtitle="The two strongest distinct prices on the live board.">
@@ -243,9 +248,9 @@ export function AnalysisOutput({
                 <BadgePill badge={pick.badge} />
               </div>
               <p className="mt-2 font-display text-xl font-semibold">{pick.label}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
-              <SimBreakdown pick={pick} full />
-              {pick.standardLabel && (
+              {details && <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>}
+              {details && <SimBreakdown pick={pick} full />}
+              {details && pick.standardLabel && (
                 <div className="mt-3 rounded-md border border-hairline bg-surface p-3">
                   <span className="eyebrow">Standard line</span>
                   <p className="mt-1 text-sm font-semibold">{pick.standardLabel}</p>
@@ -292,8 +297,8 @@ export function AnalysisOutput({
                   <BadgePill badge={prop.badge} />
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
-                <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
-                <SimBreakdown pick={prop} />
+                {details && <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>}
+                {details && <SimBreakdown pick={prop} />}
                 <p className="mt-3 text-xs text-muted-foreground">
                   Logged {prop.point != null ? `${prop.point} ` : ""}{prop.odds ?? "—"}
                   {prop.book ? ` · ${prop.book}` : ""}
@@ -336,8 +341,8 @@ export function AnalysisOutput({
                   {pick.market !== "First TD scorer" && <BadgePill badge={pick.badge} />}
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{pick.label}</p>
-                <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
-                {pick.market !== "First TD scorer" && <SimBreakdown pick={pick} />}
+                {details && <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>}
+                {details && pick.market !== "First TD scorer" && <SimBreakdown pick={pick} />}
                 <p className="mt-3 text-xs text-muted-foreground">
                   Logged {pick.point != null ? `${pick.point} ` : ""}{pick.odds ?? "—"}
                   {pick.book ? ` · ${pick.book}` : ""}
