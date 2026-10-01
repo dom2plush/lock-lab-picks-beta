@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -49,6 +50,7 @@ function AnalyzePage() {
     propsVerified: boolean;
   } | null>(null);
   const [running, setRunning] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [tailTarget, setTailTarget] = useState<TailTarget | null>(null);
 
   const analyze = useServerFn(getOrCreateAnalysis);
@@ -105,6 +107,7 @@ function AnalyzePage() {
         message: result.message,
         propsVerified: result.propsVerified,
       });
+      setModalOpen(true);
       if (result.status !== "pregame") {
         toast.message(
           result.status === "historical" ? "Final — pregame card only" : "Game in progress / picks locked",
@@ -214,35 +217,69 @@ function AnalyzePage() {
         </p>
       )}
 
-      {analysis && (
-        <div className="mt-12 space-y-6">
-          {analysis.status !== "pregame" && (
-            <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
-              <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
-                {analysis.status === "historical"
-                  ? "Final — pregame picks only"
-                  : analysis.status === "unavailable"
-                    ? "Live odds unavailable"
-                    : "Game in progress / picks locked"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">{analysis.message}</p>
+      <Dialog
+        open={running || modalOpen}
+        onOpenChange={(open) => {
+          if (!open && !running) setModalOpen(false);
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[92vh] w-[calc(100vw-1.5rem)] max-w-5xl flex-col gap-0 overflow-hidden border-hairline bg-background p-0"
+          onInteractOutside={(event) => running && event.preventDefault()}
+          onEscapeKeyDown={(event) => running && event.preventDefault()}
+        >
+          {running ? (
+            <div className="flex flex-col items-center justify-center gap-4 px-6 py-16 text-center">
+              <Loader2 className="size-10 animate-spin text-primary" />
+              <DialogTitle className="font-display text-2xl font-semibold tracking-wide uppercase">
+                Analyzing Game
+              </DialogTitle>
+              <DialogDescription>Running 100 simulations on the live board…</DialogDescription>
             </div>
-          )}
-
-
-          {analysis.row && (
-            <AnalysisOutput
-              game={analysis.game}
-              analysis={analysis.row}
-              status={analysis.status}
-              propsVerified={analysis.propsVerified}
-              onTail={(target) => setTailTarget(target)}
-            />
-          )}
-        </div>
-      )}
+          ) : analysis ? (
+            <>
+              <div className="border-b border-hairline px-5 py-4 pr-12 sm:px-6">
+                <span className="eyebrow">{analysis.game.sport} · Lock Lab analysis</span>
+                <DialogTitle className="mt-1 font-display text-2xl font-semibold">
+                  {analysis.game.away_team} at {analysis.game.home_team}
+                </DialogTitle>
+                <DialogDescription className="sr-only">Lock Lab analysis results</DialogDescription>
+              </div>
+              <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
+                {analysis.status !== "pregame" && (
+                  <div className="rounded-lg border border-stop/40 bg-stop/10 p-4">
+                    <p className="font-display text-sm font-bold tracking-wide text-stop uppercase">
+                      {analysis.status === "historical"
+                        ? "Final — pregame picks only"
+                        : analysis.status === "unavailable"
+                          ? "Live odds unavailable"
+                          : "Game in progress / picks locked"}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">{analysis.message}</p>
+                  </div>
+                )}
+                {analysis.row && (
+                  <AnalysisOutput
+                    game={analysis.game}
+                    analysis={analysis.row}
+                    status={analysis.status}
+                    propsVerified={analysis.propsVerified}
+                    onTail={(target) => setTailTarget(target)}
+                  />
+                )}
+              </div>
+              <div className="flex justify-end border-t border-hairline px-5 py-3 sm:px-6">
+                <Button variant="outline" onClick={() => setModalOpen(false)}>
+                  Close Analysis
+                </Button>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <TailDialog target={tailTarget} onClose={() => setTailTarget(null)} />
+
     </div>
   );
 }
