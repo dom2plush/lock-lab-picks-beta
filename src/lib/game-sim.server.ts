@@ -110,6 +110,8 @@ export type GameProjection = {
   homeWinProb: number | null;
   /** 0-1 confidence in the underlying model inputs. */
   confidence: number;
+  /** Fair-model inputs, used to explain where an edge comes from. */
+  inputs?: FairModel["inputs"];
   notes: string[];
   /** Audit numbers for the simulated distribution, or null with no runs. */
   diagnostics: SimulationDiagnostics | null;
@@ -408,6 +410,7 @@ export function simulateGame(game: GameRow, fair: FairModel, runs = SIMULATION_R
     fairTotal,
     homeWinProb,
     confidence: fair.inputs.confidence,
+    inputs: fair.inputs,
     notes,
     diagnostics,
     spreadProb,
