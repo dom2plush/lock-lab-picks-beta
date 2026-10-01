@@ -297,7 +297,7 @@ export function simulatePlayers(
         // Stress runs also treat a limited player's workload as uncertain.
         const availability =
           run > BASE_RUNS && model.availability > 0 && model.availability < 1
-            ? Math.min(1, model.availability * (0.7 + 0.6 * u))
+            ? Math.min(1, model.availability * (0.7 + 0.6 * mulberry32(seedFrom(`${seedBase}:${model.player}:avail:${run}`))()))
             : model.availability;
         const mean = line * scoreFactor * script * availability;
         if (model.availability <= 0) {
