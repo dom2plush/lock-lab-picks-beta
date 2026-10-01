@@ -1904,7 +1904,7 @@ export function publicSideSignal(
  * confidence. The sportsbook-favourable side only breaks near-ties.
  */
 /** NFL key margins: a half-point across one of these is materially different. */
-const KEY_MARGINS = [3, 7, 10, 14];
+const KEY_MARGINS = [3, 7, 10, 14, 21, 28];
 const isSpread = (c: Candidate) => /spread/i.test(c.market) && !/team_total/i.test(c.market) && c.point != null;
 const crossesKey = (a: number, b: number) => {
   const lo = Math.min(a, b);
@@ -1917,10 +1917,10 @@ const KEY_MAX_ROI_COST = 0.03;
 const lineDecision = new Map<string, string>();
 
 /**
- * Same-team spreads within one point compete on whether the extra half-point
- * (especially across 3/7/10/14) is worth the extra juice. Never hard-coded:
- * protection wins only when it buys real hit rate without destroying ROI;
- * otherwise the cheaper line stays.
+ * Same-team spreads within one point compete. Crossing a key number
+ * (3/7/10/14/21/28) always takes the protected side (+2.5 -> +3.5,
+ * -3.5 -> -2.5) when it is posted inside the Top 2 price range and simulates
+ * at least as well; non-key moves still have to earn their extra juice.
  */
 function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: number; roi: number }>(s: T, pool: T[]): T {
   if (!isSpread(s.c)) return s;
@@ -1936,7 +1936,7 @@ function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: number;
     const cost = less.roi - more.roi;
     const keyed = crossesKey(more.c.point!, less.c.point!);
     const need = keyed ? KEY_MIN_HIT_GAIN : KEY_MIN_HIT_GAIN * 1.5;
-    const winner = gain >= need && cost <= KEY_MAX_ROI_COST ? more : less;
+    const winner = keyed ? (gain >= 0 ? more : less) : gain >= need && cost <= KEY_MAX_ROI_COST ? more : less;
     const loser = winner === more ? less : more;
     lineDecision.set(
       winner.c.key,
