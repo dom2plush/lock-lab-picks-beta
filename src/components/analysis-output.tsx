@@ -1,7 +1,7 @@
 import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
-import type { AnalysisRow, GameRow, PickSource } from "@/lib/lock-lab-types";
+import type { AnalysisRow, GameRow, PickSource, LineMetrics } from "@/lib/lock-lab-types";
 import { formatCapturedAt, formatKickoff, hasLiveOdds, isTouchdownPick } from "@/lib/lock-lab-types";
 
 function Section({
