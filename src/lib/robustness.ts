@@ -125,7 +125,7 @@ export function stressCollapsed(r: Robustness): boolean {
  */
 export function robustBadge(
   r: Robustness | null,
-  opts: { dataOk?: boolean; opportunity?: OpportunityCheck | null } = {},
+  opts: { dataOk?: boolean; opportunity?: OpportunityCheck | null | undefined } = {},
 ): Badge {
   if (!r) return "red";
   if (r.combinedEdge <= 0 || r.expectedRoi <= 0) return "red";
