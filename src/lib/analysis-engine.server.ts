@@ -1015,6 +1015,10 @@ function fillPlayerProps(
   // Low-volume players/tiny lines stay only when the simulation strongly backs them.
   const meaningful = pool.filter((c) => meaningfulPropLine(c) || propHit(c) >= 0.65);
   if (meaningful.length >= 4) pool.splice(0, pool.length, ...meaningful);
+  // Props whose edge collapses under the stress test only fill in when too
+  // few robust props qualify.
+  const survivors = pool.filter((c) => !c.robust || !stressCollapsed(c.robust));
+  if (survivors.length >= 4) pool.splice(0, pool.length, ...survivors);
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
@@ -1183,7 +1187,7 @@ function propTeam(game: GameRow, player: string | undefined): string | null {
 /** First TD cards state only the simulated count — no price, edge or status read. */
 export function firstTdReason(wins: number, runs: number): string {
   const pct = runs > 0 ? Math.round((wins / runs) * 1000) / 10 : 0;
-  return `Scored the game's first touchdown in ${wins}/${runs} simulated games (${pct}%) — the most of any posted scorer on his team.`;
+  return `Scored the game's first touchdown in ${wins}/${runs} simulated games (${pct}%) — chosen on first-TD frequency, overall touchdown involvement and his team's simulated game script.`;
 }
 
 function fillTouchdownBets(
@@ -1205,7 +1209,14 @@ function fillTouchdownBets(
 
   // First TD scorers are chosen purely by how often the player scored the
   // game's first touchdown in the 100 simulated games — price never selects.
-  const firstTdCount = (c: Candidate) => c.simProb ?? -1;
+  // Selection blends first-TD frequency with the player's overall touchdown
+  // involvement in the same runs (opportunity), both already shaped by each
+  // simulated game's team score and script.
+  const anytimeRate = (c: Candidate) =>
+    candidates.find(
+      (x) => x.market === "player_anytime_td" && x.player === c.player && ["yes", "over"].includes(propDirection(x)),
+    )?.simProb ?? 0;
+  const firstTdCount = (c: Candidate) => (c.simProb == null ? -1 : c.simProb + 0.1 * anytimeRate(c));
   const ranked = [...pool]
     .filter((c) => c.market !== "player_1st_td" || c.simProb != null)
     .sort((a, b) =>
@@ -1221,7 +1232,7 @@ function fillTouchdownBets(
     used.add(c.key);
     takenPlayers.add(`${c.player ?? ""}|${c.market}`);
     const reason = first
-      ? firstTdReason(Math.round((c.simProb ?? 0) * 100), 100)
+      ? firstTdReason(Math.round((c.simProb ?? 0) * 1000), 1000)
       : team
       ? `${team} touchdown pick: the strongest posted price for this scorer market under the simulated scoring runs.`
       : "The strongest posted price in this scorer market under the simulated scoring runs. The feed does not name this player's team, so no team is claimed.";
