@@ -1936,7 +1936,7 @@ export function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: 
     const cost = less.roi - more.roi;
     const keyed = crossesKey(more.c.point!, less.c.point!);
     const need = keyed ? KEY_MIN_HIT_GAIN : KEY_MIN_HIT_GAIN * 1.5;
-    const winner = keyed ? (gain >= 0 && more.roi > 0 ? more : less) : gain >= need && cost <= KEY_MAX_ROI_COST ? more : less;
+    const winner = keyed ? (gain >= 0 && more.roi > 0 ? more : less) : gain >= need && cost <= KEY_MAX_ROI_COST ? more : less.roi >= more.roi ? less : more;
     const loser = winner === more ? less : more;
     lineDecision.set(
       winner.c.key,
