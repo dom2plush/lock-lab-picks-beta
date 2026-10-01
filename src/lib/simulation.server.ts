@@ -5,16 +5,17 @@
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v33";
+export const SIMULATION_ENGINE_VERSION = "sim-v34";
 /**
  * Card-selection version: bumped when pick selection changes but simulations
  * do not. It forces saved cards to rebuild without touching the seed, which
  * stays tied to SIMULATION_ENGINE_VERSION only.
  */
-export const CARD_SELECTION_VERSION = "cards-v7";
+export const CARD_SELECTION_VERSION = "cards-v8";
 /** Version stamped on stored batches; a mismatch triggers one rebuild. */
 export const STORED_BATCH_VERSION = `${SIMULATION_ENGINE_VERSION}+${CARD_SELECTION_VERSION}`;
-export const SIMULATION_RUNS = 100;
+/** 500 Base Model runs followed by 500 Stress Test runs. */
+export const SIMULATION_RUNS = 1000;
 
 /** Rounds a price so tiny juice wiggles do not invalidate a stored batch. */
 function priceBucket(price: number | null | undefined): number | null {

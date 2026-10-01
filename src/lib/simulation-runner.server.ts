@@ -425,7 +425,7 @@ export async function generateBatch(
     picksToSimulate(fields),
     SIMULATION_RUNS,
   );
-  if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly 50 simulations");
+  if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly SIMULATION_RUNS simulations");
   const described = withSimulatedReasons(fields, aggregate, {
     publicBetting: current.public_betting ?? null,
     odds: current.odds ?? null,

@@ -234,9 +234,9 @@ export type AnalysisRow = {
 };
 
 export const BADGE_LABEL: Record<Badge, string> = {
-  green: "Strong bet",
-  yellow: "Playable, with concerns",
-  red: "Too close — low edge",
+  green: "Robust edge",
+  yellow: "Fragile / lean edge",
+  red: "No edge",
 };
 
 export const BADGE_DOT: Record<Badge, string> = {
