@@ -10,10 +10,11 @@
 <!-- LOVABLE:END -->
 
 ## Simulation architecture
-- Every market (ML, spread, total, alternate, player prop) is settled against the exact same 100 simulated scorelines produced by `simulateGame`; player outcomes are drawn inside those same trials. Rationale: one distribution keeps standard and alternate prices internally consistent and prevents a separate prop model from contradicting the game script.
+- Every market (ML, spread, total, alternate, player prop) is settled against the exact same SIMULATION_RUNS (1,000) simulated scorelines produced by `simulateGame`: runs 1..BASE_RUNS are the Base Model, the rest are the Stress Test (perturbed assumptions, separate seeded stream); player outcomes are drawn inside those same trials. Rationale: one distribution keeps standard and alternate prices internally consistent and prevents a separate prop model from contradicting the game script.
 - TD Scorers is the only fun-bet surface; separate Fun Bet output is legacy-empty. Touchdown scorers include an unlisted-field share and allow repeat scorers so a partial sportsbook player pool cannot inflate probabilities.
 - All randomness (scores, player draws, pick settlement) is seeded from `simulationSeedKey(game)` = game id + `SIMULATION_ENGINE_VERSION`, never from capture timestamps or fair-line values. Rationale: identical inputs must reproduce identical runs for every user and every regeneration.
 - Each stored batch freezes its dataset in `input_snapshot.dataset` (full odds snapshot, complete availability report, seed key, engine version, run count). Rationale: the published card must be auditable against exactly the data it was computed from; the dataset is record-only and never triggers regeneration.
 - Bump CARD_SELECTION_VERSION (not SIMULATION_ENGINE_VERSION) when only pick selection changes; it rebuilds saved cards once without changing simulation seeds.
 
-- Top 2 ranks by simulated hit rate first, EV/confidence as support; sportsbook-side signal (juice + line movement from real odds) only breaks near-ties (CLOSE_SCORE 0.02). Why: user wants frequency-led picks with book positioning as a secondary read.
+- Top 2 ranks by combined hit rate, then Base/Stress robustness, then edge, then ROI; sportsbook-side signal only breaks near-ties. Why: user wants frequency-led picks that survive the stress test.
+- Badges come from `robustBadge` in src/lib/robustness.ts (pure, client-safe); public splits may only lift RED to YELLOW, never force GREEN. Why: stress test is a confidence modifier, splits a supporting factor.

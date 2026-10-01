@@ -174,7 +174,7 @@ describe("precomputed 100-run analysis cache", () => {
     const { compute } = countingCompute();
     const res = await ensureSimulationBatch(makeGame(), {}, deps(store, compute));
     expect(batches[0]!.runs).toBe(SIMULATION_RUNS);
-    expect(SIMULATION_RUNS).toBe(100);
+    expect(SIMULATION_RUNS).toBe(1000);
     expect(batches[0]!.simulations).toHaveLength(SIMULATION_RUNS);
     expect(batches[0]!.engine_version).toBe(STORED_BATCH_VERSION);
     const pick = res!.analysis.top_bets[0]!;

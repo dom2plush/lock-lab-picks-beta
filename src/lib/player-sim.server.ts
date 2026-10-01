@@ -17,6 +17,7 @@
  */
 import type { GameProjection } from "./game-sim.server";
 import type { GameRow, MarketOffer } from "./lock-lab-types";
+import { BASE_RUNS } from "./robustness";
 import { mulberry32, seedFrom, simulationSeedKey } from "./simulation.server";
 
 /** Yardage scatter (coefficient of variation) by market. */
@@ -275,7 +276,10 @@ export function simulatePlayers(
 
       // One performance draw per player per simulated game keeps that player's
       // own markets consistent with each other inside the same game.
-      const z = gaussian(mulberry32(seedFrom(`${seedBase}:${model.player}:${run}`)));
+      // Stress runs (after the Base Model) widen each player's performance
+      // spread to test props against usage/efficiency uncertainty.
+      const z =
+        gaussian(mulberry32(seedFrom(`${seedBase}:${model.player}:${run}`))) * (run > BASE_RUNS ? 1.2 : 1);
       const u = normalCdf(z);
 
       const value = new Map<string, number>();
@@ -290,7 +294,12 @@ export function simulatePlayers(
             : 1;
         // Verified availability scales the workload: a player ruled out scores
         // nothing in any simulated game, a doubtful one plays limited snaps.
-        const mean = line * scoreFactor * script * model.availability;
+        // Stress runs also treat a limited player's workload as uncertain.
+        const availability =
+          run > BASE_RUNS && model.availability > 0 && model.availability < 1
+            ? Math.min(1, model.availability * (0.7 + 0.6 * mulberry32(seedFrom(`${seedBase}:${model.player}:avail:${run}`))()))
+            : model.availability;
+        const mean = line * scoreFactor * script * availability;
         if (model.availability <= 0) {
           value.set(market, 0);
           continue;
