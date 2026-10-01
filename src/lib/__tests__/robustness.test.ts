@@ -25,7 +25,7 @@ describe("base vs stress robustness", () => {
   });
 
   it("does not let the combined number hide a stress collapse", () => {
-    const r = robustnessFromHits(hits(330, 260), 1000, -148)!;
+    const r = robustnessFromHits(hits(360, 270), 1000, -148)!;
     expect(r.combinedEdge).toBeGreaterThan(0);
     expect(robustBadge(r)).toBe("red");
   });
