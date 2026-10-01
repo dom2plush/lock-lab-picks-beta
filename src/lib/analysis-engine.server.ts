@@ -1449,6 +1449,62 @@ function pickSource(c: Candidate) {
  * lines drawn inside those same games. A pick with no simulated settlement is
  * left untouched and falls back to the existing price-based settlement.
  */
+/** Share of simulated runs that push this spread/total (whole-number lines only). */
+function candidatePushRate(c: Candidate, game: GameRow, projection: GameProjection): number | null {
+  if (c.point == null || !Number.isInteger(c.point) || !projection.scores.length) return null;
+  const market = c.market.toLowerCase();
+  let pushes = 0;
+  if (market.includes("spread")) {
+    const home = c.selection === game.home_team;
+    if (!home && c.selection !== game.away_team) return null;
+    for (const s of projection.scores) if ((home ? s.margin : -s.margin) + c.point === 0) pushes += 1;
+  } else if (market.includes("total") && !market.includes("team_total")) {
+    for (const s of projection.scores) if (s.total === c.point) pushes += 1;
+  } else return null;
+  return Math.round((pushes / projection.scores.length) * 10000) / 10000;
+}
+
+/**
+ * Where Lock Lab's number differs from the market, in points toward this bet,
+ * using only components the fair model actually computed. Components the
+ * engine cannot measure are omitted, never invented.
+ */
+export function whyComponents(
+  c: Pick<Candidate, "market" | "selection">,
+  game: Pick<GameRow, "home_team" | "away_team">,
+  projection: Pick<GameProjection, "inputs" | "fairMargin" | "fairTotal">,
+): { label: string; points: number }[] | null {
+  const inp = projection.inputs;
+  if (!inp) return null;
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const market = c.market.toLowerCase();
+  const out: { label: string; points: number }[] = [];
+  if (market.includes("spread") || market === "moneyline" || market === "h2h") {
+    if (inp.marketMargin == null || inp.modelMargin == null || projection.fairMargin == null || !inp.home || !inp.away) return null;
+    const sign = c.selection === game.home_team ? 1 : c.selection === game.away_team ? -1 : 0;
+    if (!sign) return null;
+    const gap = inp.modelMargin - inp.marketMargin;
+    const deviation = projection.fairMargin - inp.marketMargin;
+    const strength = gap - inp.injuryAdjustment - inp.restAdjustment;
+    out.push({ label: "Team strength + home field vs. market", points: r1(sign * strength) });
+    if (inp.injuryAdjustment) out.push({ label: "Injuries", points: r1(sign * inp.injuryAdjustment) });
+    if (inp.restAdjustment) out.push({ label: "Rest", points: r1(sign * inp.restAdjustment) });
+    out.push({ label: "Market adjustment (model weight)", points: r1(sign * (deviation - gap)) });
+  } else if (market.includes("total") && !market.includes("team_total")) {
+    if (inp.marketTotal == null || inp.modelTotal == null || projection.fairTotal == null || !inp.home || !inp.away) return null;
+    const sign = c.selection === "Over" ? 1 : c.selection === "Under" ? -1 : 0;
+    if (!sign) return null;
+    const homeSide = (inp.home.pointsFor + inp.away.pointsAgainst) / 2 - inp.marketTotal / 2;
+    const awaySide = (inp.away.pointsFor + inp.home.pointsAgainst) / 2 - inp.marketTotal / 2;
+    const gap = inp.modelTotal - inp.marketTotal;
+    const deviation = projection.fairTotal - inp.marketTotal;
+    out.push({ label: `${game.home_team} offense vs. ${game.away_team} defense`, points: r1(sign * homeSide) });
+    out.push({ label: `${game.away_team} offense vs. ${game.home_team} defense`, points: r1(sign * awaySide) });
+    out.push({ label: "Market adjustment (model weight)", points: r1(sign * (deviation - gap)) });
+  } else return null;
+  return out;
+}
+
 /** The 100 stored simulated results for a candidate, or null when it cannot be settled. */
 function candidateOutcomes(
   c: Candidate,
@@ -1552,7 +1608,12 @@ export function orderTopBetsByValue<T extends { simHits?: number[] | null | unde
     const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
     if (!b.simRuns || !Number.isFinite(price)) return -Infinity;
     const hits = b.simHits?.length ?? 0;
-    return simulationStrength(expectedRoi(hits, b.simRuns, price), hits / b.simRuns, null);
+    return simulationStrength(
+      expectedRoi(hits, b.simRuns, price),
+      hits / b.simRuns,
+      null,
+      robustnessFromHits(b.simHits, b.simRuns, price),
+    );
   };
   return bets
     .map((b, i) => ({ b, i, s: scoreOf(b) }))
@@ -1587,11 +1648,54 @@ function attachSimulatedOutcomes(
     playerProps.map((p) => p.candidateKey).filter((k): k is string => Boolean(k)),
   );
   const topBets = simulationFirstTop2(output.topBets.map(settle), candidates, byKey, reserved, game, projection, players, odds, previousOdds);
+  const dataOk = projection.scores.length > 0 && projection.confidence > 0;
+
+  const robustOf = (pick: { simHits?: number[] | null; simRuns?: number | null; price?: number | null; odds?: string | null }) => {
+    const price = pick.price ?? (pick.odds ? Number(String(pick.odds).replace("+", "")) : NaN);
+    return robustnessFromHits(pick.simHits, pick.simRuns, Number.isFinite(price) ? price : null);
+  };
+
+  const enrichedTop = orderTopBetsByValue(topBets).map((bet) => {
+    const r = robustOf(bet);
+    if (!r) return bet;
+    const c = bet.candidateKey ? byKey.get(bet.candidateKey) : undefined;
+    const standard = c?.standardKey ? byKey.get(c.standardKey) : undefined;
+    const stdR = standard ? robustnessFromOutcomes(candidateOutcomes(standard, game, projection, players), standard.price) : null;
+    const pushRate = c ? candidatePushRate(c, game, projection) : null;
+    return {
+      ...bet,
+      ...robustFields(r),
+      badge: robustBadge(r, { dataOk }),
+      pushRate,
+      whyComponents: c ? whyComponents(c, game, projection) : null,
+      disagreement:
+        Math.abs(r.combinedEdge) >= DISAGREEMENT_WARNING
+          ? { model: r.combinedHitRate, market: r.impliedProbability, verdict: disagreementVerdict(r) }
+          : null,
+      standardMetrics:
+        stdR && standard
+          ? {
+              hitRate: stdR.combinedHitRate,
+              implied: stdR.impliedProbability,
+              edge: stdR.combinedEdge,
+              roi: stdR.expectedRoi,
+              pushRate: candidatePushRate(standard, game, projection),
+            }
+          : null,
+    } as PickBet;
+  });
+
+  const enrichedProps = playerProps.map((prop) => {
+    const r = robustOf(prop);
+    if (!r) return prop;
+    const first = /first td/i.test(String(prop.market));
+    return { ...prop, ...robustFields(r), badge: first ? prop.badge : robustBadge(r, { dataOk }) };
+  });
 
   return {
     ...output,
-    topBets: orderTopBetsByValue(topBets),
-    playerProps,
+    topBets: enrichedTop,
+    playerProps: enrichedProps,
     funBets: [],
   };
 }
@@ -1607,9 +1711,21 @@ export function simulationStrength(
   roi: number,
   hitRate: number,
   tier: string | null | undefined,
+  robust?: Robustness | null,
 ): number {
   const confidence = tier === "strong" ? 1 : tier === "playable" ? 0.5 : 0;
-  return hitRate + 0.5 * Math.max(-0.3, Math.min(0.3, roi)) + 0.01 * confidence;
+  if (!robust) return hitRate + 0.5 * Math.max(-0.3, Math.min(0.3, roi)) + 0.01 * confidence;
+  // Hit rate leads, then robustness (Base/Stress agreement and the surviving
+  // stress edge), then edge, then price/ROI.
+  return (
+    hitRate +
+    0.08 * robust.agreementScore +
+    0.25 * Math.max(-0.1, Math.min(0.1, robust.stressEdge)) -
+    (stressCollapsed(robust) ? 0.1 : 0) +
+    0.3 * Math.max(-0.1, Math.min(0.15, robust.combinedEdge)) +
+    0.2 * Math.max(-0.3, Math.min(0.3, roi)) +
+    0.01 * confidence
+  );
 }
 
 /** Two bets within this composite gap are "very close" in the simulation. */
@@ -1767,7 +1883,7 @@ function simulationFirstTop2(
       runs: outcomes.length,
       edge,
       roi,
-      score: simulationStrength(roi, hitRate, c.grade?.tier),
+      score: simulationStrength(roi, hitRate, c.grade?.tier, robustnessFromHits(hits, outcomes.length, c.price)),
     });
   }
   if (scored.length < 2 && current.length >= 2) return current;
@@ -1810,7 +1926,7 @@ function simulationFirstTop2(
       runs: outcomes.length,
       edge: simulatedEdge(hits.length, outcomes.length, std.price),
       roi,
-      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier),
+      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier, robustnessFromHits(hits, outcomes.length, std.price)),
     };
   };
   for (const raw of scored) {
@@ -1819,6 +1935,14 @@ function simulationFirstTop2(
     if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
+    // Correlation: a team-total Over for the team already backed on the side
+    // largely repeats that bet; skip it while other ideas remain.
+    if (
+      idea.startsWith("team_total") &&
+      /over/i.test(s.c.selection) &&
+      picked.some((p) => betIdeaKey(p.c) === "side" && s.c.label.toLowerCase().includes(String(p.c.selection).toLowerCase()))
+    )
+      continue;
     ideas.add(idea);
     picked.push(s);
   }
