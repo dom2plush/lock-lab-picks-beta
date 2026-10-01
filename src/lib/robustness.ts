@@ -123,18 +123,30 @@ export function stressCollapsed(r: Robustness): boolean {
  * The stress test modifies confidence; it only vetoes on a clear collapse.
  * Very large edges must also be well corroborated before they earn GREEN.
  */
-export function robustBadge(r: Robustness | null, opts: { dataOk?: boolean } = {}): Badge {
+export function robustBadge(
+  r: Robustness | null,
+  opts: { dataOk?: boolean; opportunity?: OpportunityCheck | null | undefined } = {},
+): Badge {
   if (!r) return "red";
   if (r.combinedEdge <= 0 || r.expectedRoi <= 0) return "red";
   if (stressCollapsed(r)) return "red";
   const dataOk = opts.dataOk ?? true;
   const large = r.combinedEdge >= LARGE_EDGE;
+  const check = opts.opportunity;
+  // Large edges: when the player's opportunity was validated, the edge stands
+  // on the normal rules; when it was not, confidence is reduced (YELLOW).
+  // Without a validation read, fall back to stronger corroboration.
+  const largeOk = !large
+    ? true
+    : check
+      ? check.supported
+      : r.agreementLevel === "HIGH" && r.stressEdge >= 0.03;
   const green =
     dataOk &&
     r.combinedEdge >= GREEN_MIN_EDGE &&
     r.stressEdge >= GREEN_STRESS_FLOOR &&
     r.agreementLevel !== "LOW" &&
-    (!large || (r.agreementLevel === "HIGH" && r.stressEdge >= 0.03));
+    largeOk;
   return green ? "green" : "yellow";
 }
 
@@ -161,5 +173,49 @@ export function robustFields(r: Robustness | null) {
     expectedRoi: r.expectedRoi,
     modelEdge: r.combinedEdge,
     simHitRate: r.combinedHitRate,
+  };
+}
+
+export type OpportunityInput = {
+  projectedMedian: number;
+  baselineLine: number;
+  availability: number;
+  teamKnown: boolean;
+  ladderCalibrated: boolean;
+};
+
+export type OpportunityCheck = { flagged: boolean; supported: boolean; reasons: string[]; note: string };
+
+/**
+ * Extreme-edge validation for a player prop. Only flags when the model/market
+ * gap is unusually large; it never deletes the prop. Supported = the player's
+ * projected opportunity actually sits on the bet's side of the line, the
+ * player is fully available and attributed, and Base/Stress do not split.
+ */
+export function validatePropOpportunity(
+  r: Robustness,
+  opp: OpportunityInput | null,
+  selection: string,
+  point: number | null,
+): OpportunityCheck {
+  if (r.combinedEdge < LARGE_EDGE) return { flagged: false, supported: true, reasons: [], note: "" };
+  const reasons: string[] = [];
+  const over = /over|yes/i.test(selection);
+  if (!opp || point == null) reasons.push("no player opportunity read");
+  else {
+    const side = over ? opp.projectedMedian >= point : opp.projectedMedian <= point;
+    if (!side) reasons.push(`projected ${opp.projectedMedian} does not clear ${point}`);
+    if (!opp.teamKnown) reasons.push("team not verified");
+    if (opp.availability < 0.9) reasons.push("limited availability");
+  }
+  if (r.agreementLevel === "LOW") reasons.push("base/stress split");
+  const supported = reasons.length === 0;
+  return {
+    flagged: true,
+    supported,
+    reasons,
+    note: supported
+      ? "High model/market disagreement — player opportunity validated; edge kept."
+      : `High model/market disagreement — opportunity not confirmed (${reasons.join(", ")}); confidence reduced.`,
   };
 }
