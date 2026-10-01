@@ -2029,9 +2029,30 @@ function simulationFirstTop2(
       score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier, robustnessFromHits(hits, outcomes.length, std.price)),
     };
   };
+  // Key-number hooks (e.g. +3.5 next to +2.5) compete even when their own
+  // value gate dropped them: the protection rule decides, at the real price.
+  const keyPool: Scored[] = [...scored];
+  for (const raw of candidates) {
+    if (!isSpread(raw) || raw.group === "prop" || reserved.has(raw.key)) continue;
+    if (keyPool.some((x) => x.c.key === raw.key)) continue;
+    if (raw.price < MIN_RECOMMENDED_PRICE || isLongshotPrice(raw.price)) continue;
+    const outcomes = candidateOutcomes(raw, game, projection, players);
+    if (!outcomes || !outcomes.length) continue;
+    const hits: number[] = [];
+    outcomes.forEach((won, i) => won && hits.push(i + 1));
+    const roi = expectedRoi(hits.length, outcomes.length, raw.price);
+    keyPool.push({
+      c: raw,
+      hits,
+      runs: outcomes.length,
+      edge: simulatedEdge(hits.length, outcomes.length, raw.price),
+      roi,
+      score: simulationStrength(roi, hits.length / outcomes.length, raw.grade?.tier, robustnessFromHits(hits, outcomes.length, raw.price)),
+    });
+  }
   for (const raw of scored) {
     if (picked.length >= 2) break;
-    const s = keyNumberChoice(standardFor(raw), scored);
+    const s = keyNumberChoice(standardFor(raw), keyPool);
     if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
