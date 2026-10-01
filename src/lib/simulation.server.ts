@@ -5,7 +5,7 @@
  */
 import type { AnalysisRow, GameRow } from "./lock-lab-types";
 
-export const SIMULATION_ENGINE_VERSION = "sim-v34";
+export const SIMULATION_ENGINE_VERSION = "sim-v35";
 /**
  * Card-selection version: bumped when pick selection changes but simulations
  * do not. It forces saved cards to rebuild without touching the seed, which
