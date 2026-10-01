@@ -37,6 +37,28 @@ const pct = (v: number | null | undefined, signed = false) =>
   v == null || !Number.isFinite(v) ? "—" : `${signed && v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
 
 /** Base (500) vs Stress (500) vs Combined (1,000) read for one pick. */
+function LineTable({ title, rows }: { title: string; rows: LineMetrics[] }) {
+  return (
+    <div>
+      <span className="eyebrow">{title}</span>
+      <div className="mt-1 grid gap-1 text-xs">
+        {rows.map((r) => (
+          <div key={r.label} className="flex flex-wrap justify-between gap-x-3">
+            <span className="font-semibold">
+              {r.label} ({r.price > 0 ? `+${r.price}` : r.price})
+            </span>
+            <span className="text-muted-foreground">
+              {pct(r.hitRate)} sim · base {pct(r.baseHitRate)} / stress {pct(r.stressHitRate)} · edge {pct(r.edge, true)} · ROI{" "}
+              {pct(r.roi, true)}
+              {r.pushRate ? ` · push ${pct(r.pushRate)}` : ""}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SimBreakdown({ pick, full = false }: { pick: PickSource & { label?: string }; full?: boolean }) {
   if (pick.baseHitRate == null || pick.stressHitRate == null) return null;
   const cells: [string, string, string][] = [
@@ -72,6 +94,15 @@ function SimBreakdown({ pick, full = false }: { pick: PickSource & { label?: str
             ? " — the alternate hits more often but returns less per unit; it was chosen on hit rate and robustness."
             : ""}
         </p>
+      )}
+      {full && pick.lineComparison && pick.lineComparison.length > 1 && (
+        <LineTable title="Key-number check" rows={pick.lineComparison} />
+      )}
+      {full && pick.totalComparison && (
+        <LineTable
+          title={`Both sides · stronger: ${pick.totalComparison.stronger}`}
+          rows={[pick.totalComparison.over, pick.totalComparison.under]}
+        />
       )}
       {full && pick.whyComponents && pick.whyComponents.length > 0 && (
         <div>

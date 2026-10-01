@@ -173,6 +173,10 @@ export type PickBet = PickSource & {
   standardCapturedAt?: string | null;
   /** Why the alternate was preferred over that standard line. */
   standardComparison?: string | null;
+  /** Same-side spreads within a point (key-number check), each from the same 1,000 runs. */
+  lineComparison?: LineMetrics[] | null;
+  /** Both sides of the total when they are close. */
+  totalComparison?: { over: LineMetrics; under: LineMetrics; stronger: string } | null;
 };
 
 export type FunBet = PickSource & {
@@ -264,3 +268,16 @@ export function formatKickoff(iso: string) {
     minute: "2-digit",
   });
 }
+
+export type LineMetrics = {
+  label: string;
+  price: number;
+  hitRate: number;
+  baseHitRate: number;
+  stressHitRate: number;
+  implied: number;
+  edge: number;
+  roi: number;
+  agreement: "HIGH" | "MEDIUM" | "LOW";
+  pushRate: number | null;
+};
