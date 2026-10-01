@@ -333,7 +333,9 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
       ? edge != null && edge >= 0.01
         ? "green"
         : "yellow"
-      : badgeFor(edge, pick.badge ?? "yellow");
+      : (pick as { baseHitRate?: number | null }).baseHitRate != null
+        ? (pick.badge ?? "yellow") // robust Base/Stress badge set by the engine
+        : badgeFor(edge, pick.badge ?? "yellow");
     return {
       ...pick,
       badge,
