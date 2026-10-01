@@ -58,6 +58,8 @@ import {
   robustnessFromHits,
   robustnessFromOutcomes,
   stressCollapsed,
+  validatePropOpportunity,
+  type OpportunityCheck,
   type Robustness,
 } from "./robustness";
 
@@ -166,6 +168,8 @@ type Candidate = {
   grade?: ValueGrade;
   /** Base (500) vs Stress (500) robustness at the exact posted price. */
   robust?: Robustness;
+  /** Extreme-edge validation against the player's simulated opportunity. */
+  opportunity?: OpportunityCheck;
 };
 
 /** Internal calibration record for one considered selection. Never rendered publicly. */
@@ -676,7 +680,17 @@ function gradeBoard(
     c.note = `${c.note} ${c.grade.note}`;
     if (fromSim != null) {
       const robust = robustnessFromOutcomes(candidateOutcomes(c, game, projection, players), c.price);
-      if (robust) c.robust = robust;
+      if (robust) {
+        c.robust = robust;
+        if (c.group === "prop" && c.player) {
+          const opp = players.opportunity?.({ market: c.market, player: c.player, selection: c.selection, point: c.point }) ?? null;
+          const check = validatePropOpportunity(robust, opp, c.selection ?? "", c.point);
+          if (check.flagged) {
+            c.opportunity = check;
+            c.note = `${c.note} ${check.note}`;
+          }
+        }
+      }
     }
   }
 }
@@ -901,7 +915,7 @@ function betIdeaKey(c: Candidate): string {
  * green anywhere — with the confidence read layered on top of it.
  */
 function propBadge(c: Candidate): Badge {
-  if (c.robust) return robustBadge(c.robust);
+  if (c.robust) return robustBadge(c.robust, { opportunity: c.opportunity });
   const g = c.grade;
   if (!g || g.modelProb == null || g.edge == null) return "red";
   if (g.edge < MIN_EDGE) return "red";
@@ -954,7 +968,8 @@ const propStrength = (c: Candidate) => {
     ? 0.08 * r.agreementScore +
       0.3 * Math.max(-0.1, Math.min(0.1, r.stressEdge)) -
       (stressCollapsed(r) ? 0.1 : 0) -
-      (r.combinedEdge >= LARGE_EDGE && r.agreementLevel !== "HIGH" ? 0.06 : 0)
+      // Extreme edge: validated opportunity keeps it; unconfirmed reduces it.
+      (r.combinedEdge >= LARGE_EDGE && c.opportunity && !c.opportunity.supported ? 0.06 : 0)
     : 0;
   return (
     propHit(c) +
@@ -1689,7 +1704,8 @@ function attachSimulatedOutcomes(
     const r = robustOf(prop);
     if (!r) return prop;
     const first = /first td/i.test(String(prop.market));
-    return { ...prop, ...robustFields(r), badge: first ? prop.badge : robustBadge(r, { dataOk }) };
+    const c = prop.candidateKey ? byKey.get(prop.candidateKey) : undefined;
+    return { ...prop, ...robustFields(r), badge: first ? prop.badge : robustBadge(r, { dataOk, opportunity: c?.opportunity }) };
   });
 
   return {
