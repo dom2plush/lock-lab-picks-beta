@@ -201,13 +201,24 @@ export function applySplitBadge<P extends { badge?: string; reason: string; mode
   const signal = publicSideSignal(bet.sideKey, market.publicBetting);
   // signal +1 ⇔ own share 25%; opposite share = 50 + 25·signal.
   if (signal == null || 50 + 25 * signal < HEAVY_OPPOSITE_SHARE) return bet;
-  // Public splits are a supporting factor only: they can lift RED to YELLOW
-  // when the stress test has not collapsed the edge, and never force GREEN.
-  if (bet.badge !== "red") return bet;
-  const stressEdge = (bet as { stressEdge?: number | null }).stressEdge;
-  if (stressEdge != null && stressEdge < -0.03) return bet;
-  const badge = "yellow";
-  const note = " Public money is heavily on the other side — confidence raised to a lean.";
+  let badge = bet.badge === "red" ? "yellow" : bet.badge ?? "yellow";
+  // The public splits count toward the sportsbook-favourable read alongside
+  // the odds evidence (juice, line movement); no single signal must agree alone.
+  const bookSide = sportsbookSideSignal(
+    { key: bet.sideKey, standardKey: bet.sideKey, group: "core" } as never,
+    market.odds,
+    market.previousOdds,
+    market.publicBetting,
+  );
+  const favourable = bookSide > 0;
+  // Thin-edge Top 2 bet supported by the simulation, heavy opposite public
+  // money and a favourable sportsbook signal: the badge goes straight to
+  // green from any starting color.
+  if (favourable) badge = "green";
+  if (badge === bet.badge) return bet;
+  const note = favourable
+    ? " Public money is heavily on the other side and the market reads this as the sportsbook-favourable outcome — confidence raised."
+    : " Public money is heavily on the other side — confidence raised.";
   return { ...bet, badge, reason: `${bet.reason}${note}` };
 }
 
@@ -333,9 +344,7 @@ export function withSimulatedReasons<T extends Pick<AnalysisFields, "top_bets" |
       ? edge != null && edge >= 0.01
         ? "green"
         : "yellow"
-      : (pick as { baseHitRate?: number | null }).baseHitRate != null
-        ? (pick.badge ?? "yellow") // robust Base/Stress badge set by the engine
-        : badgeFor(edge, pick.badge ?? "yellow");
+      : badgeFor(edge, pick.badge ?? "yellow");
     return {
       ...pick,
       badge,
@@ -416,7 +425,7 @@ export async function generateBatch(
     picksToSimulate(fields),
     SIMULATION_RUNS,
   );
-  if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly SIMULATION_RUNS simulations");
+  if (simulations.length !== SIMULATION_RUNS) throw new Error("A Lock Lab batch must hold exactly 50 simulations");
   const described = withSimulatedReasons(fields, aggregate, {
     publicBetting: current.public_betting ?? null,
     odds: current.odds ?? null,

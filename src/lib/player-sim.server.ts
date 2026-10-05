@@ -17,7 +17,6 @@
  */
 import type { GameProjection } from "./game-sim.server";
 import type { GameRow, MarketOffer } from "./lock-lab-types";
-import { BASE_RUNS } from "./robustness";
 import { mulberry32, seedFrom, simulationSeedKey } from "./simulation.server";
 
 /** Yardage scatter (coefficient of variation) by market. */
@@ -62,19 +61,6 @@ export type PlayerProjection = {
   outcomes(query: PropQuery): boolean[] | null;
   /** Simulated hit rate for a posted prop, or null when unsupported. */
   probability(query: PropQuery): number | null;
-  /** Opportunity/usage read behind a prop, used to validate extreme edges. */
-  opportunity?(query: PropQuery): PropOpportunity | null;
-};
-
-export type PropOpportunity = {
-  /** Median simulated stat across all runs. */
-  projectedMedian: number;
-  /** Median posted rung (workload baseline). */
-  baselineLine: number;
-  availability: number;
-  teamKnown: boolean;
-  /** True when the dispersion was calibrated against the book's own rung ladder. */
-  ladderCalibrated: boolean;
 };
 
 const EMPTY: PlayerProjection = {
@@ -147,35 +133,7 @@ type PlayerModel = {
   /** 0-1 workload share from the verified injury report. */
   availability: number;
   markets: Map<string, PlayerMarketBaseline>;
-  /** Market-ladder-calibrated scatter per yardage/volume market. */
-  cv: Map<string, number>;
 };
-
-/**
- * Fits the yardage scatter to the book's own posted ladder (several rungs of
- * the same player market). The posted rungs and prices are real; this only
- * tunes the width of the distribution so alternate rungs are not priced off
- * an arbitrary spread. Blended 50/50 with the default so the model keeps its
- * own view.
- */
-function ladderCv(line: number, rungs: { point: number; yes: number }[], fallback: number): number | null {
-  if (rungs.length < 2 || line <= 0) return null;
-  let best = fallback;
-  let bestErr = Infinity;
-  for (let cv = 0.08; cv <= 0.9; cv += 0.01) {
-    const sigma = Math.sqrt(Math.log(1 + cv * cv));
-    let err = 0;
-    for (const r of rungs) {
-      const p = 1 - normalCdf(Math.log(Math.max(0.01, r.point) / line) / sigma);
-      err += (p - r.yes) ** 2;
-    }
-    if (err < bestErr) {
-      bestErr = err;
-      best = cv;
-    }
-  }
-  return 0.5 * fallback + 0.5 * best;
-}
 
 /** Only the supplied injury report can attribute a player to a team. */
 function teamOf(game: GameRow, player: string): string | null {
@@ -244,24 +202,13 @@ export function simulatePlayers(
   const models = new Map<string, PlayerModel>();
   const rungs = new Map<string, number[]>();
   const yesPrices = new Map<string, number[]>();
-  const ladder = new Map<string, Map<number, { over?: number; under?: number }>>();
 
   for (const offer of offers) {
     const player = (offer.player ?? "").trim();
     if (!player) continue;
     const side = (offer.selection ?? "").trim().toLowerCase();
     const id = `${player}|${offer.market}`;
-    if (offer.point != null) {
-      rungs.set(id, [...(rungs.get(id) ?? []), offer.point]);
-      if (side === "over" || side === "under") {
-        const byPoint = ladder.get(id) ?? new Map();
-        const entry = byPoint.get(offer.point) ?? {};
-        const current = entry[side as "over" | "under"];
-        if (current == null || offer.price > current) entry[side as "over" | "under"] = offer.price;
-        byPoint.set(offer.point, entry);
-        ladder.set(id, byPoint);
-      }
-    }
+    if (offer.point != null) rungs.set(id, [...(rungs.get(id) ?? []), offer.point]);
     if (side === "over" || side === "yes") {
       yesPrices.set(id, [...(yesPrices.get(id) ?? []), offer.price]);
     }
@@ -271,7 +218,6 @@ export function simulatePlayers(
         team: teamOf(game, player),
         availability: availabilityFactor(game, player),
         markets: new Map(),
-        cv: new Map(),
       });
     }
     models.get(player)!.markets.set(offer.market, { line: null, yesProbability: null });
@@ -287,20 +233,6 @@ export function simulatePlayers(
         // Single-sided scorer markets carry roughly 8% hold at book level.
         yesProbability: bestYes > 0 ? clamp(bestYes / 1.08, 0.01, 0.95) : null,
       });
-      const line = median(rungs.get(id) ?? []);
-      const fallback = YARD_CV[market];
-      if (line != null && fallback != null) {
-        const pts: { point: number; yes: number }[] = [];
-        for (const [point, e] of ladder.get(id) ?? []) {
-          if (e.over == null || e.under == null) continue;
-          const o = impliedProbability(e.over);
-          const u = impliedProbability(e.under);
-          if (o == null || u == null || o + u <= 0) continue;
-          pts.push({ point, yes: o / (o + u) });
-        }
-        const fitted = ladderCv(line, pts, fallback);
-        if (fitted != null) model.cv.set(market, fitted);
-      }
     }
   }
 
@@ -343,10 +275,7 @@ export function simulatePlayers(
 
       // One performance draw per player per simulated game keeps that player's
       // own markets consistent with each other inside the same game.
-      // Stress runs (after the Base Model) widen each player's performance
-      // spread to test props against usage/efficiency uncertainty.
-      const z =
-        gaussian(mulberry32(seedFrom(`${seedBase}:${model.player}:${run}`))) * (run > BASE_RUNS ? 1.2 : 1);
+      const z = gaussian(mulberry32(seedFrom(`${seedBase}:${model.player}:${run}`)));
       const u = normalCdf(z);
 
       const value = new Map<string, number>();
@@ -361,12 +290,7 @@ export function simulatePlayers(
             : 1;
         // Verified availability scales the workload: a player ruled out scores
         // nothing in any simulated game, a doubtful one plays limited snaps.
-        // Stress runs also treat a limited player's workload as uncertain.
-        const availability =
-          run > BASE_RUNS && model.availability > 0 && model.availability < 1
-            ? Math.min(1, model.availability * (0.7 + 0.6 * mulberry32(seedFrom(`${seedBase}:${model.player}:avail:${run}`))()))
-            : model.availability;
-        const mean = line * scoreFactor * script * availability;
+        const mean = line * scoreFactor * script * model.availability;
         if (model.availability <= 0) {
           value.set(market, 0);
           continue;
@@ -375,7 +299,7 @@ export function simulatePlayers(
           const lambda = market === "player_pass_tds" ? mean + 0.15 : mean + 0.1;
           value.set(market, poisson(lambda, u));
         } else {
-          const cv = model.cv.get(market) ?? YARD_CV[market] ?? 0.4;
+          const cv = YARD_CV[market] ?? 0.4;
           const sigma = Math.sqrt(Math.log(1 + cv * cv));
           // The posted rung is treated as the player's median outcome, so the
           // skew of the yardage distribution cannot bias every prop to the under.
@@ -519,25 +443,6 @@ export function simulatePlayers(
     return clamp(wins / result.length, 0.02, 0.98);
   }
 
-  function opportunity(query: PropQuery): PropOpportunity | null {
-    const player = (query.player ?? "").trim();
-    const model = models.get(player);
-    const baseline = model?.markets.get(query.market);
-    if (!model || !baseline || baseline.line == null || TD_MARKETS.has(query.market)) return null;
-    const values = perRun
-      .map((stats) => stats.get(player)?.value.get(query.market))
-      .filter((v): v is number => v != null);
-    const projected = median(values);
-    if (projected == null) return null;
-    return {
-      projectedMedian: Math.round(projected * 10) / 10,
-      baselineLine: baseline.line,
-      availability: model.availability,
-      teamKnown: model.team != null,
-      ladderCalibrated: model.cv.has(query.market),
-    };
-  }
-
   const limited = [...models.values()].filter((m) => m.availability < 1);
   const notes = [
     `Player stats simulated inside the same ${runs} game scores for ${models.size} posted player${models.size === 1 ? "" : "s"}: workload calibrated to the posted line, then scaled by each simulated game's team score and game script. Touchdown chances retain an unlisted-field share and allow repeat scorers. Prop hit rates are counts out of those ${runs} runs, not independent coin flips.`,
@@ -551,5 +456,5 @@ export function simulatePlayers(
   }
 
 
-  return { runs, available: true, notes, outcomes, probability, opportunity };
+  return { runs, available: true, notes, outcomes, probability };
 }
