@@ -128,32 +128,6 @@ export type PickSource = {
   modelEdge?: number | null;
   /** Expected return per unit staked at the stored price, from the simulation. */
   expectedRoi?: number | null;
-  /** Base Model (runs 1-500) hit rate. */
-  baseHitRate?: number | null;
-  /** Stress Test (runs 501-1000) hit rate. */
-  stressHitRate?: number | null;
-  /** All 1,000 runs. */
-  combinedHitRate?: number | null;
-  baseEdge?: number | null;
-  stressEdge?: number | null;
-  combinedEdge?: number | null;
-  /** Break-even probability of the stored price. */
-  impliedProbability?: number | null;
-  /** 0-1 closeness of the Base and Stress hit rates. */
-  agreementScore?: number | null;
-  agreementLevel?: "HIGH" | "MEDIUM" | "LOW" | null;
-  /** Real model components behind the edge, in points toward this bet. */
-  whyComponents?: { label: string; points: number }[] | null;
-  /** Set when Lock Lab disagrees with the market by an unusually wide margin. */
-  disagreement?: { model: number; market: number; verdict: "supported" | "weakened" | "uncertain" } | null;
-  /** Standard-line metrics when an alternate line was chosen over it. */
-  standardMetrics?: { hitRate: number; implied: number; edge: number; roi: number; pushRate?: number | null } | null;
-  /** Same-side spreads within a point (key-number check), each from the same 1,000 runs. */
-  lineComparison?: LineMetrics[] | null;
-  /** Both sides of the total when they are close. */
-  totalComparison?: { over: LineMetrics; under: LineMetrics; stronger: string } | null;
-  /** Push share of the 1,000 runs (spreads/totals on whole numbers). */
-  pushRate?: number | null;
 };
 
 export type PickBet = PickSource & {
@@ -238,9 +212,9 @@ export type AnalysisRow = {
 };
 
 export const BADGE_LABEL: Record<Badge, string> = {
-  green: "Robust edge",
-  yellow: "Fragile / lean edge",
-  red: "No edge",
+  green: "Strong bet",
+  yellow: "Playable, with concerns",
+  red: "Too close — low edge",
 };
 
 export const BADGE_DOT: Record<Badge, string> = {
@@ -268,16 +242,3 @@ export function formatKickoff(iso: string) {
     minute: "2-digit",
   });
 }
-
-export type LineMetrics = {
-  label: string;
-  price: number;
-  hitRate: number;
-  baseHitRate: number;
-  stressHitRate: number;
-  implied: number;
-  edge: number;
-  roi: number;
-  agreement: "HIGH" | "MEDIUM" | "LOW";
-  pushRate: number | null;
-};

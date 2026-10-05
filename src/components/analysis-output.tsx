@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { BadgePill } from "@/components/badge-pill";
 import type { TailTarget } from "@/components/tail-dialog";
 import { Button } from "@/components/ui/button";
-import type { AnalysisRow, GameRow, PickSource, LineMetrics } from "@/lib/lock-lab-types";
+import type { AnalysisRow, GameRow } from "@/lib/lock-lab-types";
 import { formatCapturedAt, formatKickoff, hasLiveOdds, isTouchdownPick } from "@/lib/lock-lab-types";
 
 function Section({
@@ -34,108 +33,6 @@ function Section({
   );
 }
 
-const pct = (v: number | null | undefined, signed = false) =>
-  v == null || !Number.isFinite(v) ? "—" : `${signed && v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
-
-/** Base (500) vs Stress (500) vs Combined (1,000) read for one pick. */
-function LineTable({ title, rows }: { title: string; rows: LineMetrics[] }) {
-  return (
-    <div>
-      <span className="eyebrow">{title}</span>
-      <div className="mt-1 grid gap-1 text-xs">
-        {rows.map((r) => (
-          <div key={r.label} className="flex flex-wrap justify-between gap-x-3">
-            <span className="font-semibold">
-              {r.label} ({r.price > 0 ? `+${r.price}` : r.price})
-            </span>
-            <span className="text-muted-foreground">
-              {pct(r.hitRate)} sim · base {pct(r.baseHitRate)} / stress {pct(r.stressHitRate)} · edge {pct(r.edge, true)} · ROI{" "}
-              {pct(r.roi, true)}
-              {r.pushRate ? ` · push ${pct(r.pushRate)}` : ""}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SimBreakdown({ pick, full = false }: { pick: PickSource & { label?: string }; full?: boolean }) {
-  if (pick.baseHitRate == null || pick.stressHitRate == null) return null;
-  const cells: [string, string, string][] = [
-    ["Base model", "500 sims", pct(pick.baseHitRate)],
-    ["Stress test", "500 sims", pct(pick.stressHitRate)],
-    ["Combined", "1,000 sims", pct(pick.combinedHitRate)],
-    ["Agreement", "base vs stress", pick.agreementLevel ?? "—"],
-  ];
-  return (
-    <div className="mt-3 space-y-3 rounded-md border border-hairline bg-surface p-3">
-      <span className="eyebrow">Simulation breakdown</span>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {cells.map(([title, sub, value]) => (
-          <div key={title}>
-            <p className="text-[0.65rem] tracking-wide text-muted-foreground uppercase">{title}</p>
-            <p className="font-display text-base font-semibold">{value}</p>
-            <p className="text-[0.65rem] text-muted-foreground">{sub}</p>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
-        <span>Model edge <b>{pct(pick.combinedEdge, true)}</b></span>
-        <span>Stress edge <b>{pct(pick.stressEdge, true)}</b></span>
-        <span>Market implied <b>{pct(pick.impliedProbability)}</b></span>
-        <span>Expected ROI <b>{pct(pick.expectedRoi, true)}</b></span>
-        {pick.pushRate != null && pick.pushRate > 0 && <span>Push <b>{pct(pick.pushRate)}</b></span>}
-      </div>
-      {full && pick.standardMetrics && (
-        <p className="text-xs text-muted-foreground">
-          Standard line: hits {pct(pick.standardMetrics.hitRate)} vs break-even {pct(pick.standardMetrics.implied)} · edge{" "}
-          {pct(pick.standardMetrics.edge, true)} · ROI {pct(pick.standardMetrics.roi, true)}
-          {(pick.standardMetrics.roi ?? 0) > (pick.expectedRoi ?? 0)
-            ? " — the alternate hits more often but returns less per unit; it was chosen on hit rate and robustness."
-            : ""}
-        </p>
-      )}
-      {full && pick.lineComparison && pick.lineComparison.length > 1 && (
-        <LineTable title="Key-number check" rows={pick.lineComparison} />
-      )}
-      {full && pick.totalComparison && (
-        <LineTable
-          title={`Both sides · stronger: ${pick.totalComparison.stronger}`}
-          rows={[pick.totalComparison.over, pick.totalComparison.under]}
-        />
-      )}
-      {full && pick.whyComponents && pick.whyComponents.length > 0 && (
-        <div>
-          <span className="eyebrow">Why Lock Lab likes this</span>
-          <ul className="mt-1 grid gap-0.5 text-xs">
-            {pick.whyComponents.map((c) => (
-              <li key={c.label} className="flex justify-between gap-2">
-                <span className="text-muted-foreground">{c.label}</span>
-                <span className="font-semibold">{c.points > 0 ? "+" : ""}{c.points} pts</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {full && pick.disagreement && (
-        <div className="rounded border border-caution/40 bg-caution-soft p-2 text-xs">
-          <p className="font-semibold tracking-wide uppercase">Model-market disagreement</p>
-          <p className="mt-0.5 text-muted-foreground">
-            Lock Lab {pct(pick.disagreement.model)} · market implied {pct(pick.disagreement.market)} · difference{" "}
-            {((pick.disagreement.model - pick.disagreement.market) * 100).toFixed(1)} pts —{" "}
-            {pick.disagreement.verdict === "supported"
-              ? "supported by the stress test."
-              : pick.disagreement.verdict === "weakened"
-                ? "weakened by the stress test."
-                : "highly uncertain under stress."}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function AnalysisOutput({
   game,
   analysis,
@@ -151,7 +48,6 @@ export function AnalysisOutput({
   /** Whether the live feed returned any prop that passed verification. */
   propsVerified?: boolean;
 }) {
-  const [details, setDetails] = useState(false);
   const live = hasLiveOdds(analysis.odds_snapshot) && !game.is_demo;
   const tailable = status === "pregame";
   const touchdownPicks = (analysis.player_props ?? []).filter(isTouchdownPick);
@@ -216,9 +112,6 @@ export function AnalysisOutput({
             so nothing below claims a player is active or out.
           </p>
         )}
-        <Button size="sm" variant="outline" className="mt-3" onClick={() => setDetails((d) => !d)}>
-          {details ? "Hide details" : "Show details"}
-        </Button>
       </div>
 
       <Section step={1} title="Top 2 bets" subtitle="The two strongest distinct prices on the live board.">
@@ -248,9 +141,8 @@ export function AnalysisOutput({
                 <BadgePill badge={pick.badge} />
               </div>
               <p className="mt-2 font-display text-xl font-semibold">{pick.label}</p>
-              {details && <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>}
-              {details && <SimBreakdown pick={pick} full />}
-              {details && pick.standardLabel && (
+              <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
+              {pick.standardLabel && (
                 <div className="mt-3 rounded-md border border-hairline bg-surface p-3">
                   <span className="eyebrow">Standard line</span>
                   <p className="mt-1 text-sm font-semibold">{pick.standardLabel}</p>
@@ -297,8 +189,7 @@ export function AnalysisOutput({
                   <BadgePill badge={prop.badge} />
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{prop.label}</p>
-                {details && <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>}
-                {details && <SimBreakdown pick={prop} />}
+                <p className="mt-2 text-sm text-muted-foreground">{prop.reason}</p>
                 <p className="mt-3 text-xs text-muted-foreground">
                   Logged {prop.point != null ? `${prop.point} ` : ""}{prop.odds ?? "—"}
                   {prop.book ? ` · ${prop.book}` : ""}
@@ -341,8 +232,7 @@ export function AnalysisOutput({
                   {pick.market !== "First TD scorer" && <BadgePill badge={pick.badge} />}
                 </div>
                 <p className="mt-2 font-display text-lg font-semibold">{pick.label}</p>
-                {details && <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>}
-                {details && pick.market !== "First TD scorer" && <SimBreakdown pick={pick} />}
+                <p className="mt-2 text-sm text-muted-foreground">{pick.reason}</p>
                 <p className="mt-3 text-xs text-muted-foreground">
                   Logged {pick.point != null ? `${pick.point} ` : ""}{pick.odds ?? "—"}
                   {pick.book ? ` · ${pick.book}` : ""}

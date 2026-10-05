@@ -49,19 +49,6 @@ import type { GameProjection } from "./game-sim.server";
 import { simulateGame } from "./game-sim.server";
 import type { PlayerProjection } from "./player-sim.server";
 import { simulatePlayers } from "./player-sim.server";
-import {
-  DISAGREEMENT_WARNING,
-  LARGE_EDGE,
-  disagreementVerdict,
-  robustBadge,
-  robustFields,
-  robustnessFromHits,
-  robustnessFromOutcomes,
-  stressCollapsed,
-  validatePropOpportunity,
-  type OpportunityCheck,
-  type Robustness,
-} from "./robustness";
 
 const BADGES: Badge[] = ["green", "yellow", "red"];
 
@@ -166,10 +153,6 @@ type Candidate = {
   standardKey?: string;
   /** Probability vs price: estimated chance, implied chance, edge, EV, noise band. */
   grade?: ValueGrade;
-  /** Base (500) vs Stress (500) robustness at the exact posted price. */
-  robust?: Robustness;
-  /** Extreme-edge validation against the player's simulated opportunity. */
-  opportunity?: OpportunityCheck;
 };
 
 /** Internal calibration record for one considered selection. Never rendered publicly. */
@@ -678,20 +661,6 @@ function gradeBoard(
 
     c.grade = gradeValue({ modelProb, price: c.price, group: c.group, distance, evidenceStrength: evidence });
     c.note = `${c.note} ${c.grade.note}`;
-    if (fromSim != null) {
-      const robust = robustnessFromOutcomes(candidateOutcomes(c, game, projection, players), c.price);
-      if (robust) {
-        c.robust = robust;
-        if (c.group === "prop" && c.player) {
-          const opp = players.opportunity?.({ market: c.market, player: c.player, selection: c.selection, point: c.point }) ?? null;
-          const check = validatePropOpportunity(robust, opp, c.selection ?? "", c.point);
-          if (check.flagged) {
-            c.opportunity = check;
-            c.note = `${c.note} ${check.note}`;
-          }
-        }
-      }
-    }
   }
 }
 
@@ -915,7 +884,6 @@ function betIdeaKey(c: Candidate): string {
  * green anywhere — with the confidence read layered on top of it.
  */
 function propBadge(c: Candidate): Badge {
-  if (c.robust) return robustBadge(c.robust, { opportunity: c.opportunity });
   const g = c.grade;
   if (!g || g.modelProb == null || g.edge == null) return "red";
   if (g.edge < MIN_EDGE) return "red";
@@ -960,26 +928,11 @@ const isUnder = (c: Candidate) => propDirection(c).includes("under");
  * posted line) and EV support it. Unders need strong simulation support
  * (60%+) or they are marked down, so weak unders are not forced.
  */
-const propStrength = (c: Candidate) => {
-  const r = c.robust;
-  // Robustness: stress-test agreement and a surviving stress edge support a
-  // prop; a huge edge with weak corroboration is treated as suspicious.
-  const robust = r
-    ? 0.08 * r.agreementScore +
-      0.3 * Math.max(-0.1, Math.min(0.1, r.stressEdge)) -
-      (stressCollapsed(r) ? 0.1 : 0) -
-      // Extreme edge: validated opportunity keeps it; unconfirmed reduces it.
-      (r.combinedEdge >= LARGE_EDGE && c.opportunity && !c.opportunity.supported ? 0.06 : 0)
-    : 0;
-  return (
-    propHit(c) +
-    (meaningfulPropLine(c) ? 0.06 : 0) +
-    0.25 * Math.max(-0.1, Math.min(0.2, c.grade?.edge ?? 0)) +
-    0.15 * Math.max(-0.2, Math.min(0.3, r?.expectedRoi ?? 0)) +
-    robust -
-    (isUnder(c) && propHit(c) < 0.6 ? 0.08 : 0)
-  );
-};
+const propStrength = (c: Candidate) =>
+  propHit(c) +
+  (meaningfulPropLine(c) ? 0.06 : 0) +
+  0.25 * Math.max(-0.1, Math.min(0.2, c.grade?.edge ?? 0)) -
+  (isUnder(c) && propHit(c) < 0.6 ? 0.08 : 0);
 const propRankCmp = (a: Candidate, b: Candidate) =>
   propStrength(b) - propStrength(a) || candidateRank(b) - candidateRank(a);
 const propPriceOk = (c: Candidate) => c.price < 100 || propHit(c) >= PLUS_MONEY_PROP_MIN_HIT;
@@ -1030,10 +983,6 @@ function fillPlayerProps(
   // Low-volume players/tiny lines stay only when the simulation strongly backs them.
   const meaningful = pool.filter((c) => meaningfulPropLine(c) || propHit(c) >= 0.65);
   if (meaningful.length >= 4) pool.splice(0, pool.length, ...meaningful);
-  // Props whose edge collapses under the stress test only fill in when too
-  // few robust props qualify.
-  const survivors = pool.filter((c) => !c.robust || !stressCollapsed(c.robust));
-  if (survivors.length >= 4) pool.splice(0, pool.length, ...survivors);
 
   const take = (c: Candidate) => {
     const badge = propBadge(c);
@@ -1202,7 +1151,7 @@ function propTeam(game: GameRow, player: string | undefined): string | null {
 /** First TD cards state only the simulated count — no price, edge or status read. */
 export function firstTdReason(wins: number, runs: number): string {
   const pct = runs > 0 ? Math.round((wins / runs) * 1000) / 10 : 0;
-  return `Scored the game's first touchdown in ${wins}/${runs} simulated games (${pct}%) — chosen on first-TD frequency, overall touchdown involvement and his team's simulated game script.`;
+  return `Scored the game's first touchdown in ${wins}/${runs} simulated games (${pct}%) — the most of any posted scorer on his team.`;
 }
 
 function fillTouchdownBets(
@@ -1224,14 +1173,7 @@ function fillTouchdownBets(
 
   // First TD scorers are chosen purely by how often the player scored the
   // game's first touchdown in the 100 simulated games — price never selects.
-  // Selection blends first-TD frequency with the player's overall touchdown
-  // involvement in the same runs (opportunity), both already shaped by each
-  // simulated game's team score and script.
-  const anytimeRate = (c: Candidate) =>
-    candidates.find(
-      (x) => x.market === "player_anytime_td" && x.player === c.player && ["yes", "over"].includes(propDirection(x)),
-    )?.simProb ?? 0;
-  const firstTdCount = (c: Candidate) => (c.simProb == null ? -1 : c.simProb + 0.1 * anytimeRate(c));
+  const firstTdCount = (c: Candidate) => c.simProb ?? -1;
   const ranked = [...pool]
     .filter((c) => c.market !== "player_1st_td" || c.simProb != null)
     .sort((a, b) =>
@@ -1247,7 +1189,7 @@ function fillTouchdownBets(
     used.add(c.key);
     takenPlayers.add(`${c.player ?? ""}|${c.market}`);
     const reason = first
-      ? firstTdReason(Math.round((c.simProb ?? 0) * 1000), 1000)
+      ? firstTdReason(Math.round((c.simProb ?? 0) * 100), 100)
       : team
       ? `${team} touchdown pick: the strongest posted price for this scorer market under the simulated scoring runs.`
       : "The strongest posted price in this scorer market under the simulated scoring runs. The feed does not name this player's team, so no team is claimed.";
@@ -1464,62 +1406,6 @@ function pickSource(c: Candidate) {
  * lines drawn inside those same games. A pick with no simulated settlement is
  * left untouched and falls back to the existing price-based settlement.
  */
-/** Share of simulated runs that push this spread/total (whole-number lines only). */
-function candidatePushRate(c: Candidate, game: GameRow, projection: GameProjection): number | null {
-  if (c.point == null || !Number.isInteger(c.point) || !projection.scores.length) return null;
-  const market = c.market.toLowerCase();
-  let pushes = 0;
-  if (market.includes("spread")) {
-    const home = c.selection === game.home_team;
-    if (!home && c.selection !== game.away_team) return null;
-    for (const s of projection.scores) if ((home ? s.margin : -s.margin) + c.point === 0) pushes += 1;
-  } else if (market.includes("total") && !market.includes("team_total")) {
-    for (const s of projection.scores) if (s.total === c.point) pushes += 1;
-  } else return null;
-  return Math.round((pushes / projection.scores.length) * 10000) / 10000;
-}
-
-/**
- * Where Lock Lab's number differs from the market, in points toward this bet,
- * using only components the fair model actually computed. Components the
- * engine cannot measure are omitted, never invented.
- */
-export function whyComponents(
-  c: Pick<Candidate, "market" | "selection">,
-  game: Pick<GameRow, "home_team" | "away_team">,
-  projection: Pick<GameProjection, "inputs" | "fairMargin" | "fairTotal">,
-): { label: string; points: number }[] | null {
-  const inp = projection.inputs;
-  if (!inp) return null;
-  const r1 = (v: number) => Math.round(v * 10) / 10;
-  const market = c.market.toLowerCase();
-  const out: { label: string; points: number }[] = [];
-  if (market.includes("spread") || market === "moneyline" || market === "h2h") {
-    if (inp.marketMargin == null || inp.modelMargin == null || projection.fairMargin == null || !inp.home || !inp.away) return null;
-    const sign = c.selection === game.home_team ? 1 : c.selection === game.away_team ? -1 : 0;
-    if (!sign) return null;
-    const gap = inp.modelMargin - inp.marketMargin;
-    const deviation = projection.fairMargin - inp.marketMargin;
-    const strength = gap - inp.injuryAdjustment - inp.restAdjustment;
-    out.push({ label: "Team strength + home field vs. market", points: r1(sign * strength) });
-    if (inp.injuryAdjustment) out.push({ label: "Injuries", points: r1(sign * inp.injuryAdjustment) });
-    if (inp.restAdjustment) out.push({ label: "Rest", points: r1(sign * inp.restAdjustment) });
-    out.push({ label: "Market adjustment (model weight)", points: r1(sign * (deviation - gap)) });
-  } else if (market.includes("total") && !market.includes("team_total")) {
-    if (inp.marketTotal == null || inp.modelTotal == null || projection.fairTotal == null || !inp.home || !inp.away) return null;
-    const sign = c.selection === "Over" ? 1 : c.selection === "Under" ? -1 : 0;
-    if (!sign) return null;
-    const homeSide = (inp.home.pointsFor + inp.away.pointsAgainst) / 2 - inp.marketTotal / 2;
-    const awaySide = (inp.away.pointsFor + inp.home.pointsAgainst) / 2 - inp.marketTotal / 2;
-    const gap = inp.modelTotal - inp.marketTotal;
-    const deviation = projection.fairTotal - inp.marketTotal;
-    out.push({ label: `${game.home_team} offense vs. ${game.away_team} defense`, points: r1(sign * homeSide) });
-    out.push({ label: `${game.away_team} offense vs. ${game.home_team} defense`, points: r1(sign * awaySide) });
-    out.push({ label: "Market adjustment (model weight)", points: r1(sign * (deviation - gap)) });
-  } else return null;
-  return out;
-}
-
 /** The 100 stored simulated results for a candidate, or null when it cannot be settled. */
 function candidateOutcomes(
   c: Candidate,
@@ -1623,12 +1509,7 @@ export function orderTopBetsByValue<T extends { simHits?: number[] | null | unde
     const price = b.odds ? Number(String(b.odds).replace("+", "")) : NaN;
     if (!b.simRuns || !Number.isFinite(price)) return -Infinity;
     const hits = b.simHits?.length ?? 0;
-    return simulationStrength(
-      expectedRoi(hits, b.simRuns, price),
-      hits / b.simRuns,
-      null,
-      robustnessFromHits(b.simHits, b.simRuns, price),
-    );
+    return simulationStrength(expectedRoi(hits, b.simRuns, price), hits / b.simRuns, null);
   };
   return bets
     .map((b, i) => ({ b, i, s: scoreOf(b) }))
@@ -1663,93 +1544,11 @@ function attachSimulatedOutcomes(
     playerProps.map((p) => p.candidateKey).filter((k): k is string => Boolean(k)),
   );
   const topBets = simulationFirstTop2(output.topBets.map(settle), candidates, byKey, reserved, game, projection, players, odds, previousOdds);
-  const dataOk = projection.scores.length > 0 && projection.confidence > 0;
-
-  const robustOf = (pick: { simHits?: number[] | null; simRuns?: number | null; price?: number | null; odds?: string | null }) => {
-    const price = pick.price ?? (pick.odds ? Number(String(pick.odds).replace("+", "")) : NaN);
-    return robustnessFromHits(pick.simHits, pick.simRuns, Number.isFinite(price) ? price : null);
-  };
-
-  const enrichedTop = orderTopBetsByValue(topBets).map((bet) => {
-    const r = robustOf(bet);
-    if (!r) return bet;
-    const c = bet.candidateKey ? byKey.get(bet.candidateKey) : undefined;
-    const standard = c?.standardKey ? byKey.get(c.standardKey) : undefined;
-    const stdR = standard ? robustnessFromOutcomes(candidateOutcomes(standard, game, projection, players), standard.price) : null;
-    const pushRate = c ? candidatePushRate(c, game, projection) : null;
-    const metricsOf = (x: Candidate) => {
-      const xr = robustnessFromOutcomes(candidateOutcomes(x, game, projection, players), x.price);
-      return xr
-        ? {
-            label: x.label,
-            price: x.price,
-            hitRate: xr.combinedHitRate,
-            baseHitRate: xr.baseHitRate,
-            stressHitRate: xr.stressHitRate,
-            implied: xr.impliedProbability,
-            edge: xr.combinedEdge,
-            roi: xr.expectedRoi,
-            agreement: xr.agreementLevel,
-            pushRate: candidatePushRate(x, game, projection),
-          }
-        : null;
-    };
-    let lineComparison: ReturnType<typeof metricsOf>[] | null = null;
-    if (c && isSpread(c)) {
-      const peers = candidates.filter(
-        (x) => x.group !== "prop" && isSpread(x) && x.selection === c.selection && Math.abs(x.point! - c.point!) <= 1.01,
-      );
-      if (peers.length > 1) lineComparison = peers.sort((a, b) => a.point! - b.point!).map(metricsOf).filter(Boolean);
-    }
-    let totalComparison: { over: ReturnType<typeof metricsOf>; under: ReturnType<typeof metricsOf>; stronger: string } | null = null;
-    if (c && /total/i.test(c.market) && !/team_total/i.test(c.market) && c.point != null) {
-      const sideAt = (sel: string) => candidates.find((x) => x.group !== "prop" && x.market === c.market && x.point === c.point && x.selection === sel);
-      const o = sideAt("Over");
-      const u = sideAt("Under");
-      const om = o ? metricsOf(o) : null;
-      const um = u ? metricsOf(u) : null;
-      if (om && um && Math.abs(om.hitRate - um.hitRate) <= 0.08) {
-        const strength = (m: NonNullable<typeof om>) => m.hitRate + 0.5 * m.roi + (m.agreement === "HIGH" ? 0.01 : m.agreement === "LOW" ? -0.01 : 0);
-        totalComparison = { over: om, under: um, stronger: strength(om) >= strength(um) ? om.label : um.label };
-      }
-    }
-    return {
-      ...bet,
-      lineComparison,
-      totalComparison,
-      ...robustFields(r),
-      badge: robustBadge(r, { dataOk }),
-      pushRate,
-      whyComponents: c ? whyComponents(c, game, projection) : null,
-      disagreement:
-        Math.abs(r.combinedEdge) >= DISAGREEMENT_WARNING
-          ? { model: r.combinedHitRate, market: r.impliedProbability, verdict: disagreementVerdict(r) }
-          : null,
-      standardMetrics:
-        stdR && standard
-          ? {
-              hitRate: stdR.combinedHitRate,
-              implied: stdR.impliedProbability,
-              edge: stdR.combinedEdge,
-              roi: stdR.expectedRoi,
-              pushRate: candidatePushRate(standard, game, projection),
-            }
-          : null,
-    } as PickBet;
-  });
-
-  const enrichedProps = playerProps.map((prop) => {
-    const r = robustOf(prop);
-    if (!r) return prop;
-    const first = /first td/i.test(String(prop.market));
-    const c = prop.candidateKey ? byKey.get(prop.candidateKey) : undefined;
-    return { ...prop, ...robustFields(r), badge: first ? prop.badge : robustBadge(r, { dataOk, opportunity: c?.opportunity }) };
-  });
 
   return {
     ...output,
-    topBets: enrichedTop,
-    playerProps: enrichedProps,
+    topBets: orderTopBetsByValue(topBets),
+    playerProps,
     funBets: [],
   };
 }
@@ -1765,21 +1564,9 @@ export function simulationStrength(
   roi: number,
   hitRate: number,
   tier: string | null | undefined,
-  robust?: Robustness | null,
 ): number {
   const confidence = tier === "strong" ? 1 : tier === "playable" ? 0.5 : 0;
-  if (!robust) return hitRate + 0.5 * Math.max(-0.3, Math.min(0.3, roi)) + 0.01 * confidence;
-  // Hit rate leads, then robustness (Base/Stress agreement and the surviving
-  // stress edge), then edge, then price/ROI.
-  return (
-    hitRate +
-    0.08 * robust.agreementScore +
-    0.25 * Math.max(-0.1, Math.min(0.1, robust.stressEdge)) -
-    (stressCollapsed(robust) ? 0.1 : 0) +
-    0.3 * Math.max(-0.1, Math.min(0.15, robust.combinedEdge)) +
-    0.2 * Math.max(-0.3, Math.min(0.3, roi)) +
-    0.01 * confidence
-  );
+  return hitRate + 0.5 * Math.max(-0.3, Math.min(0.3, roi)) + 0.01 * confidence;
 }
 
 /** Two bets within this composite gap are "very close" in the simulation. */
@@ -1903,52 +1690,6 @@ export function publicSideSignal(
  * often it wins, supported by expected return at its exact price and model
  * confidence. The sportsbook-favourable side only breaks near-ties.
  */
-/** NFL key margins: a half-point across one of these is materially different. */
-const KEY_MARGINS = [3, 7, 10, 14, 21, 28];
-const isSpread = (c: Candidate) => /spread/i.test(c.market) && !/team_total/i.test(c.market) && c.point != null;
-const crossesKey = (a: number, b: number) => {
-  const lo = Math.min(a, b);
-  const hi = Math.max(a, b);
-  return KEY_MARGINS.some((k) => (lo < k && hi > k) || (lo < -k && hi > -k));
-};
-/** Hit-rate gain the extra protection must buy, and the ROI it may cost. */
-const KEY_MIN_HIT_GAIN = 0.03;
-const KEY_MAX_ROI_COST = 0.03;
-const lineDecision = new Map<string, string>();
-
-/**
- * Same-team spreads within one point compete. Crossing a key number
- * (3/7/10/14/21/28) always takes the protected side (+2.5 -> +3.5,
- * -3.5 -> -2.5) when it is posted inside the Top 2 price range and simulates
- * at least as well; non-key moves still have to earn their extra juice.
- */
-export function keyNumberChoice<T extends { c: Candidate; hits: number[]; runs: number; roi: number }>(s: T, pool: T[]): T {
-  if (!isSpread(s.c)) return s;
-  const hr = (x: T) => x.hits.length / x.runs;
-  const peers = pool.filter(
-    (x) => x !== s && isSpread(x.c) && x.c.selection === s.c.selection && Math.abs(x.c.point! - s.c.point!) <= 1.01,
-  );
-  let best = s;
-  for (const x of peers) {
-    const more = x.c.point! > best.c.point! ? x : best;
-    const less = more === x ? best : x;
-    const gain = hr(more) - hr(less);
-    const cost = less.roi - more.roi;
-    const keyed = crossesKey(more.c.point!, less.c.point!);
-    const need = keyed ? KEY_MIN_HIT_GAIN : KEY_MIN_HIT_GAIN * 1.5;
-    const winner = keyed ? (gain >= 0 && more.roi > 0 ? more : less) : gain >= need && cost <= KEY_MAX_ROI_COST ? more : less.roi >= more.roi ? less : more;
-    const loser = winner === more ? less : more;
-    lineDecision.set(
-      winner.c.key,
-      winner === more
-        ? `${winner.c.label} is preferable to ${loser.c.label}: the extra protection${keyed ? " across a key number" : ""} lifts the simulated hit rate ${(gain * 100).toFixed(1)} pts and is worth the price.`
-        : `${winner.c.label} is preferable to ${loser.c.label}: the extra protection${keyed ? " across a key number" : ""} adds only ${(gain * 100).toFixed(1)} pts of hit rate${cost > KEY_MAX_ROI_COST ? " and is overpriced" : ""}.`,
-    );
-    best = winner;
-  }
-  return best;
-}
-
 function simulationFirstTop2(
   current: PickBet[],
   candidates: Candidate[],
@@ -1983,7 +1724,7 @@ function simulationFirstTop2(
       runs: outcomes.length,
       edge,
       roi,
-      score: simulationStrength(roi, hitRate, c.grade?.tier, robustnessFromHits(hits, outcomes.length, c.price)),
+      score: simulationStrength(roi, hitRate, c.grade?.tier),
     });
   }
   if (scored.length < 2 && current.length >= 2) return current;
@@ -2003,13 +1744,6 @@ function simulationFirstTop2(
         scored[i + 1] = a;
       }
     }
-  }
-  // Negative-value bets never outrank a positive-value one; they only fill a
-  // slot when fewer than two positive-value bets exist (Top 2 is always two).
-  const positives = scored.filter((s) => s.roi > 0);
-  if (positives.length) {
-    const rest = scored.filter((s) => s.roi <= 0);
-    scored.splice(0, scored.length, ...positives, ...rest);
   }
   const picked: Scored[] = [];
   const ideas = new Set<string>();
@@ -2033,44 +1767,15 @@ function simulationFirstTop2(
       runs: outcomes.length,
       edge: simulatedEdge(hits.length, outcomes.length, std.price),
       roi,
-      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier, robustnessFromHits(hits, outcomes.length, std.price)),
+      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier),
     };
   };
-  // Key-number hooks (e.g. +3.5 next to +2.5) compete even when their own
-  // value gate dropped them: the protection rule decides, at the real price.
-  const keyPool: Scored[] = [...scored];
-  for (const raw of candidates) {
-    if (!isSpread(raw) || raw.group === "prop" || reserved.has(raw.key)) continue;
-    if (keyPool.some((x) => x.c.key === raw.key)) continue;
-    if (raw.price < MIN_RECOMMENDED_PRICE || isLongshotPrice(raw.price)) continue;
-    const outcomes = candidateOutcomes(raw, game, projection, players);
-    if (!outcomes || !outcomes.length) continue;
-    const hits: number[] = [];
-    outcomes.forEach((won, i) => won && hits.push(i + 1));
-    const roi = expectedRoi(hits.length, outcomes.length, raw.price);
-    keyPool.push({
-      c: raw,
-      hits,
-      runs: outcomes.length,
-      edge: simulatedEdge(hits.length, outcomes.length, raw.price),
-      roi,
-      score: simulationStrength(roi, hits.length / outcomes.length, raw.grade?.tier, robustnessFromHits(hits, outcomes.length, raw.price)),
-    });
-  }
   for (const raw of scored) {
     if (picked.length >= 2) break;
-    const s = keyNumberChoice(standardFor(raw), keyPool);
+    const s = standardFor(raw);
     if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
-    // Correlation: a team-total Over for the team already backed on the side
-    // largely repeats that bet; skip it while other ideas remain.
-    if (
-      idea.startsWith("team_total") &&
-      /over/i.test(s.c.selection) &&
-      picked.some((p) => betIdeaKey(p.c) === "side" && s.c.label.toLowerCase().includes(String(p.c.selection).toLowerCase()))
-    )
-      continue;
     ideas.add(idea);
     picked.push(s);
   }
@@ -2106,7 +1811,6 @@ function simulationFirstTop2(
           }
         : {}),
       reason:
-        lineDecision.get(s.c.key) ??
         comparison ??
         `Won ${s.hits.length} of ${s.runs} simulated games — among the two strongest bets by simulated frequency, supported by the price and matchup read.`,
       simHits: s.hits,

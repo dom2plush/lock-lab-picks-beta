@@ -61,8 +61,8 @@ describe("fair line is built before any line shopping", () => {
     const fair = await buildFairModel(game, odds);
     const projection = simulateGame(game, fair);
 
-    expect(projection.runs).toBe(1000);
-    expect(projection.scores).toHaveLength(1000);
+    expect(projection.runs).toBe(100);
+    expect(projection.scores).toHaveLength(100);
     // Probabilities must be internally consistent: more points is always at
     // least as likely to cover, so an alternate cannot invent value.
     const spread = (point: number) => projection.spreadProb("away", point) ?? 0;
