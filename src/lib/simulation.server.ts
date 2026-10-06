@@ -59,6 +59,8 @@ export type InputSnapshot = {
   injuries: string[];
   /** Manually entered public-betting split, when one was supplied. */
   publicBetting?: string | null;
+  /** Whether the sportsbook had posted player props / alternates yet. */
+  hasProps?: boolean;
   /**
    * The exact dataset the batch was computed from, frozen alongside it: the
    * full sportsbook snapshot, the complete availability report and the seed
@@ -105,6 +107,7 @@ export function inputSnapshot(game: GameRow): InputSnapshot {
       .map((injury) => `${injury.team}|${injury.player}|${String(injury.status).toLowerCase()}`)
       .sort(),
     publicBetting: publicBettingKey(game),
+    hasProps: (game.props ?? []).length > 0,
     dataset: datasetSnapshot(game),
   };
 }
@@ -184,6 +187,7 @@ export function meaningfulInputChange(prev: InputSnapshot | null, next: InputSna
   }
   if (prev.injuries.join(";") !== next.injuries.join(";")) return "material injury change";
   if ((prev.publicBetting ?? null) !== (next.publicBetting ?? null)) return "public betting input changed";
+  if (next.hasProps && !prev.hasProps) return "player props posted";
   return null;
 }
 
