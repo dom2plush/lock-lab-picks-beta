@@ -14,7 +14,7 @@
  * Hard rules enforced in code, not left to the model:
  *  - Every pick's line, price, book and timestamp are copied from the live
  *    odds snapshot. A selection the model invents is discarded.
- *  - A priced pregame board is ranked to exactly two distinct top selections;
+ *  - A priced pregame board publishes up to two distinct top selections that pass the value checks;
  *    low-edge selections are marked red rather than presented as strong bets.
  *  - Same game + same snapshot = same result for every user.
  */
@@ -1547,7 +1547,8 @@ function attachSimulatedOutcomes(
 
   return {
     ...output,
-    topBets: orderTopBetsByValue(topBets),
+    // Already ranked value-first by simulationFirstTop2; only renumber.
+    topBets: topBets.map((b, index) => ({ ...b, key: `top${index + 1}`, rank: index + 1 })),
     playerProps,
     funBets: [],
   };
@@ -1702,6 +1703,19 @@ function simulationFirstTop2(
   previousOdds: GameOdds | null = null,
 ): PickBet[] {
   type Scored = { c: Candidate; hits: number[]; runs: number; edge: number; roi: number; score: number };
+  // Value-first score, reusing existing calculations: the simulated edge over
+  // the posted price, measured in the candidate's own uncertainty band
+  // (gradeValue) and discounted by how robust that estimate is
+  // (robustnessScore) — i.e. riskAdjustedScore with the simulated probability.
+  const valueScore = (c: Candidate, edge: number): number => {
+    const band = c.grade?.uncertainty;
+    if (!band || band <= 0) return edge;
+    return (edge / band) * candidateRobustness(c);
+  };
+  // Publish gate: the existing value/uncertainty grade must qualify AND the
+  // simulated games must agree the bet is +EV at the exact posted price.
+  const passes = (c: Candidate, edge: number, roi: number): boolean =>
+    Boolean(c.grade?.qualifies) && edge > 0 && roi > 0;
   const scored: Scored[] = [];
   for (const raw of candidates) {
     if (raw.group === "prop" || reserved.has(raw.key)) continue;
@@ -1715,31 +1729,29 @@ function simulationFirstTop2(
     if (!outcomes || !outcomes.length) continue;
     const hits: number[] = [];
     outcomes.forEach((won, i) => won && hits.push(i + 1));
-    const hitRate = hits.length / outcomes.length;
     const edge = simulatedEdge(hits.length, outcomes.length, c.price);
     const roi = expectedRoi(hits.length, outcomes.length, c.price);
-    scored.push({
-      c,
-      hits,
-      runs: outcomes.length,
-      edge,
-      roi,
-      score: simulationStrength(roi, hitRate, c.grade?.tier),
-    });
+    scored.push({ c, hits, runs: outcomes.length, edge, roi, score: valueScore(c, edge) });
   }
-  if (scored.length < 2 && current.length >= 2) return current;
 
-  // Simulation frequency leads; price/EV and model confidence support it. Only
-  // when two bets are genuinely close does the sportsbook-favourable signal
-  // (juice shading + line movement) decide the order.
   scored.sort((a, b) => b.score - a.score);
-  // Public splits never influence Top 2 selection; they only adjust the badge afterwards.
-  const signal = (s: Scored) => sportsbookSideSignal(s.c, odds, previousOdds, null);
+  // Verified market read (juice, line movement, public Bet%/Money% splits)
+  // reorders bets whose simulated edges are within CLOSE_SCORE of each other.
+  // 80% contrarian rule: when 80%+ of public money is on the other side, this
+  // side gets the strongest possible market signal — but it still has to pass
+  // the value gate and sit inside the close band; it is never an automatic pick.
+  const publicBetting = game.public_betting ?? null;
+  const contrarian80 = (s: Scored): boolean => {
+    const side = s.c.group === "alt" ? s.c.standardKey : s.c.key;
+    return contrarianMoneyShare(side, publicBetting) >= CONTRARIAN_MONEY_SHARE;
+  };
+  const signal = (s: Scored) =>
+    contrarian80(s) ? 1 : sportsbookSideSignal(s.c, odds, previousOdds, publicBetting);
   for (let pass = 0; pass < scored.length; pass += 1) {
     for (let i = 0; i + 1 < scored.length; i += 1) {
       const a = scored[i]!;
       const b = scored[i + 1]!;
-      if (a.score - b.score < CLOSE_SCORE && signal(b) > signal(a) + 0.1) {
+      if (Math.abs(a.edge - b.edge) < CLOSE_SCORE && signal(b) > signal(a) + 0.1) {
         scored[i] = b;
         scored[i + 1] = a;
       }
@@ -1767,19 +1779,20 @@ function simulationFirstTop2(
       runs: outcomes.length,
       edge: simulatedEdge(hits.length, outcomes.length, std.price),
       roi,
-      score: simulationStrength(roi, hits.length / outcomes.length, std.grade?.tier),
+      score: valueScore(std, simulatedEdge(hits.length, outcomes.length, std.price)),
     };
   };
   for (const raw of scored) {
     if (picked.length >= 2) break;
     const s = standardFor(raw);
+    if (!passes(s.c, s.edge, s.roi)) continue;
     if (picked.some((p) => p.c.key === s.c.key)) continue;
     const idea = betIdeaKey(s.c);
     if (ideas.has(idea)) continue;
     ideas.add(idea);
     picked.push(s);
   }
-  // Keep any existing bet the board had if the pool could not supply two.
+  // Only bets that pass the value/uncertainty checks are published (0-2).
   const out: PickBet[] = [];
   const existingByKey = new Map(current.map((b) => [b.candidateKey, b]));
   for (const s of picked) {
@@ -1812,16 +1825,30 @@ function simulationFirstTop2(
         : {}),
       reason:
         comparison ??
-        `Won ${s.hits.length} of ${s.runs} simulated games — among the two strongest bets by simulated frequency, supported by the price and matchup read.`,
+        `Won ${s.hits.length} of ${s.runs} simulated games — positive expected value at this price and clears the model's uncertainty check.`,
       simHits: s.hits,
       simRuns: s.runs,
     } as PickBet);
   }
-  for (const b of current) {
-    if (out.length >= 2) break;
-    if (!out.some((o) => o.candidateKey === b.candidateKey)) out.push(b);
-  }
   return out;
+}
+
+/** Public money share (Money%, else Bet%) on the side opposite this one. */
+export const CONTRARIAN_MONEY_SHARE = 80;
+export function contrarianMoneyShare(
+  side: string | null | undefined,
+  p: PublicBetting | null | undefined,
+): number {
+  if (!p || !side) return 0;
+  const pick = (money: number | null | undefined, bet: number | null | undefined) =>
+    typeof money === "number" && Number.isFinite(money) ? money : typeof bet === "number" && Number.isFinite(bet) ? bet : null;
+  let own: number | null = null;
+  let homeOrOver = true;
+  if (side.startsWith("spread-")) { own = pick(p.spreadMoneyPct, p.spreadBetPct); homeOrOver = side === "spread-home"; }
+  else if (side.startsWith("ml-")) { own = pick(p.mlMoneyPct, p.mlBetPct); homeOrOver = side === "ml-home"; }
+  else if (side.startsWith("total-")) { own = pick(p.totalMoneyPct, p.totalBetPct); homeOrOver = side === "total-over"; }
+  if (own == null || own < 0 || own > 100) return 0;
+  return homeOrOver ? 100 - own : own;
 }
 
 const CORE_OPPOSITE: Record<string, string> = {
@@ -1919,7 +1946,7 @@ ALTERNATE LINES — check these on every game:
 Selection rules:
 - You may ONLY select from the candidate keys provided. Never invent a line, price or selection.
 - #1 top bet is the single strongest edge anywhere on the board — standard spread, alternate spread, standard total, alternate total, moneyline, player prop or any other posted market, whichever it genuinely is. Do NOT force a spread or moneyline into the top two.
- - #2 is the next strongest DISTINCT posted selection (different market or different player). Always return exactly two when at least two valid standard/alternate candidates exist. If a selection does not clear the value threshold, mark it RED and explain the concern rather than manufacturing an edge.
+ - #2 is the next strongest DISTINCT posted selection (different market or different player). Return at most two; only include selections that clear the value threshold. Returning one or zero is correct when nothing else has a supported edge — never manufacture an edge.
 - Traffic lights only: green = clear edge, yellow = playable with a meaningful concern, red = too close / insufficient edge. No numbers, percentages or confidence scores in any reason text.
  - Never invent a bet or inflate an edge. Rank the real board as it exists; RED explicitly identifies a low-confidence second selection when only one or no candidates clear the normal value threshold.
 - YELLOW is a full, publishable rating and belongs in the Top 2. Most real boards contain at least one selection where the matchup read supports a small, defensible lean against the posted price; when one exists, post it as YELLOW rather than returning nothing. Work through the core spread, total and moneyline on BOTH sides first and ask what your read says the true chance is before you conclude the market is right. Returning an empty top list is correct only when you cannot defend a lean on any selection — not when the best available bet is merely uncertain.
